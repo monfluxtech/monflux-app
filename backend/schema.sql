@@ -65,7 +65,7 @@ INSERT INTO plans (slug, name, base_price, per_seat_price, included_seats, max_p
   "custom_fields":false,"automations":false,"reports":false,"watermark":true,
   "max_qr_sites":1,"max_leads":10,"max_subcontractors":5
 }'),
-('pro', 'Pro', 49, 29, 1, NULL, NULL, '{
+('pro', 'Pro', 49, 35, 1, NULL, NULL, '{
   "ai_onboarding":true,"ai_estimation":true,"ai_health_check":true,"ai_chat":true,
   "whatsapp":true,"gmail":false,"qr_punch":true,"subcontractors":true,"rfq":true,
   "invoicing":true,"stripe_payments":true,"plans_upload":true,"ocr":true,
@@ -73,7 +73,7 @@ INSERT INTO plans (slug, name, base_price, per_seat_price, included_seats, max_p
   "custom_fields":false,"automations":false,"reports":true,"watermark":false,
   "max_qr_sites":null,"max_leads":null,"max_subcontractors":null
 }'),
-('business', 'Business', 99, 25, 3, NULL, NULL, '{
+('business', 'Business', 99, 35, 3, NULL, NULL, '{
   "ai_onboarding":true,"ai_estimation":true,"ai_health_check":true,"ai_chat":true,
   "whatsapp":true,"gmail":true,"qr_punch":true,"subcontractors":true,"rfq":true,
   "invoicing":true,"stripe_payments":true,"plans_upload":true,"ocr":true,
@@ -81,7 +81,7 @@ INSERT INTO plans (slug, name, base_price, per_seat_price, included_seats, max_p
   "custom_fields":true,"automations":true,"reports":true,"watermark":false,
   "max_qr_sites":null,"max_leads":null,"max_subcontractors":null
 }'),
-('enterprise', 'Entreprise', 179, 20, 10, NULL, NULL, '{
+('enterprise', 'Entreprise', 179, 35, 10, NULL, NULL, '{
   "ai_onboarding":true,"ai_estimation":true,"ai_health_check":true,"ai_chat":true,
   "whatsapp":true,"gmail":true,"qr_punch":true,"subcontractors":true,"rfq":true,
   "invoicing":true,"stripe_payments":true,"plans_upload":true,"ocr":true,
@@ -248,6 +248,13 @@ CREATE TABLE company_config (
   ai_auto_followup     BOOLEAN DEFAULT FALSE,
   ai_followup_delay_days INT DEFAULT 5,
   ai_alerts_enabled    BOOLEAN DEFAULT TRUE,
+  -- Sources de leads externes — chaque source est opt-in avec fréquence configurable
+  lead_sources         JSONB DEFAULT '{
+    "soumissions_reno":   {"enabled":false,"frequency_hours":24,"max_per_run":10},
+    "facebook_ads":       {"enabled":false},
+    "google_lsa":         {"enabled":false},
+    "kijiji":             {"enabled":false,"frequency_hours":12,"max_per_run":20}
+  }',
   custom_fields        JSONB DEFAULT '{}',
   automations          JSONB DEFAULT '[]',
   landing_preference   TEXT DEFAULT 'dashboard',
