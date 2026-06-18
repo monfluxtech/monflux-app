@@ -1,32 +1,52 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import Auth from './pages/Auth';
-import Onboarding from './pages/Onboarding';
-import Dashboard from './pages/Dashboard';
-import ProjectView from './pages/ProjectView';
 
-function ProtectedRoute({ children }) {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  return isAuthenticated ? children : <Navigate to="/" />;
+import Auth          from './pages/Auth';
+import Onboarding    from './pages/Onboarding';
+import Dashboard     from './pages/Dashboard';
+import Projets       from './pages/Projets';
+import ProjectDetail from './pages/ProjectDetail';
+import Leads         from './pages/Leads';
+import Soumissions   from './pages/Soumissions';
+import Factures      from './pages/Factures';
+import SousTraitants from './pages/SousTraitants';
+import Punch         from './pages/Punch';
+import PunchPublic   from './pages/PunchPublic';
+import Chat          from './pages/Chat';
+import Parametres    from './pages/Parametres';
+
+function Guard({ children }) {
+  const { isAuthenticated } = useAuthStore();
+  return isAuthenticated ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
   return (
-    <Router>
+    <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Auth />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/dashboard" element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/project/:projectId" element={
-          <ProtectedRoute>
-            <ProjectView />
-          </ProtectedRoute>
-        } />
+        {/* Public */}
+        <Route path="/"              element={<Auth />} />
+        <Route path="/punch/:token"  element={<PunchPublic />} />
+
+        {/* Onboarding (requires token but no company yet) */}
+        <Route path="/onboarding"    element={<Onboarding />} />
+
+        {/* Protected */}
+        <Route path="/dashboard"          element={<Guard><Dashboard /></Guard>} />
+        <Route path="/projets"            element={<Guard><Projets /></Guard>} />
+        <Route path="/projets/:id"        element={<Guard><ProjectDetail /></Guard>} />
+        <Route path="/leads"              element={<Guard><Leads /></Guard>} />
+        <Route path="/soumissions"        element={<Guard><Soumissions /></Guard>} />
+        <Route path="/factures"           element={<Guard><Factures /></Guard>} />
+        <Route path="/sous-traitants"     element={<Guard><SousTraitants /></Guard>} />
+        <Route path="/punch"              element={<Guard><Punch /></Guard>} />
+        <Route path="/chat"               element={<Guard><Chat /></Guard>} />
+        <Route path="/parametres"         element={<Guard><Parametres /></Guard>} />
+
+        {/* Legacy redirect */}
+        <Route path="/project/:id"  element={<Navigate to="/projets" replace />} />
+        <Route path="*"             element={<Navigate to="/" replace />} />
       </Routes>
-    </Router>
+    </BrowserRouter>
   );
 }

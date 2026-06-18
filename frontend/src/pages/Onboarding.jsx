@@ -1,132 +1,178 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '../api';
+import { onboarding } from '../api';
+import { useAuthStore } from '../store';
+import { Send, Loader2, CheckCircle } from 'lucide-react';
+
+const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+
+const WELCOME = `Bonjour! 👋 Je suis l'assistant MONFLUX.
+
+Je vais créer votre profil en quelques questions. Commençons : **quel est le nom de votre entreprise?** (ou votre nom si vous êtes un particulier)`;
 
 export default function Onboarding() {
-  const [step, setStep] = useState(1);
-  const [data, setData] = useState({
-    usagePreference: '',
-    teamSize: '',
-    sector: '',
-    companyName: '',
-    rbqNumber: ''
-  });
+  const [messages, setMessages] = useState([{ role: 'assistant', content: WELCOME }]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [completing, setCompleting] = useState(false);
+  const [done, setDone] = useState(false);
+  const bottomRef = useRef(null);
+  const { setCompany, user } = useAuthStore();
   const navigate = useNavigate();
 
-  const handleNext = () => {
-    if (step < 4) setStep(step + 1);
-  };
+  useEffect(() => {
+    onboarding.session().then(({ data }) => setSessionId(data.session_id)).catch(() => {});
+  }, []);
 
-  const handleBack = () => {
-    if (step > 1) setStep(step - 1);
-  };
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
-  async function handleComplete() {
+  const send = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = { role: 'user', content: input.trim() };
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
+    setInput('');
     setLoading(true);
+
+    const aiMsg = { role: 'assistant', content: '' };
+    setMessages((m) => [...m, aiMsg]);
+
     try {
-      await auth.onboarding(data);
-      navigate('/dashboard');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/onboarding/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: nextMessages, session_id: sessionId }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let detectedProfile = null;
+
+      while (true) {
+        const { done: streamDone, value } = await reader.read();
+        if (streamDone) break;
+        const lines = decoder.decode(value).split('\n').filter(l => l.startsWith('data: '));
+        for (const line of lines) {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'text') {
+            setMessages((m) => {
+              const copy = [...m];
+              copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + evt.text };
+              return copy;
+            });
+          }
+          if (evt.type === 'profile_ready') {
+            detectedProfile = evt.profile;
+            setProfile(evt.profile);
+          }
+        }
+      }
+      if (detectedProfile) {
+        // Auto-complete after a short delay so user sees the last message
+        setTimeout(() => completeOnboarding(detectedProfile, nextMessages), 1200);
+      }
+    } catch (err) {
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { ...copy[copy.length - 1], content: "Désolé, une erreur s'est produite. Réessayez." };
+        return copy;
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const completeOnboarding = async (p, msgs) => {
+    setCompleting(true);
+    try {
+      const { data } = await onboarding.complete({ profile: p || profile, session_id: sessionId });
+      setCompany({ id: data.company_id });
+      setDone(true);
+      setTimeout(() => navigate('/dashboard'), 1800);
     } catch (err) {
       console.error(err);
+    } finally {
+      setCompleting(false);
     }
-    setLoading(false);
+  };
+
+  if (done) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3">
+        <CheckCircle size={48} className="text-green-500" />
+        <p className="text-lg font-semibold text-gray-900">Profil créé !</p>
+        <p className="text-sm text-gray-500">Redirection vers votre tableau de bord…</p>
+      </div>
+    );
   }
 
-  const steps = [
-    {
-      title: "Comment vas-tu utiliser MONFLUX ?",
-      options: ['Chat IA', 'Formulaires', 'Rapports', 'CRM'],
-      key: 'usagePreference'
-    },
-    {
-      title: "Taille de ton équipe",
-      options: ['Solo', '2-5 personnes', '5-20 personnes', '+20 personnes'],
-      key: 'teamSize'
-    },
-    {
-      title: "Secteur de construction",
-      options: ['Rénovation', 'Électrique', 'Plomberie', 'Générale', 'Autre'],
-      key: 'sector'
-    },
-    {
-      title: "Infos entreprise",
-      type: 'form',
-      fields: [
-        { label: 'Nom entreprise', key: 'companyName', type: 'text' },
-        { label: 'Numéro RBQ (optionnel)', key: 'rbqNumber', type: 'text' }
-      ]
-    }
-  ];
-
-  const currentStep = steps[step - 1];
-
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
-        <div className="mb-8">
-          <div className="flex justify-between mb-4">
-            {[1, 2, 3, 4].map((s) => (
-              <div
-                key={s}
-                className={`w-12 h-12 rounded-full flex items-center justify-center font-bold ${
-                  s === step ? 'bg-blue-600 text-white' : s < step ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
-                }`}
-              >
-                {s}
-              </div>
-            ))}
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-xl flex flex-col" style={{ height: '85vh' }}>
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{background:'#F26522'}}>
+            <span className="text-white font-bold text-sm">M</span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Assistant MONFLUX</p>
+            <p className="text-xs text-gray-400">Configuration de votre compte</p>
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{currentStep.title}</h2>
-
-        {currentStep.type === 'form' ? (
-          <div className="space-y-4">
-            {currentStep.fields.map((field) => (
-              <div key={field.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
-                <input
-                  type={field.type}
-                  className="input-field"
-                  value={data[field.key] || ''}
-                  onChange={(e) => setData({ ...data, [field.key]: e.target.value })}
-                />
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-2">
+          {messages.map((m, i) => (
+            <div key={i} className={m.role === 'user' ? 'flex justify-end fade-in' : 'flex justify-start fade-in'}>
+              {m.role === 'assistant' && (
+                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mr-2 mt-0.5" style={{background:'#F26522'}}>
+                  <span className="text-white text-xs font-bold">M</span>
+                </div>
+              )}
+              <div className={m.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}>
+                {m.content
+                  ? m.content.split('\n').map((line, j) => (
+                      <p key={j} className={j > 0 ? 'mt-1' : ''} dangerouslySetInnerHTML={{
+                        __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      }} />
+                    ))
+                  : <span className="flex gap-1 py-0.5"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
+                }
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {currentStep.options.map((option) => (
-              <button
-                key={option}
-                onClick={() => setData({ ...data, [currentStep.key]: option })}
-                className={`w-full p-4 border-2 rounded-lg font-medium transition ${
-                  data[currentStep.key] === option
-                    ? 'border-blue-600 bg-blue-50 text-blue-600'
-                    : 'border-gray-200 text-gray-700 hover:border-blue-300'
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+          {loading && messages[messages.length - 1]?.content === '' && null}
+          {completing && (
+            <div className="flex items-center gap-2 text-sm text-gray-500 self-center mt-2">
+              <Loader2 size={14} className="animate-spin text-brand" />
+              Création de votre entreprise…
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
 
-        <div className="flex gap-4 mt-8">
+        {/* Input */}
+        <div className="flex gap-2 pt-3 border-t border-gray-100 mt-2">
+          <input
+            className="input flex-1"
+            placeholder="Votre réponse…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
+            disabled={loading || completing}
+            autoFocus
+          />
           <button
-            onClick={handleBack}
-            disabled={step === 1}
-            className="btn-secondary flex-1"
+            className="btn-primary flex-shrink-0"
+            onClick={send}
+            disabled={loading || completing || !input.trim()}
           >
-            Précédent
-          </button>
-          <button
-            onClick={step === 4 ? handleComplete : handleNext}
-            disabled={loading}
-            className="btn-primary flex-1"
-          >
-            {loading ? 'Chargement...' : step === 4 ? 'Terminer' : 'Suivant'}
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           </button>
         </div>
       </div>

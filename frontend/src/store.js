@@ -1,40 +1,43 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-export const useAuthStore = create((set) => ({
-  user: null,
-  token: localStorage.getItem('token') || null,
-  isAuthenticated: !!localStorage.getItem('token'),
-  
-  setAuth: (user, token) => {
-    localStorage.setItem('token', token);
-    set({ user, token, isAuthenticated: true });
-  },
-  
-  logout: () => {
-    localStorage.removeItem('token');
-    set({ user: null, token: null, isAuthenticated: false });
-  }
+export const useAuthStore = create(
+  persist(
+    (set) => ({
+      user: null,
+      company: null,
+      plan: null,
+      token: null,
+      isAuthenticated: false,
+
+      setAuth: ({ token, user, company, plan }) => {
+        localStorage.setItem('token', token);
+        set({ token, user, company, plan, isAuthenticated: true });
+      },
+      setCompany: (company) => set({ company }),
+      setPlan:    (plan)    => set({ plan }),
+
+      logout: () => {
+        localStorage.removeItem('token');
+        set({ user: null, company: null, plan: null, token: null, isAuthenticated: false });
+      },
+    }),
+    { name: 'monflux-auth', partialize: (s) => ({ token: s.token, user: s.user, company: s.company }) }
+  )
+);
+
+export const useUIStore = create((set) => ({
+  darkMode: false,
+  sidebarOpen: true,
+  activeModule: 'dashboard',
+
+  toggleDark:    () => set((s) => { const d = !s.darkMode; document.documentElement.classList.toggle('dark', d); return { darkMode: d }; }),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setModule:     (m) => set({ activeModule: m }),
 }));
 
-export const useProjectStore = create((set) => ({
-  currentProject: null,
-  projects: [],
-  
-  setCurrentProject: (project) => set({ currentProject: project }),
-  setProjects: (projects) => set({ projects }),
-  addProject: (project) => set((state) => ({
-    projects: [project, ...state.projects]
-  }))
-}));
-
-export const useChatStore = create((set) => ({
-  messages: [],
-  loading: false,
-  
-  addMessage: (message) => set((state) => ({
-    messages: [...state.messages, message]
-  })),
-  
-  setMessages: (messages) => set({ messages }),
-  setLoading: (loading) => set({ loading })
+export const useDevStore = create((set) => ({
+  enabled: import.meta.env.DEV,
+  currentOverride: null,
+  setOverride: (o) => set({ currentOverride: o }),
 }));
