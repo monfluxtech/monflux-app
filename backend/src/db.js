@@ -5,11 +5,16 @@ dotenv.config();
 
 const { Pool } = pg;
 
+const sslConfig = (() => {
+  if (!process.env.DATABASE_URL) return false;
+  if (process.env.DATABASE_URL.includes('sslmode=disable')) return false;
+  if (process.env.NODE_ENV === 'production') return { rejectUnauthorized: false };
+  return false;
+})();
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: sslConfig,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
