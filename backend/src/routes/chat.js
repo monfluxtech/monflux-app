@@ -1,120 +1,78 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { v4 as uuidv4 } from 'uuid';
-import { dbRun, dbGet, dbAll } from '../db.js';
-import { authenticateToken } from '../middleware/auth.js';
-import { detectPersona, getSystemPrompt } from '../prompts.js';
+import { query } from '../db.js';
+import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 
 const router = express.Router();
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
+router.use(authenticateToken, resolveCompany);
 
-router.post('/:projectId/message', authenticateToken, async (req, res) => {
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// POST /api/chat — general AI chat (streaming)
+router.post('/', async (req, res) => {
+  const { messages, context_type = 'general', project_id, conversation_id } = req.body;
+  if (!messages?.length) return res.status(400).json({ error: 'Messages requis' });
+
+  const { rows: [company] } = await query(`SELECT name, sector, modules_enabled FROM companies WHERE id = $1`, [req.company_id]);
+
+  const systemPrompt = `Tu es l'assistant IA de MONFLUX pour ${company?.name || 'cette entreprise'} (secteur: ${company?.sector || 'construction'}).
+Tu aides les entrepreneurs en construction québécois à gérer leurs projets, leads, soumissions, sous-traitants et facturations.
+Tu parles en français québécois. Tu es direct, pratique et efficace.
+Contexte: ${context_type}${project_id ? ` / Projet: ${project_id}` : ''}
+Plan actif: ${req.plan.slug} (${req.plan.is_dev_override ? 'MODE DEV' : 'réel'})`;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
   try {
-    const { message } = req.body;
-    const { projectId } = req.params;
-    
-    // Get project
-    const project = await dbGet(
-      'SELECT * FROM projects WHERE id = ? AND user_id = ?',
-      [projectId, req.user.userId]
-    );
-    
-    if (!project) {
-      return res.status(404).json({ error: 'Projet non trouvé' });
-    }
-    
-    // Get user context
-    const user = await dbGet('SELECT * FROM users WHERE id = ?', [req.user.userId]);
-    
-    // Detect persona
-    const persona = detectPersona(message);
-    
-    // Get recent messages for context
-    const recentMessages = await dbAll(
-      'SELECT * FROM chat_messages WHERE project_id = ? ORDER BY created_at DESC LIMIT 5',
-      [projectId]
-    );
-    
-    // Build context
-    const projectContext = {
-      name: project.name,
-      type: project.type,
-      budget: project.budget,
-      teamSize: user.team_size,
-      sector: user.sector
-    };
-    
-    const systemPrompt = getSystemPrompt(persona, projectContext);
-    
-    // Build conversation history for Claude
-    const conversationHistory = recentMessages.reverse().map(msg => ({
-      role: msg.message ? 'user' : 'assistant',
-      content: msg.message || msg.response
-    }));
-    
-    conversationHistory.push({
-      role: 'user',
-      content: message
-    });
-    
-    // Call Claude API with streaming
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    
-    let fullResponse = '';
-    
-    const stream = await client.messages.stream({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
+    const stream = await anthropic.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
       system: systemPrompt,
-      messages: conversationHistory
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
     });
-    
+
+    let fullText = '';
     stream.on('text', (text) => {
-      fullResponse += text;
-      res.write(`data: ${JSON.stringify({ chunk: text })}\n\n`);
+      fullText += text;
+      res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
     });
-    
-    stream.on('end', async () => {
-      // Save message and response to DB
-      const messageId = uuidv4();
-      await dbRun(
-        'INSERT INTO chat_messages (id, project_id, user_id, message, response, persona) VALUES (?, ?, ?, ?, ?, ?)',
-        [messageId, projectId, req.user.userId, message, fullResponse, persona]
-      );
-      
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+
+    stream.on('message', async () => {
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
+
+      // Persist conversation
+      if (conversation_id) {
+        const allMessages = [...messages, { role: 'assistant', content: fullText }];
+        await query(
+          `UPDATE ai_conversations SET messages = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(allMessages), conversation_id]
+        ).catch(() => {});
+      }
     });
-    
+
     stream.on('error', (err) => {
-      console.error('Stream error:', err);
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: 'Erreur IA' })}\n\n`);
       res.end();
     });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error(err);
+    res.write(`data: ${JSON.stringify({ type: 'error', error: 'Erreur IA' })}\n\n`);
+    res.end();
   }
 });
 
-// Get chat history
-router.get('/:projectId/history', authenticateToken, async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    
-    const messages = await dbAll(
-      'SELECT * FROM chat_messages WHERE project_id = ? ORDER BY created_at DESC LIMIT 50',
-      [projectId]
-    );
-    
-    res.json(messages.reverse());
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// POST /api/chat/conversations — start/get conversation
+router.post('/conversations', async (req, res) => {
+  const { context_type = 'general', project_id } = req.body;
+  const { rows: [conv] } = await query(
+    `INSERT INTO ai_conversations (company_id, user_id, context_type, project_id, messages)
+     VALUES ($1,$2,$3,$4,'[]') RETURNING id`,
+    [req.company_id, req.user.userId, context_type, project_id||null]
+  );
+  res.status(201).json(conv);
 });
 
 export default router;
