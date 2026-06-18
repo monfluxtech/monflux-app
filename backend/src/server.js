@@ -15,12 +15,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({
-  origin: true,
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production'
+    ? ['https://monflux-app.vercel.app', 'https://monflux-9tp80lugv-monfluxtechs-projects.vercel.app']
+    : 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders:['Content-Type','Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
