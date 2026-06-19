@@ -1,15 +1,73 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, X, Send, Loader2, Sparkles, Maximize2 } from 'lucide-react';
+import { MessageSquare, X, Send, Loader2, Sparkles, Maximize2, ChevronRight, CheckCircle2 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
 
 const SUGGESTIONS = [
-  "Résume mes projets actifs",
-  "Quelles factures sont en retard?",
-  "Génère une estimation cuisine",
-  "Comment créer un devis?",
+  'Résume mes projets actifs',
+  'Crée un lead: Jean Tremblay, réno cuisine 35k$',
+  'Quelles factures sont en retard?',
+  'Rappelle-moi de rappeler Mario demain',
 ];
+
+const ACTION_CONFIG = {
+  create_lead: {
+    label: 'Lead créé avec succès',
+    color: '#3b82f6',
+    detail: (item) => [
+      item?.title,
+      item?.contact_name,
+      item?.budget ? `${Number(item.budget).toLocaleString('fr-CA')} $` : null,
+    ].filter(Boolean).join(' — '),
+    path: () => '/leads',
+  },
+  create_project: {
+    label: 'Projet créé avec succès',
+    color: '#6366f1',
+    detail: (item) => [item?.name, item?.client_name].filter(Boolean).join(' — '),
+    path: (item) => `/projets/${item?.id}`,
+  },
+  schedule_followup: {
+    label: 'Relance programmée',
+    color: '#f59e0b',
+    detail: (item) => item
+      ? `${item.title} — ${new Date(item.follow_up_at).toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' })}`
+      : 'Lead introuvable',
+    path: () => '/leads',
+  },
+};
+
+function ActionCard({ action, result, navigate }) {
+  if (!result) return null;
+  const cfg = ACTION_CONFIG[action];
+  if (!cfg) return null;
+
+  const success = result.success;
+  const item = result.item;
+  const color = success ? cfg.color : '#ef4444';
+  const detail = success ? cfg.detail(item) : (result.error || 'Erreur');
+  const path = success && item ? cfg.path(item) : null;
+
+  return (
+    <div
+      className={`rounded-xl p-3 mb-1 border ${success && path ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+      style={{ background: color + '10', borderColor: color + '25' }}
+      onClick={() => path && navigate(path)}
+    >
+      <div className="flex items-center gap-2">
+        <CheckCircle2 size={16} className="flex-shrink-0" style={{ color }} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold leading-tight" style={{ color }}>
+            {success ? cfg.label : 'Erreur'}
+          </p>
+          <p className="text-xs text-gray-600 leading-tight truncate">{detail}</p>
+        </div>
+        {success && path && <ChevronRight size={12} className="flex-shrink-0 text-gray-400" />}
+      </div>
+    </div>
+  );
+}
 
 export default function FloatingChat() {
   const [open, setOpen] = useState(false);
@@ -22,7 +80,7 @@ export default function FloatingChat() {
 
   useEffect(() => {
     if (open && messages.length === 0) {
-      setMessages([{ role: 'assistant', content: 'Bonjour! Je suis votre assistant MONFLUX. Comment puis-je vous aider?' }]);
+      setMessages([{ role: 'assistant', content: 'Bonjour! Je suis votre assistant MONFLUX. Je peux répondre à vos questions ou créer des leads, projets et rappels directement.' }]);
     }
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
@@ -33,12 +91,15 @@ export default function FloatingChat() {
     const content = text || input.trim();
     if (!content || loading) return;
     setInput('');
-    const history = messages.filter(m => m.role !== 'assistant' || m.content !== 'Bonjour! Je suis votre assistant MONFLUX. Comment puis-je vous aider?');
+
+    const welcomeMsg = 'Bonjour! Je suis votre assistant MONFLUX. Je peux répondre à vos questions ou créer des leads, projets et rappels directement.';
+    const history = messages.filter(m => !(m.role === 'assistant' && m.content === welcomeMsg));
     const userMsg = { role: 'user', content };
     const next = [...history, userMsg];
     setMessages(m => [...m, userMsg]);
     setLoading(true);
-    const aiMsg = { role: 'assistant', content: '' };
+
+    const aiMsg = { role: 'assistant', content: '', action: null, actionResult: null };
     setMessages(m => [...m, aiMsg]);
 
     try {
@@ -48,8 +109,10 @@ export default function FloatingChat() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messages: next }),
       });
+
       const reader = res.body.getReader();
       const dec = new TextDecoder();
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -57,13 +120,29 @@ export default function FloatingChat() {
           try {
             const evt = JSON.parse(line.slice(6));
             if (evt.type === 'text') {
-              setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:c[c.length-1].content+evt.text}; return c; });
+              setMessages(m => {
+                const c = [...m];
+                c[c.length - 1] = { ...c[c.length - 1], content: c[c.length - 1].content + evt.text };
+                return c;
+              });
+            } else if (evt.type === 'action') {
+              setMessages(m => {
+                const c = [...m];
+                c[c.length - 1] = { ...c[c.length - 1], action: evt.action, actionResult: evt.result };
+                return c;
+              });
+              // Refresh notifications badge after creating something
+              window.dispatchEvent(new CustomEvent('monflux:data-changed'));
             }
           } catch {}
         }
       }
     } catch {
-      setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:'Désolé, une erreur est survenue.'}; return c; });
+      setMessages(m => {
+        const c = [...m];
+        c[c.length - 1] = { ...c[c.length - 1], content: 'Désolé, une erreur est survenue.' };
+        return c;
+      });
     } finally { setLoading(false); }
   };
 
@@ -72,7 +151,7 @@ export default function FloatingChat() {
       {/* Floating button */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-5 right-5 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-50 transition-transform hover:scale-105"
+        className="fixed bottom-5 right-5 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-50 transition-all hover:scale-105 active:scale-95"
         style={{ background: '#F26522' }}
         title="Assistant IA MONFLUX"
       >
@@ -80,8 +159,8 @@ export default function FloatingChat() {
           ? <X size={20} className="text-white" />
           : <MessageSquare size={20} className="text-white" />
         }
-        {!open && messages.filter(m=>m.role==='user').length === 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
+        {!open && messages.filter(m => m.role === 'user').length === 0 && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />
         )}
       </button>
 
@@ -89,7 +168,7 @@ export default function FloatingChat() {
       {open && (
         <div
           className="fixed bottom-20 right-5 w-80 bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-gray-100"
-          style={{ height: '460px' }}
+          style={{ height: '480px' }}
         >
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-shrink-0" style={{ background: '#F26522' }}>
@@ -98,7 +177,7 @@ export default function FloatingChat() {
             </div>
             <div className="flex-1">
               <p className="text-white font-semibold text-sm">Assistant IA</p>
-              <p className="text-white/70 text-xs">MONFLUX</p>
+              <p className="text-white/70 text-xs">Crée leads · Planifie · Répond</p>
             </div>
             <button
               onClick={() => { setOpen(false); navigate('/chat'); }}
@@ -125,21 +204,38 @@ export default function FloatingChat() {
               </div>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {m.role === 'assistant' && (
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mr-1.5 mt-0.5" style={{ background: '#F26522' }}>
-                    <span className="text-white text-xs font-bold">M</span>
+              <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                {/* Action card — shown above text for assistant messages */}
+                {m.role === 'assistant' && m.action && (
+                  <div className="w-full max-w-[90%]">
+                    <ActionCard action={m.action} result={m.actionResult} navigate={navigate} />
                   </div>
                 )}
-                <div className={`rounded-xl px-3 py-1.5 text-xs max-w-[85%] leading-relaxed ${
-                  m.role === 'user'
-                    ? 'text-white'
-                    : 'bg-gray-100 text-gray-800'
-                }`} style={m.role === 'user' ? { background: '#F26522' } : {}}>
-                  {m.content
-                    ? m.content.split('\n').map((l, j) => <span key={j}>{j > 0 && <br />}{l}</span>)
-                    : <span className="flex gap-1"><span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{animationDelay:'0ms'}}/><span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{animationDelay:'150ms'}}/><span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{animationDelay:'300ms'}}/></span>
-                  }
+                <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}>
+                  {m.role === 'assistant' && (
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mr-1.5 mt-0.5" style={{ background: '#F26522' }}>
+                      <span className="text-white text-xs font-bold">M</span>
+                    </div>
+                  )}
+                  {(m.content || (!m.action && loading && i === messages.length - 1)) && (
+                    <div
+                      className={`rounded-xl px-3 py-1.5 text-xs max-w-[85%] leading-relaxed ${
+                        m.role === 'user' ? 'text-white' : 'bg-gray-100 text-gray-800'
+                      }`}
+                      style={m.role === 'user' ? { background: '#F26522' } : {}}
+                    >
+                      {m.content
+                        ? m.content.split('\n').map((l, j) => <span key={j}>{j > 0 && <br />}{l}</span>)
+                        : (
+                          <span className="flex gap-1">
+                            <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}/>
+                            <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}/>
+                            <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}/>
+                          </span>
+                        )
+                      }
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -151,7 +247,7 @@ export default function FloatingChat() {
             <input
               ref={inputRef}
               className="input flex-1 text-sm py-1.5"
-              placeholder="Posez une question…"
+              placeholder="Question ou 'Crée un lead pour…'"
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
@@ -163,7 +259,10 @@ export default function FloatingChat() {
               onClick={() => send()}
               disabled={loading || !input.trim()}
             >
-              {loading ? <Loader2 size={13} className="animate-spin text-white" /> : <Send size={13} className="text-white" />}
+              {loading
+                ? <Loader2 size={13} className="animate-spin text-white" />
+                : <Send size={13} className="text-white" />
+              }
             </button>
           </div>
         </div>

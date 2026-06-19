@@ -134,8 +134,10 @@ export const ai = {
 };
 
 export const dashboard = {
-  summary:  () => http.get('/dashboard/summary'),
-  activity: () => http.get('/dashboard/activity'),
+  summary:       () => http.get('/dashboard/summary'),
+  activity:      () => http.get('/dashboard/activity'),
+  presence:      () => http.get('/dashboard/presence'),
+  notifications: () => http.get('/dashboard/notifications'),
 };
 
 export const dev = {

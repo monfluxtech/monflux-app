@@ -1,11 +1,13 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore, useUIStore } from '../store';
+import { dashboard as dashApi } from '../api';
 import FloatingChat from './FloatingChat';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
-  LogOut, User, ChevronRight, BookUser, BarChart3,
+  LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
+  AlertCircle, Clock, FileQuestion,
 } from 'lucide-react';
 
 const NAV = [
@@ -34,17 +36,31 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const [quickOpen, setQuickOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+  const [notifSeen, setNotifSeen] = useState(false);
   const userMenuRef = useRef(null);
+  const notifRef = useRef(null);
 
-  // Close user menu on outside click
+  // Close menus on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-        setUserMenuOpen(false);
-      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setUserMenuOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Load notifications
+  useEffect(() => {
+    const load = async () => {
+      try { const { data } = await dashApi.notifications(); setNotifs(data || []); }
+      catch {}
+    };
+    load();
+    const t = setInterval(load, 300000); // every 5 min
+    return () => clearInterval(t);
   }, []);
 
   const handleLogout = () => { logout(); navigate('/'); };
@@ -94,6 +110,57 @@ export default function Layout({ children }) {
             <Menu size={16} />
           </button>
           <div className="flex-1" />
+
+          {/* Notification bell */}
+          <div className="relative" ref={notifRef}>
+            <button
+              className="relative btn-ghost p-1.5 rounded-md"
+              onClick={() => { setNotifOpen(o => !o); setNotifSeen(true); setQuickOpen(false); setUserMenuOpen(false); }}
+              title="Notifications"
+            >
+              <Bell size={16} className={notifs.length > 0 ? 'text-gray-700' : 'text-gray-400'} />
+              {notifs.length > 0 && !notifSeen && (
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-3.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                  {notifs.length > 9 ? '9+' : notifs.length}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 top-9 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-72 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                  {notifs.length > 0 && (
+                    <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">
+                      {notifs.length}
+                    </span>
+                  )}
+                </div>
+                {notifs.length === 0 ? (
+                  <div className="px-4 py-6 text-center">
+                    <Bell size={20} className="text-gray-200 mx-auto mb-2" />
+                    <p className="text-xs text-gray-400">Aucune alerte en ce moment</p>
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {notifs.map((n, i) => {
+                      const Icon = n.type === 'invoice_overdue' ? AlertCircle : n.type === 'follow_up' ? Clock : FileQuestion;
+                      const color = n.severity === 'error' ? '#ef4444' : n.severity === 'warning' ? '#f59e0b' : '#6366f1';
+                      return (
+                        <button
+                          key={i}
+                          className="w-full text-left flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
+                          onClick={() => { navigate(n.path); setNotifOpen(false); }}
+                        >
+                          <Icon size={14} className="mt-0.5 flex-shrink-0" style={{ color }} />
+                          <p className="text-xs text-gray-700 leading-snug">{n.label}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Quick-add */}
           <div className="relative">
