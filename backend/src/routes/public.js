@@ -152,6 +152,65 @@ router.post('/quittance/:token/sign', async (req, res) => {
   }
 });
 
+// GET /api/public/change-order/:token — client views change order
+router.get('/change-order/:token', async (req, res) => {
+  try {
+    const { rows: [co] } = await query(
+      `SELECT co.*, p.name AS project_name, p.address AS project_address,
+              c.name AS company_name, c.phone AS company_phone, c.email AS company_email,
+              c.website AS company_website, c.address AS company_address
+       FROM change_orders co
+       JOIN companies c ON c.id = co.company_id
+       LEFT JOIN projects p ON p.id = co.project_id
+       WHERE co.public_token = $1`,
+      [req.params.token]
+    );
+    if (!co) return res.status(404).json({ error: 'Demande introuvable ou lien invalide' });
+    const { company_id, ...safe } = co;
+    res.json(safe);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// POST /api/public/change-order/:token/approve — client approves
+router.post('/change-order/:token/approve', async (req, res) => {
+  try {
+    const { signer_name } = req.body;
+    const { rows: [co] } = await query(
+      `SELECT id, signed_at FROM change_orders WHERE public_token = $1`,
+      [req.params.token]
+    );
+    if (!co) return res.status(404).json({ error: 'Demande introuvable' });
+    if (co.signed_at) return res.status(409).json({ error: 'Déjà approuvée' });
+
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    await query(
+      `UPDATE change_orders SET status = 'approved', signed_at = NOW(), signed_ip = $1,
+         signer_name = COALESCE($2, signer_name), updated_at = NOW()
+       WHERE public_token = $3`,
+      [ip, signer_name || null, req.params.token]
+    );
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// POST /api/public/change-order/:token/reject — client rejects
+router.post('/change-order/:token/reject', async (req, res) => {
+  try {
+    const { rows: [co] } = await query(
+      `SELECT id, signed_at FROM change_orders WHERE public_token = $1`,
+      [req.params.token]
+    );
+    if (!co) return res.status(404).json({ error: 'Demande introuvable' });
+    if (co.signed_at) return res.status(409).json({ error: 'Déjà traitée' });
+
+    await query(
+      `UPDATE change_orders SET status = 'rejected', updated_at = NOW() WHERE public_token = $1`,
+      [req.params.token]
+    );
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 // GET /api/public/portal/:token — client project progress portal
 router.get('/portal/:token', async (req, res) => {
   try {

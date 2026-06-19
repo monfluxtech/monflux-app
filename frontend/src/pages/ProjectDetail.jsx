@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -149,22 +149,29 @@ export default function ProjectDetail() {
   const [savingQuittance, setSavingQuittance] = useState(false);
   const [portalCopied, setPortalCopied] = useState(false);
   const [resettingPortal, setResettingPortal] = useState(false);
+  const [changeOrdersList, setChangeOrdersList] = useState([]);
+  const [showCOForm, setShowCOForm] = useState(false);
+  const [coForm, setCoForm] = useState({ title:'', description:'', amount:'', notes:'' });
+  const [savingCO, setSavingCO] = useState(false);
+  const [copiedCO, setCopiedCO] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
         quotesApi.list(),
         quittancesApi.list({ project_id: id }),
+        changeOrdersApi.list({ project_id: id }),
       ]);
       setProject(proj);
       setTimesheets(ts);
       setProjectInvoices(invs);
       setProjectQuotes(qs.filter(q => q.project_id === id));
       setQuittance(quits?.[0] || null);
+      setChangeOrdersList(cos || []);
       setNotes(proj.notes || '');
     } catch {} finally { setLoading(false); }
   };
@@ -236,6 +243,29 @@ export default function ProjectDetail() {
     if (!project.portal_token) return;
     navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
     setPortalCopied(true); setTimeout(() => setPortalCopied(false), 2000);
+  };
+
+  const createChangeOrder = async (e) => {
+    e.preventDefault(); setSavingCO(true);
+    try {
+      const { data } = await changeOrdersApi.create({
+        project_id: id, title: coForm.title, description: coForm.description,
+        amount: coForm.amount ? Number(coForm.amount) : 0, notes: coForm.notes,
+      });
+      setChangeOrdersList(l => [data, ...l]);
+      setShowCOForm(false); setCoForm({ title:'', description:'', amount:'', notes:'' });
+    } catch {} finally { setSavingCO(false); }
+  };
+
+  const deleteCO = async (coId) => {
+    if (!confirm('Supprimer cette demande de modification ?')) return;
+    await changeOrdersApi.delete(coId);
+    setChangeOrdersList(l => l.filter(c => c.id !== coId));
+  };
+
+  const copyCOLink = (co) => {
+    navigator.clipboard.writeText(`${FRONTEND_URL}/modification/${co.public_token}`);
+    setCopiedCO(co.id); setTimeout(() => setCopiedCO(null), 2000);
   };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
@@ -573,6 +603,96 @@ export default function ProjectDetail() {
             <div className="text-center py-4">
               <Globe size={28} className="text-gray-200 mx-auto mb-3"/>
               <p className="text-sm text-gray-400 mb-4">Le lien portail sera disponible au prochain rechargement (migration DB en cours).</p>
+            </div>
+          )}
+        </div>
+
+        {/* Change Orders */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileEdit size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Demandes de modification</h2>
+              {changeOrdersList.length > 0 && (
+                <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{changeOrdersList.length}</span>
+              )}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowCOForm(v=>!v)}>
+              <Plus size={13}/> Nouvelle
+            </button>
+          </div>
+
+          {showCOForm && (
+            <form onSubmit={createChangeOrder} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
+              <div><label className="label">Titre *</label><input className="input" value={coForm.title} onChange={e=>setCoForm(f=>({...f,title:e.target.value}))} required placeholder="Ex: Ajout d'une salle de bain"/></div>
+              <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={coForm.description} onChange={e=>setCoForm(f=>({...f,description:e.target.value}))} placeholder="Détails des travaux supplémentaires…"/></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Montant ($)</label><input className="input" type="number" step="0.01" value={coForm.amount} onChange={e=>setCoForm(f=>({...f,amount:e.target.value}))} placeholder="0"/></div>
+                <div><label className="label">Note interne</label><input className="input" value={coForm.notes} onChange={e=>setCoForm(f=>({...f,notes:e.target.value}))}/></div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary flex-1 text-sm" onClick={()=>setShowCOForm(false)}>Annuler</button>
+                <button type="submit" className="btn-primary flex-1 text-sm" disabled={savingCO}>{savingCO&&<Loader2 size={13} className="animate-spin"/>} Créer</button>
+              </div>
+            </form>
+          )}
+
+          {changeOrdersList.length === 0 && !showCOForm ? (
+            <div className="text-center py-5">
+              <FileEdit size={28} className="text-gray-200 mx-auto mb-2"/>
+              <p className="text-sm text-gray-400">Aucune demande de modification. Créez-en une pour tout changement de portée de projet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {changeOrdersList.map(co => {
+                const statusColor = co.status==='approved'?'text-green-600':co.status==='rejected'?'text-red-500':co.status==='sent'?'text-blue-500':'text-gray-400';
+                const statusLabel = co.status==='approved'?'Approuvée':co.status==='rejected'?'Refusée':co.status==='sent'?'Envoyée':'Brouillon';
+                return (
+                  <div key={co.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status==='approved'?'bg-green-500':co.status==='rejected'?'bg-red-400':co.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{co.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
+                        {co.amount > 0 && <span className="text-xs text-gray-400">+{Number(co.amount).toLocaleString('fr-CA')}$</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors"
+                        title={copiedCO===co.id?'Copié!':'Copier le lien client'}
+                        onClick={()=>copyCOLink(co)}
+                      >
+                        {copiedCO===co.id?<CheckCheck size={13} className="text-green-500"/>:<Copy size={13}/>}
+                      </button>
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici une demande de modification à approuver : ${FRONTEND_URL}/modification/${co.public_token}`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-white transition-colors"
+                        title="Envoyer par WhatsApp"
+                        onClick={async()=>{ if(co.status==='draft') await changeOrdersApi.update(co.id,{status:'sent'}).then(()=>setChangeOrdersList(l=>l.map(c=>c.id===co.id?{...c,status:'sent'}:c))); }}
+                      >
+                        <MessageCircle size={13}/>
+                      </a>
+                      <a
+                        href={`${FRONTEND_URL}/modification/${co.public_token}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors"
+                        title="Aperçu"
+                      >
+                        <ExternalLink size={13}/>
+                      </a>
+                      <button
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-white transition-colors"
+                        onClick={()=>deleteCO(co.id)}
+                        title="Supprimer"
+                      >
+                        <Trash2 size={13}/>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

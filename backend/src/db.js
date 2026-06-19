@@ -34,6 +34,26 @@ async function applyMigrations() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`,
     `CREATE UNIQUE INDEX IF NOT EXISTS projects_portal_token_idx ON projects(portal_token) WHERE portal_token IS NOT NULL`,
 
+    // Change orders — demandes de modification signées par le client (added 2026-06)
+    `CREATE TABLE IF NOT EXISTS change_orders (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
+      title           TEXT NOT NULL,
+      description     TEXT,
+      amount          NUMERIC(12,2) DEFAULT 0,
+      public_token    UUID NOT NULL DEFAULT gen_random_uuid(),
+      status          TEXT NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft','sent','approved','rejected')),
+      signed_at       TIMESTAMPTZ,
+      signed_ip       TEXT,
+      signer_name     TEXT,
+      notes           TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS change_orders_token_idx ON change_orders(public_token)`,
+
     // Quittances — Quebec satisfaction certificates (added 2026-06)
     `CREATE TABLE IF NOT EXISTS quittances (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

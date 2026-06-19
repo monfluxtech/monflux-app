@@ -148,6 +148,13 @@ export const quittances = {
   delete: (id)        => http.delete(`/quittances/${id}`),
 };
 
+export const changeOrders = {
+  list:   (params)    => http.get('/change-orders', { params }),
+  create: (data)      => http.post('/change-orders', data),
+  update: (id, data)  => http.patch(`/change-orders/${id}`, data),
+  delete: (id)        => http.delete(`/change-orders/${id}`),
+};
+
 export const dev = {
   plans:   ()            => http.get('/dev/plans'),
   current: ()            => http.get('/dev/current'),
