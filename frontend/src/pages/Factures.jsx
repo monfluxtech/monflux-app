@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import SlideOver from '../components/SlideOver';
 import { useToast } from '../components/Toast';
 import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi, email as emailApi } from '../api';
 import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2, MessageCircle, Bell } from 'lucide-react';
@@ -37,10 +38,21 @@ function CreateModal({ projects, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="font-semibold text-gray-900 mb-4">Nouvelle facture</h2>
-        <form onSubmit={submit} className="space-y-3">
+    <SlideOver
+      title="Nouvelle facture"
+      subtitle="Facture avec TPS/TVQ"
+      width="max-w-lg"
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="create-invoice-form" className="btn-primary flex-1" disabled={saving}>
+            {saving && <Loader2 size={14} className="animate-spin"/>} Créer
+          </button>
+        </div>
+      }
+    >
+        <form id="create-invoice-form" onSubmit={submit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Client *</label><input className="input" value={form.client_name} onChange={f('client_name')} required /></div>
             <div><label className="label">Courriel client</label><input className="input" type="email" value={form.client_email} onChange={f('client_email')} /></div>
@@ -78,15 +90,8 @@ function CreateModal({ projects, onClose, onSave }) {
               <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 pt-1"><span>Total</span><span>{(subtotal+taxes).toFixed(2)}$</span></div>
             </div>
           )}
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving && <Loader2 size={14} className="animate-spin"/>} Créer
-            </button>
-          </div>
         </form>
-      </div>
-    </div>
+    </SlideOver>
   );
 }
 
@@ -151,25 +156,28 @@ function EditModal({ inv, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Modifier la facture</h2>
-        <form onSubmit={submit} className="space-y-3">
-          <div><label className="label">Statut</label>
-            <select className="input" value={status} onChange={e=>setStatus(e.target.value)}>
-              {Object.entries(SL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div><label className="label">Échéance</label><input className="input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <SlideOver
+      title="Modifier la facture"
+      subtitle={inv.number ? `Facture ${inv.number}` : undefined}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="edit-invoice-form" className="btn-primary flex-1" disabled={saving}>
+            {saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer
+          </button>
+        </div>
+      }
+    >
+      <form id="edit-invoice-form" onSubmit={submit} className="space-y-3">
+        <div><label className="label">Statut</label>
+          <select className="input" value={status} onChange={e=>setStatus(e.target.value)}>
+            {Object.entries(SL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div><label className="label">Échéance</label><input className="input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
+      </form>
+    </SlideOver>
   );
 }
 

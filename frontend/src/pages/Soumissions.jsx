@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import SlideOver from '../components/SlideOver';
 import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi, ai as aiApi, email as emailApi } from '../api';
 import { useToast } from '../components/Toast';
 import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download, Sparkles, Mail, Link2, MessageCircle } from 'lucide-react';
@@ -53,10 +54,21 @@ function CreateModal({ leads, onClose, onSave, initialTitle = '', initialLeadId 
   const subtotal = form.items.reduce((s,it)=>s+(Number(it.qty)||1)*(Number(it.unit_price)||0),0);
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="font-semibold text-gray-900 mb-4">Nouvelle soumission</h2>
-        <form onSubmit={submit} className="space-y-3">
+    <SlideOver
+      title="Nouvelle soumission"
+      subtitle="Devis détaillé ou formulaire terrain"
+      width="max-w-lg"
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="create-quote-form" className="btn-primary flex-1" disabled={saving}>
+            {saving && <Loader2 size={14} className="animate-spin"/>} Créer
+          </button>
+        </div>
+      }
+    >
+      <form id="create-quote-form" onSubmit={submit} className="space-y-3">
           <div><label className="label">Titre *</label><input className="input" value={form.title} onChange={f('title')} required /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Type</label>
@@ -130,15 +142,8 @@ function CreateModal({ leads, onClose, onSave, initialTitle = '', initialLeadId 
               )}
             </div>
           )}
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving && <Loader2 size={14} className="animate-spin"/>} Créer
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </SlideOver>
   );
 }
 
@@ -178,10 +183,21 @@ function EditModal({ quote, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="font-semibold text-gray-900 mb-4">Modifier la soumission</h2>
-        <form onSubmit={submit} className="space-y-3">
+    <SlideOver
+      title="Modifier la soumission"
+      subtitle={title || undefined}
+      width="max-w-lg"
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="edit-quote-form" className="btn-primary flex-1" disabled={saving}>
+            {saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer
+          </button>
+        </div>
+      }
+    >
+      <form id="edit-quote-form" onSubmit={submit} className="space-y-3">
           <div><label className="label">Titre</label><input className="input" value={title} onChange={e=>setTitle(e.target.value)} /></div>
           <div><label className="label">Statut</label>
             <select className="input" value={status} onChange={e=>setStatus(e.target.value)}>
@@ -217,15 +233,8 @@ function EditModal({ quote, onClose, onSave }) {
             )}
           </div>
 
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </SlideOver>
   );
 }
 

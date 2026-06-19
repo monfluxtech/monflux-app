@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import SlideOver from '../components/SlideOver';
 import { leads as leadsApi, quotes as quotesApi } from '../api';
 import { Plus, Loader2, Phone, Mail, Pencil, Trash2, FileText, ClipboardList, FolderKanban, Bell, BellOff } from 'lucide-react';
 
@@ -33,10 +34,19 @@ function LeadModal({ lead, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="font-semibold text-gray-900 mb-4">{lead ? 'Modifier' : 'Nouveau lead'}</h2>
-        <form onSubmit={submit} className="space-y-3">
+    <SlideOver
+      title={lead ? 'Modifier le lead' : 'Nouveau lead'}
+      subtitle={lead ? form.title : 'Ajouter un client potentiel'}
+      width="max-w-lg"
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="lead-form" className="btn-primary flex-1" disabled={saving}>{saving&&<Loader2 size={14} className="animate-spin"/>} {lead?'Enregistrer':'Créer'}</button>
+        </div>
+      }
+    >
+        <form id="lead-form" onSubmit={submit} className="space-y-3">
           <div><label className="label">Titre du projet *</label><input className="input" value={form.title} onChange={f('title')} required /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Nom du client</label><input className="input" value={form.contact_name} onChange={f('contact_name')} /></div>
@@ -65,13 +75,8 @@ function LeadModal({ lead, onClose, onSave }) {
             </div>
           </div>
           <div><label className="label">Notes</label><textarea className="input" rows={2} value={form.description} onChange={f('description')}/></div>
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>{saving&&<Loader2 size={14} className="animate-spin"/>} {lead?'Enregistrer':'Créer'}</button>
-          </div>
         </form>
-      </div>
-    </div>
+    </SlideOver>
   );
 }
 

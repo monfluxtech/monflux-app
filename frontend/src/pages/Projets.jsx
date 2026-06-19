@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import SlideOver from '../components/SlideOver';
 import { projects as projectsApi } from '../api';
 import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon } from 'lucide-react';
 
@@ -116,24 +117,27 @@ function ProjectModal({ project, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-md">
-        <h2 className="font-semibold text-gray-900 mb-4">{project?'Modifier le projet':'Nouveau projet'}</h2>
-        <form onSubmit={submit} className="space-y-3">
-          <div><label className="label">Nom du projet *</label><input className="input" value={form.name} onChange={f('name')} required/></div>
-          <div><label className="label">Adresse du chantier</label><input className="input" placeholder="123 rue Principale, Montréal" value={form.address} onChange={f('address')}/></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')}/></div>
-            <div><label className="label">Fin prévue</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')}/></div>
-          </div>
-          <div><label className="label">Valeur du contrat ($)</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')}/></div>
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>{saving&&<Loader2 size={14} className="animate-spin"/>} {project?'Enregistrer':'Créer'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <SlideOver
+      title={project ? 'Modifier le projet' : 'Nouveau projet'}
+      subtitle={project ? project.name : 'Créer un nouveau chantier'}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="submit" form="project-form" className="btn-primary flex-1" disabled={saving}>{saving&&<Loader2 size={14} className="animate-spin"/>} {project?'Enregistrer':'Créer'}</button>
+        </div>
+      }
+    >
+      <form id="project-form" onSubmit={submit} className="space-y-3">
+        <div><label className="label">Nom du projet *</label><input className="input" value={form.name} onChange={f('name')} required/></div>
+        <div><label className="label">Adresse du chantier</label><input className="input" placeholder="123 rue Principale, Montréal" value={form.address} onChange={f('address')}/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')}/></div>
+          <div><label className="label">Fin prévue</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')}/></div>
+        </div>
+        <div><label className="label">Valeur du contrat ($)</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')}/></div>
+      </form>
+    </SlideOver>
   );
 }
 
