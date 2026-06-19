@@ -120,6 +120,11 @@ export const pdf = {
   invoiceUrl: (id) => `${BASE}/pdf/invoice/${id}`,
 };
 
+export const email = {
+  sendQuote:   (id, data) => http.post(`/email/quote/${id}`, data),
+  sendInvoice: (id, data) => http.post(`/email/invoice/${id}`, data),
+};
+
 export const ai = {
   healthCheck:  ()       => http.get('/ai/health-check'),
   estimate:     (data)   => http.post('/ai/estimate', data),

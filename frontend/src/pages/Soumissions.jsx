@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi } from '../api';
-import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download } from 'lucide-react';
+import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi, ai as aiApi, email as emailApi } from '../api';
+import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download, Sparkles, Mail } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
@@ -11,12 +11,33 @@ const STATUSES = ['draft','sent','viewed','signed','rejected','expired'];
 function CreateModal({ leads, onClose, onSave }) {
   const [form, setForm] = useState({ lead_id:'', title:'', format:'pdf', items:[{name:'',qty:1,unit:'un.',unit_price:''}] });
   const [saving, setSaving] = useState(false);
+  const [aiDesc, setAiDesc] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
   const isField = form.format === 'field_estimate';
   const f = k => e => setForm(p => ({...p,[k]:e.target.value}));
 
   const addItem = () => setForm(p=>({...p,items:[...p.items,{name:'',qty:1,unit:'un.',unit_price:''}]}));
   const removeItem = i => setForm(p=>({...p,items:p.items.filter((_,idx)=>idx!==i)}));
   const setItem = (i,k,v) => setForm(p=>({...p,items:p.items.map((it,idx)=>idx===i?{...it,[k]:v}:it)}));
+
+  const runAI = async () => {
+    if (!aiDesc.trim()) return;
+    setAiLoading(true);
+    try {
+      const { data } = await aiApi.estimate({ description: aiDesc, project_type: 'residential' });
+      if (data.items?.length) {
+        const mapped = data.items.map(it => ({
+          name: it.name,
+          qty: it.qty || 1,
+          unit: it.unit || 'un.',
+          unit_price: it.unit_price_estimate || 0,
+        }));
+        setForm(p => ({ ...p, items: mapped }));
+        if (!form.title) setForm(p => ({ ...p, title: aiDesc.slice(0, 60) }));
+      }
+    } catch { alert('Erreur estimation IA. Vérifiez que ANTHROPIC_API_KEY est configuré.'); }
+    finally { setAiLoading(false); }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -50,6 +71,35 @@ function CreateModal({ leads, onClose, onSave }) {
               </select>
             </div>
           </div>
+
+          {/* AI Estimation */}
+          {!isField && (
+            <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Sparkles size={13} className="text-brand" />
+                <span className="text-xs font-semibold text-brand">Estimation IA — auto-remplir les lignes</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1 text-sm"
+                  placeholder="Ex: Rénovation cuisine 200 pi², armoires, comptoir, plomberie…"
+                  value={aiDesc}
+                  onChange={e => setAiDesc(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), runAI())}
+                />
+                <button
+                  type="button"
+                  className="btn-primary flex-shrink-0 text-xs"
+                  onClick={runAI}
+                  disabled={aiLoading || !aiDesc.trim()}
+                >
+                  {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  Générer
+                </button>
+              </div>
+            </div>
+          )}
+
           {isField ? (
             <div className="grid grid-cols-2 gap-3">
               <div><label className="label">Budget min ($)</label><input className="input" type="number" value={form.budget_min||''} onChange={f('budget_min')} /></div>
@@ -130,10 +180,11 @@ function EditModal({ quote, onClose, onSave }) {
 
 export default function Soumissions() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [leadList, setLeadList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(searchParams.get('new') === '1');
   const [editItem, setEditItem] = useState(null);
   const [converting, setConverting] = useState(null);
 
@@ -209,15 +260,20 @@ export default function Soumissions() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <a
-                      href={pdfApi.quoteUrl(q.id)}
-                      target="_blank" rel="noreferrer"
+                    <button
                       className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
                       title="Télécharger PDF"
-                      onClick={e => { const tok = localStorage.getItem('token'); if(tok){ e.preventDefault(); const url = pdfApi.quoteUrl(q.id); fetch(url,{headers:{Authorization:`Bearer ${tok}`}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`soumission-${q.id.slice(0,8)}.pdf`;a.click();}); }}}
+                      onClick={() => { const tok = localStorage.getItem('token'); const url = pdfApi.quoteUrl(q.id); fetch(url,{headers:{Authorization:`Bearer ${tok}`}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`soumission-${q.id.slice(0,8)}.pdf`;a.click();}); }}
                     >
                       <Download size={13}/>
-                    </a>
+                    </button>
+                    <button
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
+                      title="Envoyer par courriel"
+                      onClick={() => { const to = prompt('Adresse courriel du client :'); if(to) emailApi.sendQuote(q.id,{to}).then(()=>alert(`Envoyé à ${to}`)).catch(e=>alert(e.response?.data?.detail||'Erreur envoi')); }}
+                    >
+                      <Mail size={13}/>
+                    </button>
                     {q.status === 'signed' && (
                       <button
                         className="btn-primary text-xs py-1 px-2 gap-1"

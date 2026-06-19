@@ -21,6 +21,7 @@ import aiRoutes         from './routes/ai.js';
 import devRoutes        from './routes/dev.js';
 import docsRoutes       from './routes/documents.js';
 import pdfRoutes        from './routes/pdf.js';
+import emailRoutes      from './routes/email.js';
 
 dotenv.config();
 
@@ -69,6 +70,7 @@ app.use('/api/chat',        chatRoutes);
 app.use('/api/ai',          aiRoutes);
 app.use('/api/documents',   docsRoutes);
 app.use('/api/pdf',         pdfRoutes);
+app.use('/api/email',      emailRoutes);
 
 // ── DEV ONLY — plan switcher ────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {

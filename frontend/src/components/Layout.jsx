@@ -1,9 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuthStore, useUIStore } from '../store';
+import FloatingChat from './FloatingChat';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
-  HardHat, QrCode, MessageSquare, Settings, LogOut, Menu, Moon, Sun, Plus, X
+  HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
+  LogOut, User, ChevronRight,
 } from 'lucide-react';
 
 const NAV = [
@@ -14,15 +16,14 @@ const NAV = [
   { to: '/factures',        icon: Receipt,         label: 'Factures' },
   { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
   { to: '/punch',           icon: QrCode,          label: 'Pointage QR' },
-  { to: '/chat',            icon: MessageSquare,   label: 'Assistant IA' },
   { to: '/parametres',      icon: Settings,        label: 'Paramètres' },
 ];
 
 const QUICK = [
-  { label:'Nouveau lead',        path:'/leads?new=1' },
-  { label:'Nouvelle soumission', path:'/soumissions?new=1' },
-  { label:'Nouveau projet',      path:'/projets?new=1' },
-  { label:'Pointer un chantier', path:'/punch' },
+  { label: 'Nouveau lead',        path: '/leads?new=1' },
+  { label: 'Nouvelle soumission', path: '/soumissions?new=1' },
+  { label: 'Nouveau projet',      path: '/projets?new=1' },
+  { label: 'Pointer un chantier', path: '/punch' },
 ];
 
 export default function Layout({ children }) {
@@ -30,8 +31,22 @@ export default function Layout({ children }) {
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
   const navigate = useNavigate();
   const [quickOpen, setQuickOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleLogout = () => { logout(); navigate('/'); };
+  const initials = (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase();
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -39,7 +54,7 @@ export default function Layout({ children }) {
       <aside className={`${sidebarOpen ? 'w-56' : 'w-14'} flex-shrink-0 bg-white border-r border-gray-100 flex flex-col transition-all duration-200`}>
         {/* Logo */}
         <div className="flex items-center gap-2 px-3 py-4 border-b border-gray-100">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{background:'#F26522'}}>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#F26522' }}>
             <span className="text-white font-bold text-xs">M</span>
           </div>
           {sidebarOpen && <span className="font-bold text-gray-900 text-sm">MONFLUX</span>}
@@ -60,15 +75,11 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        {/* Footer */}
+        {/* Sidebar footer */}
         <div className="px-2 py-3 border-t border-gray-100 space-y-0.5">
           <button onClick={toggleDark} className="nav-item w-full" title="Mode sombre">
-            {darkMode ? <Sun size={16}/> : <Moon size={16}/>}
+            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
             {sidebarOpen && <span>{darkMode ? 'Mode clair' : 'Mode sombre'}</span>}
-          </button>
-          <button onClick={handleLogout} className="nav-item w-full text-red-500 hover:bg-red-50 hover:text-red-600" title="Déconnexion">
-            <LogOut size={16}/>
-            {sidebarOpen && <span>Déconnexion</span>}
           </button>
         </div>
       </aside>
@@ -78,33 +89,86 @@ export default function Layout({ children }) {
         {/* Topbar */}
         <header className="h-12 bg-white border-b border-gray-100 flex items-center gap-3 px-4 flex-shrink-0">
           <button onClick={toggleSidebar} className="btn-ghost p-1.5 rounded-md">
-            <Menu size={16}/>
+            <Menu size={16} />
           </button>
           <div className="flex-1" />
+
           {/* Quick-add */}
           <div className="relative">
             <button
               className="w-7 h-7 rounded-lg flex items-center justify-center text-white flex-shrink-0 shadow-sm"
-              style={{background:'#F26522'}}
-              onClick={() => setQuickOpen(o=>!o)}
+              style={{ background: '#F26522' }}
+              onClick={() => { setQuickOpen(o => !o); setUserMenuOpen(false); }}
               title="Actions rapides"
             >
-              {quickOpen ? <X size={14}/> : <Plus size={14}/>}
+              {quickOpen ? <X size={14} /> : <Plus size={14} />}
             </button>
             {quickOpen && (
               <div className="absolute right-0 top-9 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1 w-48">
                 {QUICK.map(q => (
-                  <button key={q.path} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-brand transition-colors"
-                    onClick={() => { navigate(q.path); setQuickOpen(false); }}>
+                  <button
+                    key={q.path}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-brand transition-colors"
+                    onClick={() => { navigate(q.path); setQuickOpen(false); }}
+                  >
                     {q.label}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          {user?.name && <span className="text-xs text-gray-500 hidden sm:block">{user.name}</span>}
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0" style={{background:'#111827'}}>
-            {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+
+          {/* User avatar + dropdown */}
+          <div className="relative" ref={userMenuRef}>
+            <button
+              onClick={() => { setUserMenuOpen(o => !o); setQuickOpen(false); }}
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-gray-50 transition-colors"
+              title="Mon compte"
+            >
+              {user?.name && <span className="text-xs text-gray-500 hidden sm:block">{user.name}</span>}
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0"
+                style={{ background: '#111827' }}
+              >
+                {initials}
+              </div>
+            </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 top-10 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-1 w-52">
+                {/* User info header */}
+                <div className="px-4 py-2.5 border-b border-gray-50">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{user?.name || 'Mon compte'}</p>
+                  <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+                </div>
+
+                <button
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => { navigate('/parametres?tab=profil'); setUserMenuOpen(false); }}
+                >
+                  <User size={14} className="text-gray-400" />
+                  Mon profil
+                </button>
+
+                <button
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => { navigate('/parametres'); setUserMenuOpen(false); }}
+                >
+                  <Settings size={14} className="text-gray-400" />
+                  Paramètres
+                </button>
+
+                <div className="my-1 border-t border-gray-100" />
+
+                <button
+                  className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
+                  onClick={handleLogout}
+                >
+                  <LogOut size={14} />
+                  Déconnexion
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -113,6 +177,9 @@ export default function Layout({ children }) {
           {children}
         </main>
       </div>
+
+      {/* Floating AI chat */}
+      <FloatingChat />
     </div>
   );
 }
