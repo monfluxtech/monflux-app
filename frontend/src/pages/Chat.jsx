@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { ai } from '../api';
-import { Send, Loader2, Plus, Sparkles } from 'lucide-react';
+import { Send, Loader2, Plus, Sparkles, Mic, ImagePlus } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
 
@@ -25,6 +25,50 @@ export default function Chat() {
   const [usage, setUsage] = useState(null);
   const [quotaHit, setQuotaHit] = useState(false);
   const [buying, setBuying] = useState(false);
+  const [pendingImage, setPendingImage] = useState(null); // { media_type, data, url }
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const fileRef = useRef(null);
+
+  // Voice input via the browser Web Speech API (no backend, fr-CA)
+  const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const toggleVoice = () => {
+    if (!SpeechRec) { alert("La saisie vocale n'est pas supportée par ce navigateur. Essayez Chrome."); return; }
+    if (listening) { recognitionRef.current?.stop(); return; }
+    const rec = new SpeechRec();
+    rec.lang = 'fr-CA';
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t; else interim += t;
+      }
+      setInput((finalText + interim).trim());
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  // Photo attachment — read as base64 for Claude vision
+  const onPickImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Image trop volumineuse (max 5 Mo).'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const base64 = String(dataUrl).split(',')[1];
+      setPendingImage({ media_type: file.type, data: base64, url: dataUrl });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const loadUsage = () => ai.usage().then(({ data }) => setUsage(data)).catch(() => {});
   useEffect(() => { loadUsage(); }, []);
@@ -54,9 +98,22 @@ export default function Chat() {
   };
 
   const send = async (text) => {
-    const content = text || input.trim();
-    if (!content || loading) return;
+    const typed = text || input.trim();
+    const img = pendingImage;
+    if ((!typed && !img) || loading) return;
     setInput('');
+    setPendingImage(null);
+
+    // Build message content: array of blocks when an image is attached, else a plain string
+    let content;
+    if (img) {
+      content = [];
+      if (typed) content.push({ type: 'text', text: typed });
+      content.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
+    } else {
+      content = typed;
+    }
+
     const userMsg = { role: 'user', content };
     const next = [...messages, userMsg];
     setMessages(next);
@@ -186,28 +243,72 @@ export default function Chat() {
                   </div>
                 )}
                 <div className={m.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}>
-                  {m.content
-                    ? m.content.split('\n').map((l, j) => <p key={j} className={j>0?'mt-1':''}>{l}</p>)
-                    : <span className="flex gap-1 py-0.5"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
-                  }
+                  {Array.isArray(m.content) ? (
+                    <div className="space-y-2">
+                      {m.content.map((block, j) =>
+                        block.type === 'image' ? (
+                          <img
+                            key={j}
+                            src={`data:${block.source.media_type};base64,${block.source.data}`}
+                            alt="Photo"
+                            className="rounded-lg max-w-[220px] max-h-[220px] object-cover"
+                          />
+                        ) : (
+                          block.text?.split('\n').map((l, k) => <p key={`${j}-${k}`} className={k>0?'mt-1':''}>{l}</p>)
+                        )
+                      )}
+                    </div>
+                  ) : m.content ? (
+                    m.content.split('\n').map((l, j) => <p key={j} className={j>0?'mt-1':''}>{l}</p>)
+                  ) : (
+                    <span className="flex gap-1 py-0.5"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
+                  )}
                 </div>
               </div>
             ))}
             <div ref={bottomRef} />
           </div>
 
+          {/* Image preview */}
+          {pendingImage && (
+            <div className="px-5 pt-3 flex items-center gap-2">
+              <div className="relative">
+                <img src={pendingImage.url} alt="Aperçu" className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
+                <button
+                  onClick={() => setPendingImage(null)}
+                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs"
+                  title="Retirer"
+                >×</button>
+              </div>
+              <span className="text-xs text-gray-400">Photo prête à envoyer</span>
+            </div>
+          )}
+
           {/* Input */}
-          <div className="px-5 py-3 border-t border-gray-100 flex gap-2">
+          <div className="px-5 py-3 border-t border-gray-100 flex gap-2 items-center">
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickImage} />
+            <button
+              className="flex-shrink-0 w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-brand hover:border-brand transition-colors"
+              onClick={() => fileRef.current?.click()}
+              title="Joindre une photo"
+              disabled={loading}
+            ><ImagePlus size={16} /></button>
+            <button
+              className={`flex-shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${listening ? 'border-red-400 text-red-500 bg-red-50 animate-pulse' : 'border-gray-200 text-gray-400 hover:text-brand hover:border-brand'}`}
+              onClick={toggleVoice}
+              title={listening ? 'Arrêter' : 'Dictée vocale'}
+              disabled={loading}
+            ><Mic size={16} /></button>
             <input
               className="input flex-1"
-              placeholder="Écrivez votre message…"
+              placeholder={listening ? 'Parlez…' : 'Écrivez, dictez, ou joignez une photo…'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
               disabled={loading}
               autoFocus
             />
-            <button className="btn-primary flex-shrink-0" onClick={() => send()} disabled={loading || !input.trim()}>
+            <button className="btn-primary flex-shrink-0" onClick={() => send()} disabled={loading || (!input.trim() && !pendingImage)}>
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           </div>
