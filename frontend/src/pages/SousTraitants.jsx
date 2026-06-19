@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import { subcontractors as subsApi } from '../api';
-import { Plus, Loader2, HardHat, Star, Phone, Mail, Pencil, Trash2 } from 'lucide-react';
+import { subcontractors as subsApi, rfqs as rfqsApi, projects as projectsApi } from '../api';
+import { Plus, Loader2, HardHat, Star, Phone, Mail, Pencil, Trash2, MessageCircle, Send } from 'lucide-react';
 
 const EMPTY = { name:'', company_name:'', email:'', phone:'', whatsapp:'', specialties:'', hourly_rate:'', rbq_number:'' };
 
@@ -54,16 +54,90 @@ function SubModal({ sub, onClose, onSave }) {
   );
 }
 
+function RFQModal({ sub, projects, onClose }) {
+  const [form, setForm] = useState({ project_id:'', title:'', description:'', specialty: Array.isArray(sub.specialties)?sub.specialties[0]||'':sub.specialties||'', deadline:'' });
+  const [saving, setSaving] = useState(false);
+  const [sent, setSent] = useState(false);
+  const f = k => e => setForm(p=>({...p,[k]:e.target.value}));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const { data: rfq } = await rfqsApi.create({ ...form, project_id: form.project_id||null });
+      await rfqsApi.invite(rfq.id, [sub.id]);
+      setSent(true);
+    } catch {} finally { setSaving(false); }
+  };
+
+  if (sent) return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-sm text-center py-8">
+        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+          <Send size={20} className="text-green-600" />
+        </div>
+        <p className="font-semibold text-gray-900 mb-1">Demande envoyée!</p>
+        <p className="text-sm text-gray-400 mb-4">La demande de prix a été créée pour {sub.name}.</p>
+        {sub.whatsapp && (
+          <a
+            href={`https://wa.me/${sub.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(`Bonjour ${sub.name},\n\nNous aimerions obtenir votre prix pour : ${form.title}.\n\n${form.description}\n\nMerci!`)}`}
+            target="_blank" rel="noreferrer"
+            className="btn-primary inline-flex items-center gap-2 mb-3"
+          >
+            <MessageCircle size={14}/> Envoyer sur WhatsApp
+          </a>
+        )}
+        <br/>
+        <button className="btn-ghost text-sm mt-2" onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-md">
+        <h2 className="font-semibold text-gray-900 mb-1">Demande de prix</h2>
+        <p className="text-xs text-gray-400 mb-4">Pour : {sub.name}</p>
+        <form onSubmit={submit} className="space-y-3">
+          <div><label className="label">Titre de la demande *</label><input className="input" value={form.title} onChange={f('title')} required placeholder="Électricité phase 1 — Cuisine…" /></div>
+          <div><label className="label">Projet lié</label>
+            <select className="input" value={form.project_id} onChange={f('project_id')}>
+              <option value="">— Aucun —</option>
+              {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Description / Portée des travaux</label><textarea className="input" rows={3} value={form.description} onChange={f('description')} placeholder="Détails des travaux demandés…" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Spécialité</label><input className="input" value={form.specialty} onChange={f('specialty')} /></div>
+            <div><label className="label">Date limite</label><input className="input" type="date" value={form.deadline} onChange={f('deadline')} /></div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn-primary flex-1" disabled={saving}>
+              {saving ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>} Envoyer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function SousTraitants() {
   const [items, setItems] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [rfqSub, setRfqSub] = useState(null);
 
   const load = async () => {
     setLoading(true);
-    try { const { data } = await subsApi.list(); setItems(data); }
-    catch {} finally { setLoading(false); }
+    try {
+      const [{ data: subs }, { data: projs }] = await Promise.all([subsApi.list(), projectsApi.list()]);
+      setItems(subs);
+      setProjects(projs.filter(p=>p.status==='active'));
+    } catch {} finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -91,6 +165,7 @@ export default function SousTraitants() {
 
         {showNew && <SubModal onClose={()=>setShowNew(false)} onSave={handleSave} />}
         {editItem && <SubModal sub={editItem} onClose={()=>setEditItem(null)} onSave={handleSave} />}
+        {rfqSub && <RFQModal sub={rfqSub} projects={projects} onClose={()=>setRfqSub(null)} />}
 
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
@@ -118,12 +193,29 @@ export default function SousTraitants() {
                     {s.specialties.map(sp => <span key={sp} className="badge badge-orange">{sp}</span>)}
                   </div>
                 )}
-                <div className="flex gap-3 text-xs text-gray-400">
-                  {s.phone && <span className="flex items-center gap-1"><Phone size={11}/>{s.phone}</span>}
-                  {s.email && <span className="flex items-center gap-1 truncate"><Mail size={11}/>{s.email}</span>}
+                <div className="flex gap-2 text-xs text-gray-400 flex-wrap mb-2">
+                  {s.phone && <a href={`tel:${s.phone}`} className="flex items-center gap-1 hover:text-green-600"><Phone size={11}/>{s.phone}</a>}
+                  {s.email && <a href={`mailto:${s.email}`} className="flex items-center gap-1 hover:text-brand truncate"><Mail size={11}/>{s.email}</a>}
                   {s.hourly_rate && <span className="ml-auto font-medium text-gray-700">{s.hourly_rate}$/h</span>}
                 </div>
-                {s.rbq_number && <p className="text-xs text-gray-300 mt-1">RBQ : {s.rbq_number}</p>}
+                {s.rbq_number && <p className="text-xs text-gray-300 mb-2">RBQ : {s.rbq_number}</p>}
+                <div className="flex gap-2 pt-1 border-t border-gray-50">
+                  {s.whatsapp && (
+                    <a
+                      href={`https://wa.me/${s.whatsapp.replace(/\D/g,'')}`}
+                      target="_blank" rel="noreferrer"
+                      className="btn-ghost text-xs py-1 px-2 text-green-600 hover:bg-green-50 flex items-center gap-1"
+                    >
+                      <MessageCircle size={12}/> WhatsApp
+                    </a>
+                  )}
+                  <button
+                    className="btn-ghost text-xs py-1 px-2 flex items-center gap-1 ml-auto"
+                    onClick={()=>setRfqSub(s)}
+                  >
+                    <Send size={12}/> Demande de prix
+                  </button>
+                </div>
               </div>
             ))}
             {items.length === 0 && (
