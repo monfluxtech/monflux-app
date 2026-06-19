@@ -155,7 +155,7 @@ export default function Factures() {
 
   const markPaid = async (inv) => {
     if (!confirm(`Marquer la facture ${inv.number} comme payée ?`)) return;
-    const { data } = await invoicesApi.update(inv.id, { status: 'paid', amount_due: 0 });
+    const { data } = await invoicesApi.update(inv.id, { status: 'paid', amount_due: 0, paid_at: new Date().toISOString(), amount_paid: inv.total });
     setItems(i => i.map(x => x.id === data.id ? { ...x, ...data } : x));
     toast('Facture marquée comme payée', 'success');
   };

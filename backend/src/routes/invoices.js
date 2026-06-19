@@ -5,6 +5,13 @@ const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
 router.get('/', async (req, res) => {
+  // Auto-mark overdue invoices before returning
+  await query(
+    `UPDATE invoices SET status = 'overdue', updated_at = NOW()
+     WHERE company_id = $1 AND due_date < CURRENT_DATE AND status IN ('sent','viewed','partial')`,
+    [req.company_id]
+  );
+
   const { status, project_id } = req.query;
   let sql = `SELECT * FROM invoices WHERE company_id = $1`;
   const params = [req.company_id];
@@ -58,7 +65,7 @@ router.post('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const allowed = ['status','due_date','notes','next_reminder_at'];
+  const allowed = ['status','due_date','notes','next_reminder_at','amount_due','amount_paid','paid_at','payment_method'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.params.id, req.company_id];

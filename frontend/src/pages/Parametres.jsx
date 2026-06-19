@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { auth as authApi, companies } from '../api';
 import { useAuthStore, useDevStore } from '../store';
-import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save } from 'lucide-react';
+import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2 } from 'lucide-react';
 
 const LEAD_SOURCES = [
   { key: 'soumissions_reno', label: 'SoumissionsRenovations.ca', desc: 'Scraping des leads publics sur le site (nécessite accord avec le site)' },
@@ -144,6 +144,72 @@ function LeadSourcesTab() {
   );
 }
 
+function CompanyTab() {
+  const { company: storeCompany, token, user, plan, setAuth } = useAuthStore();
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    companies.get().then(({ data }) => setForm({
+      name: data.name || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      address: data.address || '',
+      city: data.city || '',
+      postal_code: data.postal_code || '',
+      tps_number: data.tps_number || '',
+      tvq_number: data.tvq_number || '',
+      website: data.website || '',
+    })).catch(() => {});
+  }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await companies.update(form);
+      setAuth({ token, user, company: { ...storeCompany, ...form }, plan });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {} finally { setSaving(false); }
+  };
+
+  if (!form) return <div className="flex items-center gap-2 text-gray-400"><Loader2 size={14} className="animate-spin"/> Chargement…</div>;
+
+  return (
+    <form onSubmit={submit} className="space-y-4 max-w-lg">
+      <div><label className="label">Nom de l'entreprise *</label><input className="input" value={form.name} onChange={f('name')} required placeholder="Constructions Tremblay inc."/></div>
+      <div className="grid grid-cols-2 gap-4">
+        <div><label className="label">Téléphone</label><input className="input" value={form.phone} onChange={f('phone')} placeholder="514-555-1234"/></div>
+        <div><label className="label">Courriel entreprise</label><input className="input" type="email" value={form.email} onChange={f('email')} placeholder="info@constructionstremblay.ca"/></div>
+      </div>
+      <div><label className="label">Adresse</label><input className="input" value={form.address} onChange={f('address')} placeholder="123 rue Principale"/></div>
+      <div className="grid grid-cols-2 gap-4">
+        <div><label className="label">Ville</label><input className="input" value={form.city} onChange={f('city')} placeholder="Montréal"/></div>
+        <div><label className="label">Code postal</label><input className="input" value={form.postal_code} onChange={f('postal_code')} placeholder="H1A 1A1"/></div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Numéro TPS</label>
+          <input className="input" value={form.tps_number} onChange={f('tps_number')} placeholder="123456789 RT0001"/>
+          <p className="text-xs text-gray-400 mt-0.5">Apparaît sur les factures PDF</p>
+        </div>
+        <div>
+          <label className="label">Numéro TVQ</label>
+          <input className="input" value={form.tvq_number} onChange={f('tvq_number')} placeholder="1234567890 TQ0001"/>
+        </div>
+      </div>
+      <div><label className="label">Site web</label><input className="input" value={form.website} onChange={f('website')} placeholder="https://constructions-tremblay.ca"/></div>
+      <button type="submit" className="btn-primary" disabled={saving}>
+        {saving ? <Loader2 size={14} className="animate-spin"/> : saved ? <Check size={14}/> : <Save size={14}/>}
+        {saved ? 'Enregistré!' : 'Enregistrer'}
+      </button>
+    </form>
+  );
+}
+
 function DevTab() {
   const [devPlans, setDevPlans] = useState([]);
   const [devCurrent, setDevCurrent] = useState(null);
@@ -205,6 +271,7 @@ function DevTab() {
 
 const TABS = [
   { id: 'profil',   label: 'Mon profil',    icon: User },
+  { id: 'company',  label: 'Entreprise',    icon: Building2 },
   { id: 'sources',  label: 'Sources leads', icon: Settings },
 ];
 
@@ -248,6 +315,7 @@ export default function Parametres() {
 
         <div className="card">
           {activeTab === 'profil'  && <ProfileTab />}
+          {activeTab === 'company' && <CompanyTab />}
           {activeTab === 'sources' && <LeadSourcesTab />}
           {activeTab === 'dev'     && devEnabled && <DevTab />}
         </div>
