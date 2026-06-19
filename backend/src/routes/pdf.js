@@ -1,0 +1,182 @@
+import express from 'express';
+import PDFDocument from 'pdfkit';
+import { query } from '../db.js';
+import { authenticateToken, resolveCompany } from '../middleware/auth.js';
+
+const router = express.Router();
+router.use(authenticateToken, resolveCompany);
+
+const BRAND = '#F26522';
+const DARK  = '#111827';
+const GRAY  = '#6b7280';
+const LIGHT = '#f3f4f6';
+
+function drawLine(doc, y, color = '#e5e7eb') {
+  doc.moveTo(50, y).lineTo(545, y).strokeColor(color).lineWidth(0.5).stroke();
+}
+
+function header(doc, company, title, number, date) {
+  // Orange bar
+  doc.rect(0, 0, 595, 6).fill(BRAND);
+
+  // Logo zone
+  doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND).text('MONFLUX', 50, 25);
+  doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(company?.name || '', 50, 48);
+  if (company?.phone) doc.text(company.phone, 50, 58);
+  if (company?.email) doc.text(company.email, 50, 68);
+
+  // Document title + number
+  doc.fontSize(22).font('Helvetica-Bold').fillColor(DARK).text(title, 300, 25, { align: 'right', width: 245 });
+  doc.fontSize(10).font('Helvetica').fillColor(GRAY).text(`N° ${number}`, 300, 52, { align: 'right', width: 245 });
+  doc.text(`Date : ${new Date(date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 300, 65, { align: 'right', width: 245 });
+
+  drawLine(doc, 88);
+  return 100;
+}
+
+function clientBlock(doc, y, clientName, clientEmail) {
+  doc.fontSize(8).font('Helvetica-Bold').fillColor(GRAY).text('FACTURER À', 50, y);
+  doc.fontSize(11).font('Helvetica-Bold').fillColor(DARK).text(clientName || 'Client', 50, y + 12);
+  if (clientEmail) doc.fontSize(9).font('Helvetica').fillColor(GRAY).text(clientEmail, 50, y + 26);
+  return y + 50;
+}
+
+function itemsTable(doc, y, items) {
+  // Header
+  doc.rect(50, y, 495, 20).fill(DARK);
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('white');
+  doc.text('DESCRIPTION', 58, y + 6);
+  doc.text('QTÉ', 340, y + 6, { width: 50, align: 'right' });
+  doc.text('PRIX UNIT.', 395, y + 6, { width: 70, align: 'right' });
+  doc.text('TOTAL', 470, y + 6, { width: 68, align: 'right' });
+  y += 20;
+
+  let subtotal = 0;
+  items.forEach((item, i) => {
+    const lineTotal = (Number(item.qty) || 1) * (Number(item.unit_price) || Number(item.total) || 0);
+    subtotal += lineTotal;
+    if (i % 2 === 1) doc.rect(50, y, 495, 18).fill('#fafafa');
+    doc.fontSize(9).font('Helvetica').fillColor(DARK);
+    doc.text(item.description || item.name || '', 58, y + 4, { width: 270 });
+    doc.text(String(item.qty || 1), 340, y + 4, { width: 50, align: 'right' });
+    doc.text(`${Number(item.unit_price || 0).toFixed(2)} $`, 395, y + 4, { width: 70, align: 'right' });
+    doc.text(`${lineTotal.toFixed(2)} $`, 470, y + 4, { width: 68, align: 'right' });
+    y += 18;
+  });
+  return { y, subtotal };
+}
+
+function totalsBlock(doc, y, subtotal, tpsPct = 5, tvqPct = 9.975) {
+  y += 8;
+  const tps = subtotal * tpsPct / 100;
+  const tvq = subtotal * tvqPct / 100;
+  const total = subtotal + tps + tvq;
+
+  const row = (label, value, bold = false) => {
+    doc.fontSize(9).font(bold ? 'Helvetica-Bold' : 'Helvetica').fillColor(bold ? DARK : GRAY);
+    doc.text(label, 390, y, { width: 90, align: 'right' });
+    doc.text(`${value.toFixed(2)} $`, 470, y, { width: 68, align: 'right' });
+    y += 14;
+  };
+
+  drawLine(doc, y - 4);
+  row('Sous-total', subtotal);
+  row(`TPS (${tpsPct}%)`, tps);
+  row(`TVQ (${tvqPct}%)`, tvq);
+  drawLine(doc, y - 2, BRAND);
+  y += 4;
+  row('TOTAL', total, true);
+  return { y, total };
+}
+
+function footer(doc) {
+  const y = 770;
+  drawLine(doc, y);
+  doc.fontSize(7).font('Helvetica').fillColor(GRAY)
+    .text('Généré par MONFLUX 2.0 — monflux.tech', 50, y + 6, { align: 'center', width: 495 });
+}
+
+// ── GET /api/pdf/quote/:id ──────────────────────────────────
+router.get('/quote/:id', async (req, res) => {
+  const { rows: [q] } = await query(
+    `SELECT q.*, c.name AS co_name, c.phone AS co_phone, c.email AS co_email,
+            ct.name AS client_name, ct.email AS client_email
+     FROM quotes q
+     LEFT JOIN companies c ON c.id = q.company_id
+     LEFT JOIN leads l ON l.id = q.lead_id
+     LEFT JOIN contacts ct ON ct.id = l.contact_id
+     WHERE q.id = $1 AND q.company_id = $2`,
+    [req.params.id, req.company_id]
+  );
+  if (!q) return res.status(404).json({ error: 'Soumission non trouvée' });
+
+  const { rows: items } = await query(
+    `SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`,
+    [req.params.id]
+  );
+
+  const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="soumission-${q.id.slice(0,8)}.pdf"`);
+  doc.pipe(res);
+
+  const co = { name: q.co_name, phone: q.co_phone, email: q.co_email };
+  let y = header(doc, co, q.format === 'field_estimate' ? 'FORMULAIRE TERRAIN' : 'SOUMISSION', q.id.slice(0,8).toUpperCase(), q.created_at);
+  y = clientBlock(doc, y, q.client_name, q.client_email);
+
+  if (q.title) {
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(q.title, 50, y);
+    y += 20;
+  }
+
+  if (items.length > 0) {
+    const { y: y2, subtotal } = itemsTable(doc, y, items);
+    totalsBlock(doc, y2, subtotal, q.tps_pct || 5, q.tvq_pct || 9.975);
+  } else if (q.budget_min || q.budget_max) {
+    doc.fontSize(11).font('Helvetica').fillColor(GRAY).text('Estimation de prix :', 50, y);
+    doc.fontSize(16).font('Helvetica-Bold').fillColor(BRAND)
+      .text(`${Number(q.budget_min||0).toLocaleString('fr-CA')} $ — ${Number(q.budget_max||0).toLocaleString('fr-CA')} $`, 50, y + 18);
+  }
+
+  footer(doc);
+  doc.end();
+});
+
+// ── GET /api/pdf/invoice/:id ────────────────────────────────
+router.get('/invoice/:id', async (req, res) => {
+  const { rows: [inv] } = await query(
+    `SELECT i.*, c.name AS co_name, c.phone AS co_phone, c.email AS co_email
+     FROM invoices i
+     LEFT JOIN companies c ON c.id = i.company_id
+     WHERE i.id = $1 AND i.company_id = $2`,
+    [req.params.id, req.company_id]
+  );
+  if (!inv) return res.status(404).json({ error: 'Facture non trouvée' });
+
+  const { rows: items } = await query(
+    `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY order_idx`,
+    [req.params.id]
+  );
+
+  const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="facture-${inv.number}.pdf"`);
+  doc.pipe(res);
+
+  const co = { name: inv.co_name, phone: inv.co_phone, email: inv.co_email };
+  let y = header(doc, co, 'FACTURE', inv.number, inv.created_at);
+  y = clientBlock(doc, y, inv.client_name, inv.client_email);
+
+  if (inv.due_date) {
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text(`Échéance : ${new Date(inv.due_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 50, y - 30, { align: 'right', width: 495 });
+  }
+
+  const { y: y2, subtotal } = itemsTable(doc, y, items);
+  totalsBlock(doc, y2, subtotal, inv.tps_pct || 5, inv.tvq_pct || 9.975);
+
+  footer(doc);
+  doc.end();
+});
+
+export default router;

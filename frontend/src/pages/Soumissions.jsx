@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { quotes as quotesApi, leads as leadsApi } from '../api';
-import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink } from 'lucide-react';
+import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi } from '../api';
+import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
@@ -209,6 +209,15 @@ export default function Soumissions() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <a
+                      href={pdfApi.quoteUrl(q.id)}
+                      target="_blank" rel="noreferrer"
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
+                      title="Télécharger PDF"
+                      onClick={e => { const tok = localStorage.getItem('token'); if(tok){ e.preventDefault(); const url = pdfApi.quoteUrl(q.id); fetch(url,{headers:{Authorization:`Bearer ${tok}`}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`soumission-${q.id.slice(0,8)}.pdf`;a.click();}); }}}
+                    >
+                      <Download size={13}/>
+                    </a>
                     {q.status === 'signed' && (
                       <button
                         className="btn-primary text-xs py-1 px-2 gap-1"

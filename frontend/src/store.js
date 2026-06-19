@@ -26,15 +26,26 @@ export const useAuthStore = create(
   )
 );
 
-export const useUIStore = create((set) => ({
-  darkMode: false,
-  sidebarOpen: true,
-  activeModule: 'dashboard',
+export const useUIStore = create(
+  persist(
+    (set) => ({
+      darkMode: false,
+      sidebarOpen: true,
+      activeModule: 'dashboard',
 
-  toggleDark:    () => set((s) => { const d = !s.darkMode; document.documentElement.classList.toggle('dark', d); return { darkMode: d }; }),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setModule:     (m) => set({ activeModule: m }),
-}));
+      toggleDark:    () => set((s) => { const d = !s.darkMode; document.documentElement.classList.toggle('dark', d); return { darkMode: d }; }),
+      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      setModule:     (m) => set({ activeModule: m }),
+    }),
+    {
+      name: 'monflux-ui',
+      partialize: (s) => ({ darkMode: s.darkMode, sidebarOpen: s.sidebarOpen }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.darkMode) document.documentElement.classList.add('dark');
+      },
+    }
+  )
+);
 
 export const useDevStore = create((set) => ({
   enabled: import.meta.env.DEV,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import { invoices as invoicesApi, projects as projectsApi } from '../api';
-import { Plus, Loader2, Receipt, Pencil, Trash2 } from 'lucide-react';
+import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi } from '../api';
+import { Plus, Loader2, Receipt, Pencil, Trash2, Download } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
@@ -211,7 +211,12 @@ export default function Factures() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <p className="font-bold text-gray-900 text-sm mr-2">{Number(inv.total).toLocaleString('fr-CA')}$</p>
+                  <p className="font-bold text-gray-900 text-sm mr-1">{Number(inv.total).toLocaleString('fr-CA')}$</p>
+                  <button
+                    className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
+                    title="Télécharger PDF"
+                    onClick={() => { const tok=localStorage.getItem('token'); fetch(pdfApi.invoiceUrl(inv.id),{headers:{Authorization:`Bearer ${tok}`}}).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`facture-${inv.number}.pdf`;a.click();}); }}
+                  ><Download size={14}/></button>
                   <button className="btn-ghost p-1.5 text-gray-400 hover:text-blue-500" onClick={()=>setEditItem(inv)}><Pencil size={14}/></button>
                   <button className="btn-ghost p-1.5 text-gray-400 hover:text-red-500" onClick={()=>del(inv.id)}><Trash2 size={14}/></button>
                 </div>

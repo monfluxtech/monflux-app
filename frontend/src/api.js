@@ -115,6 +115,11 @@ export const documents = {
   upload:  (data)       => http.post('/documents', data),
 };
 
+export const pdf = {
+  quoteUrl:   (id) => `${BASE}/pdf/quote/${id}`,
+  invoiceUrl: (id) => `${BASE}/pdf/invoice/${id}`,
+};
+
 export const ai = {
   healthCheck:  ()       => http.get('/ai/health-check'),
   estimate:     (data)   => http.post('/ai/estimate', data),
