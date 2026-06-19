@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const schemaPath = path.join(__dirname, '../../../schema.sql');
+const schemaPath = path.join(__dirname, '../../schema.sql');
 
 const client = new pg.Client({
   connectionString: process.env.DATABASE_URL,
