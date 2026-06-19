@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, Trash2, StickyNote, Receipt, FileText, GitBranch } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink } from 'lucide-react';
+
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
@@ -141,20 +143,26 @@ export default function ProjectDetail() {
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const notesTimer = useRef(null);
+  const [quittance, setQuittance] = useState(null);
+  const [showQuittanceForm, setShowQuittanceForm] = useState(false);
+  const [quittanceForm, setQuittanceForm] = useState({ client_name:'', client_email:'', project_description:'', amount_paid:'', notes:'' });
+  const [savingQuittance, setSavingQuittance] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
         quotesApi.list(),
+        quittancesApi.list({ project_id: id }),
       ]);
       setProject(proj);
       setTimesheets(ts);
       setProjectInvoices(invs);
       setProjectQuotes(qs.filter(q => q.project_id === id));
+      setQuittance(quits?.[0] || null);
       setNotes(proj.notes || '');
     } catch {} finally { setLoading(false); }
   };
@@ -194,6 +202,23 @@ export default function ProjectDetail() {
     const w = window.open('', '_blank', 'width=420,height=520');
     w.document.write(`<!DOCTYPE html><html><head><title>QR ${project?.name||''}</title><style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#fff;}img{width:300px;height:300px;}h1{margin-top:16px;font-size:16px;font-weight:700;color:#111;text-align:center;}p{font-size:12px;color:#888;margin:4px 0 0;}</style></head><body><img src="${qrData.qr_image}" alt="QR"/><h1>${project?.name||'Chantier'}</h1><p>Scannez pour pointer</p></body></html>`);
     w.document.close(); w.focus(); w.print();
+  };
+
+  const createQuittance = async (e) => {
+    e.preventDefault();
+    setSavingQuittance(true);
+    try {
+      const { data } = await quittancesApi.create({
+        project_id: id,
+        client_name: quittanceForm.client_name || project.client_name || '',
+        client_email: quittanceForm.client_email || '',
+        project_description: quittanceForm.project_description || project.name,
+        amount_paid: quittanceForm.amount_paid ? Number(quittanceForm.amount_paid) : (project.contract_value || 0),
+        notes: quittanceForm.notes || '',
+      });
+      setQuittance(data);
+      setShowQuittanceForm(false);
+    } catch {} finally { setSavingQuittance(false); }
   };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
@@ -385,6 +410,91 @@ export default function ProjectDetail() {
             })()}
           </div>
         )}
+
+        {/* Quittance */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Shield size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Quittance finale</h2>
+              <span className="text-xs text-gray-400">— Certificat de satisfaction client (Québec)</span>
+            </div>
+          </div>
+
+          {!quittance && !showQuittanceForm && (
+            <div className="text-center py-6">
+              <Shield size={28} className="text-gray-200 mx-auto mb-3"/>
+              <p className="text-sm text-gray-400 mb-4">Envoyez une quittance à votre client pour confirmer la fin des travaux et obtenir sa signature électronique.</p>
+              <button
+                className="btn-primary text-xs"
+                onClick={() => {
+                  setQuittanceForm({ client_name: project.client_name||'', client_email: project.client_email||'', project_description: project.name||'', amount_paid: project.contract_value||'', notes: '' });
+                  setShowQuittanceForm(true);
+                }}
+              >
+                <Shield size={13}/> Générer une quittance
+              </button>
+            </div>
+          )}
+
+          {showQuittanceForm && (
+            <form onSubmit={createQuittance} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Nom du client *</label><input className="input" value={quittanceForm.client_name} onChange={e=>setQuittanceForm(f=>({...f,client_name:e.target.value}))} required/></div>
+                <div><label className="label">Courriel client</label><input className="input" type="email" value={quittanceForm.client_email} onChange={e=>setQuittanceForm(f=>({...f,client_email:e.target.value}))}/></div>
+              </div>
+              <div><label className="label">Description des travaux</label><textarea className="input resize-none" rows={2} value={quittanceForm.project_description} onChange={e=>setQuittanceForm(f=>({...f,project_description:e.target.value}))}/></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">Montant payé ($)</label><input className="input" type="number" value={quittanceForm.amount_paid} onChange={e=>setQuittanceForm(f=>({...f,amount_paid:e.target.value}))}/></div>
+                <div><label className="label">Note (optionnel)</label><input className="input" value={quittanceForm.notes} onChange={e=>setQuittanceForm(f=>({...f,notes:e.target.value}))}/></div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary flex-1" onClick={()=>setShowQuittanceForm(false)}>Annuler</button>
+                <button type="submit" className="btn-primary flex-1" disabled={savingQuittance}>{savingQuittance&&<Loader2 size={13} className="animate-spin"/>} Créer la quittance</button>
+              </div>
+            </form>
+          )}
+
+          {quittance && (
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${quittance.status==='signed'?'bg-green-500':quittance.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800">{quittance.client_name}</p>
+                  <p className="text-xs text-gray-400">
+                    {quittance.status==='signed'
+                      ? `✓ Signée le ${new Date(quittance.signed_at).toLocaleDateString('fr-CA')}`
+                      : quittance.status==='sent' ? 'Envoyée — en attente de signature' : 'Brouillon — non envoyée'}
+                  </p>
+                </div>
+                <span className={`badge ${quittance.status==='signed'?'badge-green':quittance.status==='sent'?'badge-blue':'badge-gray'}`}>
+                  {quittance.status==='signed'?'Signée':quittance.status==='sent'?'Envoyée':'Brouillon'}
+                </span>
+              </div>
+              {quittance.status !== 'signed' && (
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    className="btn-secondary text-xs py-1.5"
+                    onClick={() => {
+                      const url = `${FRONTEND_URL}/quittance/${quittance.public_token}`;
+                      navigator.clipboard.writeText(url);
+                      alert('Lien copié!');
+                    }}
+                  >
+                    <Link2 size={12}/> Copier le lien client
+                  </button>
+                  <a
+                    href={`${FRONTEND_URL}/quittance/${quittance.public_token}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="btn-ghost text-xs py-1.5"
+                  >
+                    <ExternalLink size={12}/> Prévisualiser
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* QR Punch */}
         <div className="card">

@@ -105,4 +105,51 @@ router.get('/invoice/:token', async (req, res) => {
   }
 });
 
+// GET /api/public/quittance/:token — public signing page
+router.get('/quittance/:token', async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      `SELECT qu.*, p.name AS project_name, p.address AS project_address,
+              co.name AS company_name, co.phone AS company_phone,
+              co.email AS company_email, co.address AS company_address, co.website AS company_website
+       FROM quittances qu
+       LEFT JOIN projects p ON p.id = qu.project_id
+       JOIN companies co ON co.id = qu.company_id
+       WHERE qu.public_token = $1`,
+      [req.params.token]
+    );
+    if (!q) return res.status(404).json({ error: 'Quittance introuvable' });
+    const { company_id, ...safe } = q;
+    res.json(safe);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/quittance/:token/sign — client signs
+router.post('/quittance/:token/sign', async (req, res) => {
+  try {
+    const { signer_name } = req.body;
+    const { rows: [q] } = await query(
+      `SELECT id, signed_at FROM quittances WHERE public_token = $1`,
+      [req.params.token]
+    );
+    if (!q) return res.status(404).json({ error: 'Quittance introuvable' });
+    if (q.signed_at) return res.status(409).json({ error: 'Déjà signée' });
+
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    await query(
+      `UPDATE quittances SET status = 'signed', signed_at = NOW(), signed_ip = $1,
+         client_name = COALESCE($2, client_name)
+       WHERE public_token = $3`,
+      [ip, signer_name || null, req.params.token]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

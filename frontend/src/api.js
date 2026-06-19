@@ -140,6 +140,13 @@ export const dashboard = {
   notifications: () => http.get('/dashboard/notifications'),
 };
 
+export const quittances = {
+  list:   (params)    => http.get('/quittances', { params }),
+  create: (data)      => http.post('/quittances', data),
+  update: (id, data)  => http.patch(`/quittances/${id}`, data),
+  delete: (id)        => http.delete(`/quittances/${id}`),
+};
+
 export const dev = {
   plans:   ()            => http.get('/dev/plans'),
   current: ()            => http.get('/dev/current'),

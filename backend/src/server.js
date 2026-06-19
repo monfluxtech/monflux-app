@@ -24,7 +24,8 @@ import pdfRoutes        from './routes/pdf.js';
 import emailRoutes      from './routes/email.js';
 import publicRoutes     from './routes/public.js';
 import dashboardRoutes  from './routes/dashboard.js';
-import searchRoutes     from './routes/search.js';
+import searchRoutes      from './routes/search.js';
+import quittancesRoutes  from './routes/quittances.js';
 
 dotenv.config();
 
@@ -76,7 +77,8 @@ app.use('/api/chat',        chatRoutes);
 app.use('/api/ai',          aiRoutes);
 app.use('/api/documents',   docsRoutes);
 app.use('/api/pdf',         pdfRoutes);
-app.use('/api/email',      emailRoutes);
+app.use('/api/email',       emailRoutes);
+app.use('/api/quittances',  quittancesRoutes);
 
 // ── DEV ONLY — plan switcher ────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {
