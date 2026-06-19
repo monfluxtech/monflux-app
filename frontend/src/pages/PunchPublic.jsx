@@ -66,7 +66,7 @@ export default function PunchPublic() {
           <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:'#F26522'}}>
             <span className="text-white font-bold">M</span>
           </div>
-          <span className="font-bold text-gray-900">MONFLUX · Pointage</span>
+          <span className="font-bold text-gray-900">MONFLUX · Punch</span>
         </div>
 
         {/* Site info */}

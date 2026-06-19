@@ -95,6 +95,23 @@ async function applyMigrations() {
     `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ`);
   await run('change_orders: add signed_ip',
     `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS signed_ip TEXT`);
+
+  // ── Company social media links (2026-06) ─────────────────────────────────────
+  await run('companies: add social_links',
+    `ALTER TABLE companies ADD COLUMN IF NOT EXISTS social_links JSONB DEFAULT '{}'::jsonb`);
+
+  // ── AI usage metering — monthly request quota + add-on credits (2026-06) ─────
+  await run('ai_usage create',
+    `CREATE TABLE IF NOT EXISTS ai_usage (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      period      TEXT NOT NULL,
+      used        INT NOT NULL DEFAULT 0,
+      credits     INT NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (company_id, period)
+    )`);
 }
 
 export async function initializeDatabase() {

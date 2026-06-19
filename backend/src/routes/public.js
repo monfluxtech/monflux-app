@@ -82,7 +82,7 @@ router.get('/invoice/:token', async (req, res) => {
   try {
     const { rows: [inv] } = await query(
       `SELECT i.*, co.name AS company_name, co.phone AS company_phone,
-              co.email AS company_email, co.address AS company_address
+              co.email AS company_email, co.address AS company_address, co.logo_url AS company_logo
        FROM invoices i
        JOIN companies co ON co.id = i.company_id
        WHERE i.public_token = $1`,

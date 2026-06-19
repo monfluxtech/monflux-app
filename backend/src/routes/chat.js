@@ -1,11 +1,14 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { query } from '../db.js';
+import { query, getClient } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const LEAD_SOURCES = ['manual','email','whatsapp','facebook_ads','google_lsa','soumissions_reno','kijiji','referral','website','other'];
+const PROJECT_TYPES = ['kitchen','bathroom','basement','addition','new_build','roofing','exterior','commercial','interior','other'];
 
 const TOOLS = [
   {
@@ -18,9 +21,12 @@ const TOOLS = [
         contact_name:  { type: 'string',  description: 'Nom du client potentiel' },
         contact_phone: { type: 'string',  description: 'Numéro de téléphone' },
         contact_email: { type: 'string',  description: 'Adresse courriel' },
-        budget:        { type: 'number',  description: 'Budget estimé en dollars canadiens' },
-        notes:         { type: 'string',  description: 'Notes additionnelles' },
-        source:        { type: 'string',  enum: ['website','referral','facebook','kijiji','call','other'] },
+        budget_min:    { type: 'number',  description: 'Budget estimé minimum en $ CA' },
+        budget_max:    { type: 'number',  description: 'Budget estimé maximum en $ CA' },
+        type_of_work:  { type: 'string',  enum: PROJECT_TYPES, description: 'Type de travaux' },
+        city:          { type: 'string',  description: 'Ville du projet' },
+        description:   { type: 'string',  description: 'Notes ou détails additionnels' },
+        source:        { type: 'string',  enum: LEAD_SOURCES, description: 'Provenance du lead' },
       },
       required: ['title'],
     },
@@ -54,26 +60,63 @@ const TOOLS = [
       required: ['lead_title', 'follow_up_at'],
     },
   },
+  {
+    name: 'list_records',
+    description: "Consulte/liste les données existantes de l'entreprise (projets, leads, factures, soumissions). Utilise cet outil dès que l'utilisateur demande de voir, résumer, ou compter des éléments existants.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        entity: { type: 'string', enum: ['projects','leads','invoices','quotes'], description: 'Type de données à consulter' },
+        status: { type: 'string', description: "Filtre optionnel par statut (ex: 'active' pour projets, 'overdue' pour factures)" },
+      },
+      required: ['entity'],
+    },
+  },
 ];
 
 async function executeTool(name, input, company_id) {
   try {
     if (name === 'create_lead') {
-      const { title, contact_name, contact_phone, contact_email, budget, notes, source } = input;
-      const { rows: [lead] } = await query(
-        `INSERT INTO leads (company_id, title, contact_name, contact_phone, contact_email, budget, notes, source, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new') RETURNING *`,
-        [company_id, title, contact_name||null, contact_phone||null, contact_email||null, budget||null, notes||null, source||'other']
-      );
-      return { success: true, type: 'lead', item: lead };
+      const { title, contact_name, contact_phone, contact_email, budget_min, budget_max, type_of_work, city, description, source } = input;
+      const client = await getClient();
+      try {
+        await client.query('BEGIN');
+        let cid = null;
+        if (contact_name || contact_phone || contact_email) {
+          const existing = contact_email
+            ? await client.query(`SELECT id FROM contacts WHERE company_id=$1 AND email=$2 LIMIT 1`, [company_id, contact_email])
+            : { rows: [] };
+          if (existing.rows.length) {
+            cid = existing.rows[0].id;
+            await client.query(`UPDATE contacts SET name=COALESCE($1,name), phone=COALESCE($2,phone) WHERE id=$3`, [contact_name||null, contact_phone||null, cid]);
+          } else {
+            const { rows: [c] } = await client.query(
+              `INSERT INTO contacts (company_id,name,phone,email) VALUES ($1,$2,$3,$4) RETURNING id`,
+              [company_id, contact_name||'', contact_phone||null, contact_email||null]
+            );
+            cid = c.id;
+          }
+        }
+        const { rows: [lead] } = await client.query(
+          `INSERT INTO leads (company_id, contact_id, title, description, type_of_work, budget_min, budget_max, city, source, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'new') RETURNING *`,
+          [company_id, cid, title, description||null,
+           PROJECT_TYPES.includes(type_of_work) ? type_of_work : 'other',
+           budget_min||null, budget_max||null, city||null,
+           LEAD_SOURCES.includes(source) ? source : 'manual']
+        );
+        await client.query('COMMIT');
+        return { success: true, type: 'lead', item: { ...lead, contact_name: contact_name||null } };
+      } catch (e) { await client.query('ROLLBACK'); throw e; }
+      finally { client.release(); }
     }
 
     if (name === 'create_project') {
-      const { name, client_name, address, contract_value, start_date, end_date, notes } = input;
+      const { name: projName, client_name, address, contract_value, start_date, end_date, notes } = input;
       const { rows: [proj] } = await query(
         `INSERT INTO projects (company_id, name, client_name, address, contract_value, start_date, end_date, notes, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active') RETURNING *`,
-        [company_id, name, client_name||null, address||null, contract_value||null, start_date||null, end_date||null, notes||null]
+        [company_id, projName, client_name||null, address||null, contract_value||null, start_date||null, end_date||null, notes||null]
       );
       return { success: true, type: 'project', item: proj };
     }
@@ -84,22 +127,87 @@ async function executeTool(name, input, company_id) {
         `UPDATE leads SET follow_up_at = $1
          WHERE company_id = $2
            AND id = (
-             SELECT id FROM leads
-             WHERE company_id = $2
-               AND (title ILIKE $3 OR contact_name ILIKE $3)
-               AND status NOT IN ('won','lost')
-             ORDER BY created_at DESC LIMIT 1
+             SELECT l.id FROM leads l
+             LEFT JOIN contacts c ON c.id = l.contact_id
+             WHERE l.company_id = $2
+               AND (l.title ILIKE $3 OR c.name ILIKE $3)
+               AND l.status NOT IN ('won','lost')
+             ORDER BY l.created_at DESC LIMIT 1
            )
          RETURNING *`,
         [follow_up_at, company_id, `%${lead_title}%`]
       );
       return { success: !!lead, type: 'followup', item: lead || null };
     }
+
+    if (name === 'list_records') {
+      const { entity, status } = input;
+      if (entity === 'projects') {
+        const { rows } = await query(
+          `SELECT name, status, progress_pct, contract_value, client_name, start_date, end_date
+           FROM projects WHERE company_id=$1 ${status ? 'AND status=$2' : ''}
+           ORDER BY start_date DESC NULLS LAST LIMIT 50`,
+          status ? [company_id, status] : [company_id]
+        );
+        return { success: true, type: 'projects', count: rows.length, items: rows };
+      }
+      if (entity === 'leads') {
+        const { rows } = await query(
+          `SELECT l.title, l.status, l.budget_min, l.budget_max, l.city, l.follow_up_at, c.name AS contact_name
+           FROM leads l LEFT JOIN contacts c ON c.id=l.contact_id
+           WHERE l.company_id=$1 ${status ? 'AND l.status=$2' : ''}
+           ORDER BY l.created_at DESC LIMIT 50`,
+          status ? [company_id, status] : [company_id]
+        );
+        return { success: true, type: 'leads', count: rows.length, items: rows };
+      }
+      if (entity === 'invoices') {
+        const { rows } = await query(
+          `SELECT number, status, client_name, total, amount_due, due_date
+           FROM invoices WHERE company_id=$1 ${status ? 'AND status=$2' : ''}
+           ORDER BY created_at DESC LIMIT 50`,
+          status ? [company_id, status] : [company_id]
+        );
+        return { success: true, type: 'invoices', count: rows.length, items: rows };
+      }
+      if (entity === 'quotes') {
+        const { rows } = await query(
+          `SELECT title, status, total FROM quotes WHERE company_id=$1 ${status ? 'AND status=$2' : ''}
+           ORDER BY created_at DESC LIMIT 50`,
+          status ? [company_id, status] : [company_id]
+        );
+        return { success: true, type: 'quotes', count: rows.length, items: rows };
+      }
+      return { success: false, error: 'Entité inconnue' };
+    }
   } catch (err) {
     console.error('Tool execution error:', err);
     return { success: false, error: err.message };
   }
   return { success: false, error: 'Outil inconnu' };
+}
+
+// Compact live snapshot of the business — injected into the system prompt so the
+// AI can answer "résume mes projets" instantly without a tool round-trip.
+async function buildBusinessSnapshot(company_id) {
+  try {
+    const [proj, leads, inv] = await Promise.all([
+      query(`SELECT status, COUNT(*)::int AS n, COALESCE(SUM(contract_value),0)::float AS val FROM projects WHERE company_id=$1 GROUP BY status`, [company_id]),
+      query(`SELECT status, COUNT(*)::int AS n FROM leads WHERE company_id=$1 GROUP BY status`, [company_id]),
+      query(`SELECT status, COUNT(*)::int AS n, COALESCE(SUM(amount_due),0)::float AS due FROM invoices WHERE company_id=$1 GROUP BY status`, [company_id]),
+    ]);
+    const activeProj = proj.rows.find(r => r.status === 'active');
+    const overdue = inv.rows.find(r => r.status === 'overdue');
+    const unpaidDue = inv.rows.filter(r => ['sent','viewed','partial','overdue'].includes(r.status)).reduce((s, r) => s + r.due, 0);
+    const newLeads = leads.rows.find(r => r.status === 'new');
+    const parts = [];
+    parts.push(`Projets actifs: ${activeProj?.n || 0}${activeProj ? ` (valeur contrats ${Math.round(activeProj.val).toLocaleString('fr-CA')}$)` : ''}`);
+    parts.push(`Nouveaux leads: ${newLeads?.n || 0}`);
+    parts.push(`À encaisser: ${Math.round(unpaidDue).toLocaleString('fr-CA')}$${overdue ? ` dont ${overdue.n} facture(s) en retard` : ''}`);
+    return parts.join(' · ');
+  } catch {
+    return 'Aucune donnée disponible pour le moment.';
+  }
 }
 
 // POST /api/chat — general AI chat (streaming + tool use)
@@ -113,13 +221,19 @@ router.post('/', async (req, res) => {
   );
 
   const today = new Date().toISOString().slice(0, 10);
+  const snapshot = await buildBusinessSnapshot(req.company_id);
   const systemPrompt = `Tu es l'assistant IA de MONFLUX pour ${company?.name || 'cette entreprise'} (secteur: ${company?.sector || 'construction'}).
 Tu aides les entrepreneurs en construction québécois à gérer leurs projets, leads, soumissions et facturations.
-Tu parles en français québécois. Tu es direct, pratique et efficace.
+Tu parles en français québécois. Tu es direct, pratique et efficace. Au Québec on dit "punch" (pas "pointage").
 Date d'aujourd'hui: ${today}
 Contexte: ${context_type}${project_id ? ` / Projet: ${project_id}` : ''}
-Plan actif: ${req.plan.slug} (${req.plan.is_dev_override ? 'MODE DEV' : 'réel'})
-Quand l'utilisateur demande de créer un lead, un projet, ou planifier une relance, utilise les outils disponibles.`;
+
+ÉTAT ACTUEL DE L'ENTREPRISE (en temps réel): ${snapshot}
+
+Tu peux À LA FOIS créer des éléments ET consulter les données existantes:
+- Pour CRÉER un lead, projet, ou planifier une relance → utilise create_lead / create_project / schedule_followup.
+- Pour VOIR, RÉSUMER, COMPTER, ou LISTER des données existantes (projets, leads, factures, soumissions) → utilise list_records.
+Ne dis JAMAIS que tu ne peux pas consulter les données — tu as l'outil list_records pour ça. Utilise-le proactivement.`;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -144,41 +258,36 @@ Quand l'utilisateur demande de créer un lead, un projet, ou planifier une relan
       send({ type: 'text', text });
     });
 
-    const finalMsg = await stream.finalMessage();
+    let finalMsg = await stream.finalMessage();
 
-    // Handle tool use
-    if (finalMsg.stop_reason === 'tool_use') {
-      const toolBlock = finalMsg.content.find(b => b.type === 'tool_use');
-      const toolResult = await executeTool(toolBlock.name, toolBlock.input, req.company_id);
+    // Agentic tool loop — handles create AND read tools, allows chaining (max 4 rounds)
+    const convo = [...messages.map(m => ({ role: m.role, content: m.content }))];
+    let rounds = 0;
+    while (finalMsg.stop_reason === 'tool_use' && rounds < 4) {
+      rounds++;
+      const toolBlocks = finalMsg.content.filter(b => b.type === 'tool_use');
+      convo.push({ role: 'assistant', content: finalMsg.content });
 
-      // Send action event so frontend can show a creation card
-      send({ type: 'action', action: toolBlock.name, result: toolResult });
+      const toolResults = [];
+      for (const tb of toolBlocks) {
+        const result = await executeTool(tb.name, tb.input, req.company_id);
+        // Only surface a creation card for write actions
+        if (['create_lead','create_project','schedule_followup'].includes(tb.name)) {
+          send({ type: 'action', action: tb.name, result });
+        }
+        toolResults.push({ type: 'tool_result', tool_use_id: tb.id, content: JSON.stringify(result) });
+      }
+      convo.push({ role: 'user', content: toolResults });
 
-      // Second stream — friendly confirmation message
-      const confirmStream = await anthropic.messages.stream({
+      const nextStream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-6',
-        max_tokens: 512,
+        max_tokens: 1024,
         system: systemPrompt,
-        messages: [
-          ...messages.map(m => ({ role: m.role, content: m.content })),
-          { role: 'assistant', content: finalMsg.content },
-          {
-            role: 'user',
-            content: [{
-              type: 'tool_result',
-              tool_use_id: toolBlock.id,
-              content: JSON.stringify(toolResult),
-            }],
-          },
-        ],
+        tools: TOOLS,
+        messages: convo,
       });
-
-      confirmStream.on('text', (text) => {
-        fullText += text;
-        send({ type: 'text', text });
-      });
-
-      await confirmStream.finalMessage();
+      nextStream.on('text', (text) => { fullText += text; send({ type: 'text', text }); });
+      finalMsg = await nextStream.finalMessage();
     }
 
     send({ type: 'done' });

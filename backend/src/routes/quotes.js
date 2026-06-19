@@ -1,5 +1,5 @@
 import express from 'express';
-import { query } from '../db.js';
+import { query, getClient } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -54,6 +54,49 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const allowed = ['status','title','valid_until','format','notes','followup_config','subtotal','total'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  const hasItems = Array.isArray(req.body.items);
+
+  // If line items are provided, replace them and recompute totals inside a transaction.
+  if (hasItems) {
+    const items = req.body.items;
+    const subtotal = items.reduce((s, it) => s + (Number(it.qty)||1) * (Number(it.unit_price)||0), 0);
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      // Ownership check
+      const { rows: [own] } = await client.query(`SELECT id FROM quotes WHERE id=$1 AND company_id=$2`, [req.params.id, req.company_id]);
+      if (!own) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Soumission non trouvée' }); }
+
+      await client.query(`DELETE FROM quote_items WHERE quote_id=$1`, [req.params.id]);
+      for (const [i, item] of items.entries()) {
+        await client.query(
+          `INSERT INTO quote_items (quote_id,type,name,qty,unit,unit_price,total,display_order,supplier,supplier_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [req.params.id, item.type||'material', item.name, item.qty||1, item.unit||'un.', item.unit_price||0,
+           (Number(item.qty)||1)*(Number(item.unit_price)||0), i, item.supplier||null, item.supplier_url||null]
+        );
+      }
+      // Merge explicit field updates with recomputed totals
+      const merged = { ...updates, subtotal, total: subtotal };
+      const setClause = Object.keys(merged).map((k, i) => `${k} = $${i + 1}`).join(', ');
+      const values = [...Object.values(merged), req.params.id];
+      const { rows: [q] } = await client.query(
+        `UPDATE quotes SET ${setClause}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+        values
+      );
+      await client.query('COMMIT');
+      const { rows: savedItems } = await query(`SELECT * FROM quote_items WHERE quote_id=$1 ORDER BY display_order`, [req.params.id]);
+      return res.json({ ...q, items: savedItems });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error(err);
+      return res.status(500).json({ error: 'Erreur serveur' });
+    } finally {
+      client.release();
+    }
+  }
+
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.params.id, req.company_id];
   const { rows: [q] } = await query(

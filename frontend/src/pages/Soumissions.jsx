@@ -145,20 +145,41 @@ function CreateModal({ leads, onClose, onSave, initialTitle = '', initialLeadId 
 function EditModal({ quote, onClose, onSave }) {
   const [status, setStatus] = useState(quote.status);
   const [title, setTitle] = useState(quote.title||'');
+  const [items, setItems] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Load the full quote (with line items) so details can be edited.
+  useEffect(() => {
+    quotesApi.get(quote.id)
+      .then(({ data }) => setItems((data.items||[]).map(it => ({
+        name: it.name||'', qty: it.qty||1, unit: it.unit||'un.', unit_price: Number(it.unit_price)||0,
+        supplier: it.supplier||'', supplier_url: it.supplier_url||'',
+      }))))
+      .catch(() => {})
+      .finally(() => setLoadingItems(false));
+  }, [quote.id]);
+
+  const addItem = () => setItems(p => [...p, { name:'', qty:1, unit:'un.', unit_price:0 }]);
+  const removeItem = i => setItems(p => p.filter((_,idx) => idx !== i));
+  const setItem = (i,k,v) => setItems(p => p.map((it,idx) => idx===i ? { ...it, [k]:v } : it));
+  const subtotal = items.reduce((s,it)=>s+(Number(it.qty)||1)*(Number(it.unit_price)||0),0);
 
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const { data } = await quotesApi.update(quote.id, { status, title });
+      const payload = { status, title };
+      // Only send items if this quote actually has detailed lines
+      if (items.length > 0) payload.items = items.map(it => ({ ...it, qty:Number(it.qty)||1, unit_price:Number(it.unit_price)||0 }));
+      const { data } = await quotesApi.update(quote.id, payload);
       onSave(data);
     } catch {} finally { setSaving(false); }
   };
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-sm">
+      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <h2 className="font-semibold text-gray-900 mb-4">Modifier la soumission</h2>
         <form onSubmit={submit} className="space-y-3">
           <div><label className="label">Titre</label><input className="input" value={title} onChange={e=>setTitle(e.target.value)} /></div>
@@ -167,6 +188,35 @@ function EditModal({ quote, onClose, onSave }) {
               {STATUSES.map(s => <option key={s} value={s}>{SL[s]}</option>)}
             </select>
           </div>
+
+          {/* Line items */}
+          <div className="pt-1">
+            <div className="flex items-center justify-between mb-2">
+              <label className="label mb-0">Lignes de la soumission</label>
+              <button type="button" className="btn-ghost text-xs py-0.5 px-2" onClick={addItem}><Plus size={12}/> Ajouter</button>
+            </div>
+            {loadingItems ? (
+              <div className="text-xs text-gray-400 flex items-center gap-1.5 py-2"><Loader2 size={12} className="animate-spin"/> Chargement des lignes…</div>
+            ) : items.length === 0 ? (
+              <p className="text-xs text-gray-400 py-2">Aucune ligne détaillée (soumission terrain). Cliquez « Ajouter » pour en créer.</p>
+            ) : (
+              <div className="space-y-2">
+                {items.map((it,i) => (
+                  <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
+                    <input className="input col-span-5 text-sm py-1.5" placeholder="Description" value={it.name} onChange={e=>setItem(i,'name',e.target.value)} />
+                    <input className="input col-span-2 text-sm py-1.5" type="number" placeholder="Qté" value={it.qty} onChange={e=>setItem(i,'qty',e.target.value)} />
+                    <input className="input col-span-2 text-sm py-1.5" placeholder="Unité" value={it.unit} onChange={e=>setItem(i,'unit',e.target.value)} />
+                    <input className="input col-span-2 text-sm py-1.5" type="number" step="0.01" placeholder="Prix" value={it.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)} />
+                    <button type="button" className="col-span-1 text-gray-300 hover:text-red-400" onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
+                  </div>
+                ))}
+                <div className="flex justify-end pt-1 text-sm font-semibold text-gray-700">
+                  Sous-total : {subtotal.toLocaleString('fr-CA',{minimumFractionDigits:2})} $
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-2 pt-2">
             <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn-primary flex-1" disabled={saving}>

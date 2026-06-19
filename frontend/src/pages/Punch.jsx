@@ -33,7 +33,7 @@ export default function Punch() {
   return (
     <Layout>
       <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-xl font-bold text-gray-900 mb-6">Pointage QR</h1>
+        <h1 className="text-xl font-bold text-gray-900 mb-6">Punch</h1>
 
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="card text-center">
@@ -114,7 +114,7 @@ export default function Punch() {
         {/* Timesheet list */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900 text-sm">Journal de pointage</h2>
+            <h2 className="font-semibold text-gray-900 text-sm">Journal de punch</h2>
             <button
               className="btn-ghost text-xs py-1 px-2 flex items-center gap-1"
               onClick={() => {
@@ -154,7 +154,7 @@ export default function Punch() {
                   </div>
                 </div>
               ))}
-              {timesheets.length === 0 && <p className="text-sm text-gray-400">Aucun pointage enregistré.</p>}
+              {timesheets.length === 0 && <p className="text-sm text-gray-400">Aucun punch enregistré.</p>}
             </div>
           )}
         </div>

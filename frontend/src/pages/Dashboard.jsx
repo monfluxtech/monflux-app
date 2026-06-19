@@ -14,7 +14,7 @@ const TYPE_ICON = {
   quote:   { label: 'Soumission', color: '#F26522' },
   invoice: { label: 'Facture',    color: '#22c55e' },
   project: { label: 'Projet',     color: '#6366f1' },
-  punch:   { label: 'Pointage',   color: '#f59e0b' },
+  punch:   { label: 'Punch',      color: '#f59e0b' },
 };
 
 const STATUS_FR = {

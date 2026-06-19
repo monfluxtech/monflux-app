@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 router.patch('/', async (req, res) => {
   const allowed = ['name','rbq_number','neq_number','logo_url','address','city','postal_code',
     'phone','email','website','sector','size','tps_number','tvq_number',
-    'default_deposit_pct','payment_terms_days','modules_enabled'];
+    'default_deposit_pct','payment_terms_days','modules_enabled','social_links'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');

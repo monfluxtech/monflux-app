@@ -326,14 +326,14 @@ export default function ProjectDetail() {
           </div>
           <div className="card text-center py-3">
             <p className="text-xl font-bold text-gray-900">{timesheets.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Total pointages</p>
+            <p className="text-xs text-gray-400 mt-0.5">Total punchs</p>
           </div>
         </div>
 
         {/* Gantt */}
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900 text-sm">Phases & Gantt</h2>
+            <h2 className="font-semibold text-gray-900 text-sm">Phases</h2>
             <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowPhase(true)}>
               <Plus size={13}/> Ajouter une phase
             </button>
@@ -732,7 +732,7 @@ export default function ProjectDetail() {
         {/* QR Punch */}
         <div className="card mt-4">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Pointage QR</h2></div>
+            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch</h2></div>
             {!qrData && (
               <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
                 {genQr?<Loader2 size={13} className="animate-spin"/>:<Plus size={13}/>} Générer QR
@@ -755,7 +755,7 @@ export default function ProjectDetail() {
 
           {timesheets.length > 0 && (
             <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">Pointages récents</p>
+              <p className="text-xs font-medium text-gray-500 mb-2">Punchs récents</p>
               <div className="space-y-1.5">
                 {timesheets.slice(0,5).map(ts=>(
                   <div key={ts.id} className="flex items-center gap-3 text-xs text-gray-600">

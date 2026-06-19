@@ -8,20 +8,20 @@ import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
   LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
-  AlertCircle, Clock, FileQuestion, Search,
+  AlertCircle, Clock, FileQuestion, Search, Sparkles,
 } from 'lucide-react';
 
 const NAV = [
   { to: '/dashboard',       icon: LayoutDashboard, label: 'Tableau de bord' },
-  { to: '/projets',         icon: FolderKanban,    label: 'Projets & Gantt' },
+  { to: '/chat',            icon: Sparkles,        label: 'Assistant IA', highlight: true },
+  { to: '/projets',         icon: FolderKanban,    label: 'Projets' },
   { to: '/leads',           icon: Users,           label: 'Leads' },
   { to: '/contacts',        icon: BookUser,        label: 'Contacts' },
   { to: '/soumissions',     icon: FileText,        label: 'Soumissions' },
   { to: '/factures',        icon: Receipt,         label: 'Factures' },
   { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
-  { to: '/punch',           icon: QrCode,          label: 'Pointage QR' },
+  { to: '/punch',           icon: QrCode,          label: 'Punch' },
   { to: '/rapport',         icon: BarChart3,       label: 'Rapport' },
-  { to: '/parametres',      icon: Settings,        label: 'Paramètres' },
 ];
 
 const QUICK = [
@@ -94,15 +94,18 @@ export default function Layout({ children }) {
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {NAV.map(({ to, icon: Icon, label }) => (
+          {NAV.map(({ to, icon: Icon, label, highlight }) => (
             <NavLink
               key={to}
               to={to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${highlight ? 'nav-item-ai' : ''}`}
               title={!sidebarOpen ? label : undefined}
             >
               <Icon size={16} className="flex-shrink-0" />
               {sidebarOpen && <span className="truncate">{label}</span>}
+              {highlight && sidebarOpen && (
+                <span className="ml-auto text-[10px] font-semibold text-brand bg-brand/10 px-1.5 py-0.5 rounded-full">IA</span>
+              )}
             </NavLink>
           ))}
         </nav>

@@ -159,9 +159,14 @@ function CompanyTab() {
       address: data.address || '',
       city: data.city || '',
       postal_code: data.postal_code || '',
+      rbq_number: data.rbq_number || '',
+      neq_number: data.neq_number || '',
       tps_number: data.tps_number || '',
       tvq_number: data.tvq_number || '',
       website: data.website || '',
+      facebook: data.social_links?.facebook || '',
+      instagram: data.social_links?.instagram || '',
+      linkedin: data.social_links?.linkedin || '',
     })).catch(() => {});
   }, []);
 
@@ -169,8 +174,10 @@ function CompanyTab() {
     e.preventDefault();
     setSaving(true);
     try {
-      await companies.update(form);
-      setAuth({ token, user, company: { ...storeCompany, ...form }, plan });
+      const { facebook, instagram, linkedin, ...rest } = form;
+      const payload = { ...rest, social_links: { facebook, instagram, linkedin } };
+      await companies.update(payload);
+      setAuth({ token, user, company: { ...storeCompany, ...rest }, plan });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {} finally { setSaving(false); }
@@ -190,6 +197,21 @@ function CompanyTab() {
         <div><label className="label">Ville</label><input className="input" value={form.city} onChange={f('city')} placeholder="Montréal"/></div>
         <div><label className="label">Code postal</label><input className="input" value={form.postal_code} onChange={f('postal_code')} placeholder="H1A 1A1"/></div>
       </div>
+
+      {/* Licences construction Québec */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Numéro RBQ</label>
+          <input className="input" value={form.rbq_number} onChange={f('rbq_number')} placeholder="1234-5678-90"/>
+          <p className="text-xs text-gray-400 mt-0.5">Régie du bâtiment du Québec — affiché sur soumissions et contrats</p>
+        </div>
+        <div>
+          <label className="label">Numéro NEQ</label>
+          <input className="input" value={form.neq_number} onChange={f('neq_number')} placeholder="1234567890"/>
+          <p className="text-xs text-gray-400 mt-0.5">Numéro d'entreprise du Québec</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="label">Numéro TPS</label>
@@ -202,6 +224,16 @@ function CompanyTab() {
         </div>
       </div>
       <div><label className="label">Site web</label><input className="input" value={form.website} onChange={f('website')} placeholder="https://constructions-tremblay.ca"/></div>
+
+      {/* Médias sociaux */}
+      <div className="pt-2 border-t border-gray-100">
+        <p className="text-sm font-semibold text-gray-700 mb-3">Médias sociaux</p>
+        <div className="space-y-3">
+          <div><label className="label">Facebook</label><input className="input" value={form.facebook} onChange={f('facebook')} placeholder="https://facebook.com/votreentreprise"/></div>
+          <div><label className="label">Instagram</label><input className="input" value={form.instagram} onChange={f('instagram')} placeholder="https://instagram.com/votreentreprise"/></div>
+          <div><label className="label">LinkedIn</label><input className="input" value={form.linkedin} onChange={f('linkedin')} placeholder="https://linkedin.com/company/votreentreprise"/></div>
+        </div>
+      </div>
       <button type="submit" className="btn-primary" disabled={saving}>
         {saving ? <Loader2 size={14} className="animate-spin"/> : saved ? <Check size={14}/> : <Save size={14}/>}
         {saved ? 'Enregistré!' : 'Enregistrer'}
