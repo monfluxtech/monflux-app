@@ -64,4 +64,65 @@ router.patch('/:id', async (req, res) => {
   res.json(q);
 });
 
+router.delete('/:id', async (req, res) => {
+  await query(`DELETE FROM quotes WHERE id = $1 AND company_id = $2`, [req.params.id, req.company_id]);
+  res.json({ success: true });
+});
+
+router.post('/:id/convert', async (req, res) => {
+  const client = await (await import('../db.js')).getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows: [q] } = await client.query(
+      `SELECT q.*, l.title AS lead_title, l.id AS l_id, c.name AS client_name, c.email AS client_email
+       FROM quotes q
+       LEFT JOIN leads l ON l.id = q.lead_id
+       LEFT JOIN contacts c ON c.id = l.contact_id
+       WHERE q.id = $1 AND q.company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!q) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Soumission non trouvée' }); }
+
+    // Create project
+    const { rows: [proj] } = await client.query(
+      `INSERT INTO projects (company_id,name,status,type_of_work,budget_total)
+       VALUES ($1,$2,'active',$3,$4) RETURNING *`,
+      [req.company_id, q.title || q.lead_title || 'Nouveau projet', q.type_of_work || 'other', q.total || 0]
+    );
+
+    // Link quote to project
+    await client.query(`UPDATE quotes SET project_id=$1, status='converted' WHERE id=$2`, [proj.id, q.id]);
+
+    // Mark lead as won
+    if (q.l_id) {
+      await client.query(`UPDATE leads SET status='won', won_at=NOW() WHERE id=$1`, [q.l_id]);
+    }
+
+    // Create first invoice (acompte 30%)
+    const acompte = Math.round((Number(q.total) || 0) * 0.3 * 100) / 100;
+    const { rows: [count] } = await client.query(`SELECT COUNT(*)+1 AS n FROM invoices WHERE company_id=$1`, [req.company_id]);
+    const number = `FAC-${String(count.n).padStart(4,'0')}`;
+    const { rows: [inv] } = await client.query(
+      `INSERT INTO invoices (company_id,project_id,number,client_name,client_email,subtotal,tps_pct,tvq_pct,tps_amount,tvq_amount,total,amount_due,status)
+       VALUES ($1,$2,$3,$4,$5,$6,5,9.975,$7,$8,$9,$10,'draft') RETURNING *`,
+      [req.company_id, proj.id, number, q.client_name||'Client', q.client_email||null,
+       acompte, acompte*0.05, acompte*0.09975,
+       acompte*(1+0.05+0.09975), acompte*(1+0.05+0.09975)]
+    );
+    await client.query(
+      `INSERT INTO invoice_items (invoice_id,description,qty,unit_price,total,order_idx) VALUES ($1,$2,1,$3,$4,0)`,
+      [inv.id, 'Acompte (30%)', acompte, acompte]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ project: proj, invoice: inv });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

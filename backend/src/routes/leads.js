@@ -29,14 +29,42 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { contact_id, source, title, description, type_of_work, budget_min, budget_max, region, city, priority } = req.body;
-  const { rows: [l] } = await query(
-    `INSERT INTO leads (company_id,contact_id,source,title,description,type_of_work,budget_min,budget_max,region,city,priority)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [req.company_id, contact_id||null, source||'manual', title, description, type_of_work||'other',
-     budget_min||null, budget_max||null, region||null, city||null, priority||'normal']
-  );
-  res.status(201).json(l);
+  const { contact_id, contact_name, contact_phone, contact_email, source, title, description, type_of_work, budget_min, budget_max, region, city, priority } = req.body;
+  const client = await (await import('../db.js')).getClient();
+  try {
+    await client.query('BEGIN');
+    let cid = contact_id || null;
+    if (!cid && (contact_name || contact_phone || contact_email)) {
+      // Upsert contact by email or phone
+      const existing = contact_email
+        ? await client.query(`SELECT id FROM contacts WHERE company_id=$1 AND email=$2 LIMIT 1`, [req.company_id, contact_email])
+        : { rows: [] };
+      if (existing.rows.length > 0) {
+        cid = existing.rows[0].id;
+        await client.query(`UPDATE contacts SET name=COALESCE($1,name), phone=COALESCE($2,phone) WHERE id=$3`, [contact_name||null, contact_phone||null, cid]);
+      } else {
+        const { rows: [c] } = await client.query(
+          `INSERT INTO contacts (company_id,name,phone,email) VALUES ($1,$2,$3,$4) RETURNING id`,
+          [req.company_id, contact_name||'', contact_phone||null, contact_email||null]
+        );
+        cid = c.id;
+      }
+    }
+    const { rows: [l] } = await client.query(
+      `INSERT INTO leads (company_id,contact_id,source,title,description,type_of_work,budget_min,budget_max,region,city,priority)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [req.company_id, cid, source||'manual', title, description, type_of_work||'other',
+       budget_min||null, budget_max||null, region||null, city||null, priority||'normal']
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ ...l, contact_name: contact_name||null, contact_phone: contact_phone||null, contact_email: contact_email||null });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  } finally {
+    client.release();
+  }
 });
 
 router.patch('/:id', async (req, res) => {
@@ -52,6 +80,11 @@ router.patch('/:id', async (req, res) => {
   );
   if (!l) return res.status(404).json({ error: 'Lead non trouvé' });
   res.json(l);
+});
+
+router.delete('/:id', async (req, res) => {
+  await query(`DELETE FROM leads WHERE id = $1 AND company_id = $2`, [req.params.id, req.company_id]);
+  res.json({ success: true });
 });
 
 export default router;

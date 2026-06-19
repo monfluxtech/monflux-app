@@ -68,4 +68,9 @@ router.patch('/:id', async (req, res) => {
   res.json(inv);
 });
 
+router.delete('/:id', async (req, res) => {
+  await query(`DELETE FROM invoices WHERE id = $1 AND company_id = $2`, [req.params.id, req.company_id]);
+  res.json({ success: true });
+});
+
 export default router;

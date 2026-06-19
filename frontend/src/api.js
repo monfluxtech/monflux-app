@@ -57,6 +57,7 @@ export const leads = {
   get:    (id)          => http.get(`/leads/${id}`),
   create: (data)        => http.post('/leads', data),
   update: (id, data)    => http.patch(`/leads/${id}`, data),
+  delete: (id)          => http.delete(`/leads/${id}`),
 };
 
 export const contacts = {
@@ -72,6 +73,8 @@ export const quotes = {
   get:    (id)          => http.get(`/quotes/${id}`),
   create: (data)        => http.post('/quotes', data),
   update: (id, data)    => http.patch(`/quotes/${id}`, data),
+  delete: (id)          => http.delete(`/quotes/${id}`),
+  convert: (id)         => http.post(`/quotes/${id}/convert`),
 };
 
 export const invoices = {
@@ -79,6 +82,7 @@ export const invoices = {
   get:    (id)          => http.get(`/invoices/${id}`),
   create: (data)        => http.post('/invoices', data),
   update: (id, data)    => http.patch(`/invoices/${id}`, data),
+  delete: (id)          => http.delete(`/invoices/${id}`),
 };
 
 export const subcontractors = {

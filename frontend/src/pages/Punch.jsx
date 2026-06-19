@@ -71,7 +71,11 @@ export default function Punch() {
               <div className="mt-4 pt-4 border-t border-gray-100 text-center">
                 <img src={qrData.qr_image} alt="QR" className="w-40 h-40 mx-auto border border-gray-200 rounded-xl mb-3" />
                 <p className="text-xs text-gray-500 mb-2">Imprimez et affichez à l'entrée du chantier</p>
-                <button className="btn-secondary text-xs w-full justify-center" onClick={() => window.print()}>
+                <button className="btn-secondary text-xs w-full justify-center" onClick={() => {
+                  const w = window.open('', '_blank', 'width=420,height=520');
+                  w.document.write(`<!DOCTYPE html><html><head><title>QR Chantier</title><style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#fff;}img{width:300px;height:300px;}p{margin-top:16px;font-size:15px;color:#333;font-weight:600;}</style></head><body><img src="${qrData.qr_image}" alt="QR"/><p>${qrData.label||'Chantier'}</p></body></html>`);
+                  w.document.close(); w.focus(); w.print();
+                }}>
                   🖨️ Imprimer le QR
                 </button>
                 <p className="text-xs text-gray-300 font-mono mt-2 break-all">{qrData.url}</p>
