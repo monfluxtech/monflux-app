@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -489,6 +489,14 @@ export default function ProjectDetail() {
                     className="btn-ghost text-xs py-1.5"
                   >
                     <ExternalLink size={12}/> Prévisualiser
+                  </a>
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ${quittance.client_name}, voici votre quittance de fin de travaux à signer : ${FRONTEND_URL}/quittance/${quittance.public_token}`)}`}
+                    target="_blank" rel="noreferrer"
+                    className="btn-ghost text-xs py-1.5 text-green-600 hover:text-green-700"
+                    title="Envoyer la quittance par WhatsApp"
+                  >
+                    <MessageCircle size={12}/> WhatsApp
                   </a>
                 </div>
               )}

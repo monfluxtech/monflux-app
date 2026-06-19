@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi, email as emailApi } from '../api';
-import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2, MessageCircle } from 'lucide-react';
+import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2, MessageCircle, Bell } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
@@ -213,6 +213,23 @@ export default function Factures() {
     setItems(i=>i.filter(inv=>inv.id!==id));
   };
 
+  const sendReminder = async (inv) => {
+    const to = inv.client_email || prompt(`Courriel de ${inv.client_name || 'ce client'} :`);
+    if (!to) return;
+    const dueStr = inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-CA', { day:'numeric', month:'long', year:'numeric' }) : '';
+    const link = inv.public_token ? `\n\nVoir en ligne : ${window.location.origin}/facture/${inv.public_token}` : '';
+    try {
+      await emailApi.sendInvoice(inv.id, {
+        to,
+        subject: `Rappel de paiement — Facture ${inv.number} — ${Number(inv.amount_due||0).toLocaleString('fr-CA')}$`,
+        message: `Bonjour ${inv.client_name || ''},\n\nCeci est un rappel amical concernant votre facture ${inv.number} d'un montant de ${Number(inv.amount_due||0).toLocaleString('fr-CA')}$${dueStr ? `, dont l'échéance était le ${dueStr}` : ''}.\n\nSi vous avez déjà effectué le paiement, veuillez ignorer ce message.${link}\n\nMerci et bonne journée.`,
+      });
+      toast(`Rappel envoyé à ${to}`, 'success');
+    } catch (e) {
+      toast(e.response?.data?.detail || 'Erreur envoi — SMTP non configuré', 'error');
+    }
+  };
+
   const totalOverdue = items.filter(i=>i.status==='overdue').reduce((s,i)=>s+Number(i.amount_due||0),0);
 
   return (
@@ -302,6 +319,13 @@ export default function Factures() {
                         onClick={() => markPaid(inv)}
                       ><CheckCircle size={13}/></button>
                     </>
+                  )}
+                  {inv.status === 'overdue' && (
+                    <button
+                      className="btn-ghost p-1.5 text-red-400 hover:text-red-600 animate-pulse"
+                      title="Envoyer un rappel de paiement"
+                      onClick={() => sendReminder(inv)}
+                    ><Bell size={13}/></button>
                   )}
                   <button
                     className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
