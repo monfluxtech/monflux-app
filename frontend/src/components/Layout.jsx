@@ -1,8 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuthStore, useUIStore } from '../store';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
-  HardHat, QrCode, MessageSquare, Settings, LogOut, Menu, Moon, Sun, Zap
+  HardHat, QrCode, MessageSquare, Settings, LogOut, Menu, Moon, Sun, Plus, X
 } from 'lucide-react';
 
 const NAV = [
@@ -17,10 +18,18 @@ const NAV = [
   { to: '/parametres',      icon: Settings,        label: 'Paramètres' },
 ];
 
+const QUICK = [
+  { label:'Nouveau lead',        path:'/leads?new=1' },
+  { label:'Nouvelle soumission', path:'/soumissions?new=1' },
+  { label:'Nouveau projet',      path:'/projets?new=1' },
+  { label:'Pointer un chantier', path:'/punch' },
+];
+
 export default function Layout({ children }) {
   const { user, logout } = useAuthStore();
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
   const navigate = useNavigate();
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const handleLogout = () => { logout(); navigate('/'); };
 
@@ -72,10 +81,29 @@ export default function Layout({ children }) {
             <Menu size={16}/>
           </button>
           <div className="flex-1" />
-          {user?.name && (
-            <span className="text-xs text-gray-500">{user.name}</span>
-          )}
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0" style={{background:'#F26522'}}>
+          {/* Quick-add */}
+          <div className="relative">
+            <button
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-white flex-shrink-0 shadow-sm"
+              style={{background:'#F26522'}}
+              onClick={() => setQuickOpen(o=>!o)}
+              title="Actions rapides"
+            >
+              {quickOpen ? <X size={14}/> : <Plus size={14}/>}
+            </button>
+            {quickOpen && (
+              <div className="absolute right-0 top-9 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1 w-48">
+                {QUICK.map(q => (
+                  <button key={q.path} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-brand transition-colors"
+                    onClick={() => { navigate(q.path); setQuickOpen(false); }}>
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {user?.name && <span className="text-xs text-gray-500 hidden sm:block">{user.name}</span>}
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0" style={{background:'#111827'}}>
             {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
           </div>
         </header>
