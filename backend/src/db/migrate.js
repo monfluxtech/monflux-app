@@ -21,6 +21,15 @@ async function migrate() {
     await client.connect();
     console.log('✅ Connected to PostgreSQL');
 
+    // Skip if schema already applied (idempotent check)
+    const check = await client.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users' LIMIT 1"
+    );
+    if (check.rows.length > 0) {
+      console.log('✅ Schema already applied, skipping migration');
+      return;
+    }
+
     const schema = fs.readFileSync(schemaPath, 'utf8');
     console.log('Running schema migration...');
     await client.query(schema);
