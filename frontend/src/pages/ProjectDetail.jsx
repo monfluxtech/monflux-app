@@ -1,10 +1,55 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, pdf } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
+
+const money = (v) => (Number(v) || 0).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
+
+const TRADE_STATUS = {
+  to_find:   { label: 'À trouver', badge: 'badge-gray' },
+  contacted: { label: 'Contacté',  badge: 'badge-blue' },
+  quoted:    { label: 'Soumissionné', badge: 'badge-yellow' },
+  confirmed: { label: 'Confirmé',  badge: 'badge-orange' },
+  done:      { label: 'Terminé',   badge: 'badge-green' },
+};
+const EXPENSE_TYPES = {
+  supplier_invoice: 'Facture fournisseur',
+  material: 'Matériaux',
+  equipment: 'Équipement',
+  permit: 'Permis',
+  rental: 'Location',
+  other: 'Autre',
+};
+
+// Aperçu in-app d'un document généré (PDF de soumission/facture) ou téléversé (plan/photo).
+function DocPreview({ doc, onClose }) {
+  if (!doc) return null;
+  const isImage = (doc.mime_type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(doc.url || '');
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-3xl flex flex-col overflow-hidden" style={{ height: '85vh' }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2 min-w-0">
+            <Eye size={15} className="text-brand" />
+            <p className="text-sm font-semibold text-gray-800 truncate">{doc.title || 'Aperçu du document'}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn-ghost text-xs py-1"><ExternalLink size={13} /> Ouvrir</a>
+            <button className="btn-ghost text-xs py-1 px-2" onClick={onClose}><X size={16} /></button>
+          </div>
+        </div>
+        <div className="flex-1 bg-gray-50 overflow-auto flex items-center justify-center">
+          {isImage
+            ? <img src={doc.url} alt={doc.title} className="max-w-full max-h-full object-contain" />
+            : <iframe src={doc.url} title={doc.title || 'document'} className="w-full h-full" style={{ border: 0 }} />}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
@@ -155,11 +200,21 @@ export default function ProjectDetail() {
   const [savingCO, setSavingCO] = useState(false);
   const [copiedCO, setCopiedCO] = useState(null);
   const [portalMessages, setPortalMessages] = useState([]);
+  // Batch J — rentabilité, corps de métiers, dépenses, aperçu documents
+  const [profit, setProfit] = useState(null);
+  const [subs, setSubs] = useState([]);
+  const [preview, setPreview] = useState(null);
+  const [showTradeForm, setShowTradeForm] = useState(false);
+  const [tradeForm, setTradeForm] = useState({ trade: '', estimated_cost: '', chosen_subcontractor_id: '' });
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '' });
+  const [laborRate, setLaborRate] = useState('');
+  const [savingRate, setSavingRate] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -167,6 +222,8 @@ export default function ProjectDetail() {
         quittancesApi.list({ project_id: id }),
         changeOrdersApi.list({ project_id: id }),
         projectsApi.getPortalMessages(id).catch(() => ({ data: [] })),
+        projectsApi.profitability(id).catch(() => ({ data: null })),
+        subsApi.list().catch(() => ({ data: [] })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -176,7 +233,14 @@ export default function ProjectDetail() {
       setChangeOrdersList(cos || []);
       setPortalMessages(msgs || []);
       setNotes(proj.notes || '');
+      setProfit(prof);
+      setSubs(subList || []);
+      setLaborRate(prof?.actual?.cost_breakdown?.labor_cost_rate ? String(prof.actual.cost_breakdown.labor_cost_rate) : '');
     } catch {} finally { setLoading(false); }
+  };
+
+  const refreshProfit = async () => {
+    try { const { data } = await projectsApi.profitability(id); setProfit(data); } catch {}
   };
 
   const saveNotes = async (val) => {
@@ -271,6 +335,73 @@ export default function ProjectDetail() {
     setCopiedCO(co.id); setTimeout(() => setCopiedCO(null), 2000);
   };
 
+  // ── Corps de métiers ────────────────────────────────────────────────────────
+  const addTrade = async (e) => {
+    e.preventDefault();
+    if (!tradeForm.trade.trim()) return;
+    try {
+      const { data } = await projectsApi.addTrade(id, {
+        trade: tradeForm.trade.trim(),
+        estimated_cost: tradeForm.estimated_cost ? Number(tradeForm.estimated_cost) : null,
+        chosen_subcontractor_id: tradeForm.chosen_subcontractor_id || null,
+      });
+      setProject(p => ({ ...p, trades: [...(p.trades || []), data] }));
+      setTradeForm({ trade: '', estimated_cost: '', chosen_subcontractor_id: '' });
+      setShowTradeForm(false);
+      refreshProfit();
+    } catch {}
+  };
+
+  const patchTrade = async (tradeId, patch) => {
+    // Optimistic update so the inline selects feel instant.
+    setProject(p => ({ ...p, trades: p.trades.map(t => t.id === tradeId ? { ...t, ...patch } : t) }));
+    try {
+      const { data } = await projectsApi.updateTrade(id, tradeId, patch);
+      setProject(p => ({ ...p, trades: p.trades.map(t => t.id === tradeId ? data : t) }));
+      if ('estimated_cost' in patch) refreshProfit();
+    } catch {}
+  };
+
+  const removeTrade = async (tradeId) => {
+    if (!confirm('Retirer ce corps de métier ?')) return;
+    await projectsApi.deleteTrade(id, tradeId);
+    setProject(p => ({ ...p, trades: p.trades.filter(t => t.id !== tradeId) }));
+    refreshProfit();
+  };
+
+  // ── Dépenses ────────────────────────────────────────────────────────────────
+  const addExpense = async (e) => {
+    e.preventDefault();
+    if (!expenseForm.amount) return;
+    try {
+      const { data } = await projectsApi.addExpense(id, {
+        type: expenseForm.type,
+        description: expenseForm.description || null,
+        amount: Number(expenseForm.amount),
+        expense_date: expenseForm.expense_date || null,
+      });
+      setProject(p => ({ ...p, expenses: [data, ...(p.expenses || [])] }));
+      setExpenseForm({ type: 'supplier_invoice', description: '', amount: '', expense_date: '' });
+      setShowExpenseForm(false);
+      refreshProfit();
+    } catch {}
+  };
+
+  const removeExpense = async (expenseId) => {
+    if (!confirm('Supprimer cette dépense ?')) return;
+    await projectsApi.deleteExpense(id, expenseId);
+    setProject(p => ({ ...p, expenses: p.expenses.filter(x => x.id !== expenseId) }));
+    refreshProfit();
+  };
+
+  const saveLaborRate = async () => {
+    setSavingRate(true);
+    try {
+      await companiesApi.update({ default_labor_cost_rate: Number(laborRate) || 0 });
+      await refreshProfit();
+    } catch {} finally { setSavingRate(false); }
+  };
+
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
   if (!project) return <Layout><div className="p-8 text-red-500">Projet non trouvé</div></Layout>;
 
@@ -329,6 +460,52 @@ export default function ProjectDetail() {
             <p className="text-xs text-gray-400 mt-0.5">Total punchs</p>
           </div>
         </div>
+
+        {/* Rentabilité */}
+        {profit && (
+          <div className="card mb-4">
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp size={15} className="text-brand" />
+              <h2 className="font-semibold text-gray-900 text-sm">Rentabilité</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { label: 'Théorique', d: profit.theoretical, sub: 'Commande − coûts estimés (budgets + métiers)' },
+                { label: 'Réelle', d: profit.actual, sub: 'Factures émises − punch & dépenses' },
+              ].map(({ label, d, sub }) => {
+                const pos = (d.margin || 0) >= 0;
+                return (
+                  <div key={label} className="rounded-xl border border-gray-100 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-gray-500">Marge {label.toLowerCase()}</p>
+                      {d.margin_pct != null && <span className={`badge ${pos ? 'badge-green' : 'badge-red'}`}>{d.margin_pct}%</span>}
+                    </div>
+                    <p className={`text-2xl font-bold mt-1 ${pos ? 'text-green-600' : 'text-red-500'}`}>{money(d.margin)}</p>
+                    <p className="text-xs text-gray-400 mb-2">{sub}</p>
+                    <div className="pt-2 border-t border-gray-50 space-y-0.5 text-xs text-gray-500">
+                      <div className="flex justify-between"><span>Revenus</span><span className="font-medium text-gray-700">{money(d.revenue)}</span></div>
+                      <div className="flex justify-between"><span>Coûts</span><span className="font-medium text-gray-700">{money(d.cost)}</span></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">Taux de coût main d'œuvre interne (punch)&nbsp;:</span>
+              <div className="flex items-center gap-1">
+                <input
+                  className="input py-1 text-xs" style={{ width: 80 }} type="number" min="0" step="0.5"
+                  value={laborRate} onChange={e => setLaborRate(e.target.value)} placeholder="0"
+                />
+                <span className="text-xs text-gray-400">$/h</span>
+                <button className="btn-secondary text-xs py-1 px-2" onClick={saveLaborRate} disabled={savingRate}>
+                  {savingRate ? <Loader2 size={12} className="animate-spin" /> : 'Enregistrer'}
+                </button>
+              </div>
+              <span className="text-[11px] text-gray-400">{profit.actual.cost_breakdown.hours_logged || 0}h pointées · main d'œuvre {money(profit.actual.cost_breakdown.labor_punch)} · dépenses {money(profit.actual.cost_breakdown.expenses)}</span>
+            </div>
+          </div>
+        )}
 
         {/* Gantt */}
         <div className="card mb-4">
@@ -424,6 +601,7 @@ export default function ProjectDetail() {
                     </div>
                     <span className={`badge ${SB[inv.status]||'badge-gray'} text-xs`}>{SL[inv.status]||inv.status}</span>
                     <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(inv.total||0).toLocaleString('fr-CA')}$</p>
+                    <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
                   </div>
                 );
               })}
@@ -453,6 +631,7 @@ export default function ProjectDetail() {
                       </div>
                       <span className={`badge ${QSB[q.status]||'badge-gray'} text-xs`}>{QSL[q.status]||q.status}</span>
                       {q.total > 0 && <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(q.total).toLocaleString('fr-CA')}$</p>}
+                      <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.quoteUrl(q.id), title: q.title || 'Soumission' })}><Eye size={13}/></button>
                     </div>
                   ))}
                 </div>
@@ -460,6 +639,130 @@ export default function ProjectDetail() {
             })()}
           </div>
         )}
+
+        {/* Corps de métiers */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <HardHat size={15} className="text-brand" />
+              <h2 className="font-semibold text-gray-900 text-sm">Corps de métiers</h2>
+              {project.trades?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.trades.length}</span>}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowTradeForm(v => !v)}><Plus size={13} /> Ajouter</button>
+          </div>
+
+          {showTradeForm && (
+            <form onSubmit={addTrade} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+              <div className="sm:col-span-1"><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
+              <div><label className="label">Coût estimé ($)</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
+              <div className="flex gap-2">
+                <select className="input flex-1" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
+                  <option value="">Sous-traitant…</option>
+                  {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
+                </select>
+                <button type="submit" className="btn-primary text-xs px-3">OK</button>
+              </div>
+            </form>
+          )}
+
+          {project.trades?.length > 0 ? (
+            <div className="space-y-2">
+              {project.trades.map(t => (
+                <div key={t.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0">
+                  <span className="text-sm font-medium text-gray-800 flex-1 min-w-[120px]">{t.trade}</span>
+                  <select
+                    className="input py-1 text-xs" style={{ width: 130 }}
+                    value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}
+                  >
+                    {Object.entries(TRADE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  <select
+                    className="input py-1 text-xs" style={{ width: 170 }}
+                    value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}
+                  >
+                    <option value="">— Sous-traitant choisi —</option>
+                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
+                  </select>
+                  <span className="text-xs text-gray-500 w-20 text-right">{t.estimated_cost != null ? money(t.estimated_cost) : '—'}</span>
+                  <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          ) : !showTradeForm && (
+            <div className="text-center py-5">
+              <HardHat size={26} className="text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Déclarez les corps de métiers requis et assignez le sous-traitant choisi pour chacun.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Dépenses réelles */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign size={15} className="text-brand" />
+              <h2 className="font-semibold text-gray-900 text-sm">Dépenses & factures fournisseurs</h2>
+              {project.expenses?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.expenses.length}</span>}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
+          </div>
+
+          {showExpenseForm && (
+            <form onSubmit={addExpense} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+              <div><label className="label">Type</label>
+                <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
+                  {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
+              <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
+              <div className="flex gap-2"><input className="input flex-1" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Description" /><button type="submit" className="btn-primary text-xs px-3">OK</button></div>
+            </form>
+          )}
+
+          {project.expenses?.length > 0 ? (
+            <div className="space-y-1.5">
+              {project.expenses.map(x => (
+                <div key={x.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                  <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
+                  <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{x.description || x.subcontractor_name || '—'}</span>
+                  {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
+                  <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
+                  <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          ) : !showExpenseForm && (
+            <p className="text-sm text-gray-400 text-center py-4">Aucune dépense. Ajoutez factures fournisseurs et dépenses pour calculer la rentabilité réelle.</p>
+          )}
+        </div>
+
+        {/* Documents */}
+        <div className="card mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <FolderOpen size={15} className="text-brand" />
+            <h2 className="font-semibold text-gray-900 text-sm">Documents</h2>
+            {project.documents?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.documents.length}</span>}
+          </div>
+          {project.documents?.length > 0 ? (
+            <div className="space-y-2">
+              {project.documents.map(d => (
+                <div key={d.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                  <FileText size={14} className="text-gray-300 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate">{d.name}</p>
+                    <p className="text-xs text-gray-400">{d.type}{d.created_at ? ` · ${new Date(d.created_at).toLocaleDateString('fr-CA')}` : ''}</p>
+                  </div>
+                  <button className="btn-ghost text-xs py-1 px-2" onClick={() => setPreview({ url: d.file_url, mime_type: d.mime_type, title: d.name })}>
+                    <Eye size={13} /> Prévisualiser
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">Aucun document téléversé sur ce projet.</p>
+          )}
+        </div>
 
         {/* Quittance */}
         <div className="card mb-4">
@@ -770,6 +1073,7 @@ export default function ProjectDetail() {
           )}
         </div>
       </div>
+      <DocPreview doc={preview} onClose={() => setPreview(null)} />
     </Layout>
   );
 }

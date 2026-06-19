@@ -117,6 +117,46 @@ async function applyMigrations() {
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (company_id, period)
     )`);
+
+  // ── Batch J — Portefeuille de projets & rentabilité (2026-06-19) ─────────────
+  // Internal labour cost rate ($/h) used to cost punched hours of own employees.
+  await run('companies: default_labor_cost_rate',
+    `ALTER TABLE companies ADD COLUMN IF NOT EXISTS default_labor_cost_rate NUMERIC(10,2) DEFAULT 0`);
+
+  // Corps de métiers requis sur un projet + sous-traitant choisi par métier.
+  await run('project_trades create',
+    `CREATE TABLE IF NOT EXISTS project_trades (
+      id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id              UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      trade                   TEXT NOT NULL,
+      status                  TEXT NOT NULL DEFAULT 'to_find'
+                                CHECK (status IN ('to_find','contacted','quoted','confirmed','done')),
+      chosen_subcontractor_id UUID REFERENCES subcontractors(id) ON DELETE SET NULL,
+      estimated_cost          NUMERIC(12,2),
+      notes                   TEXT,
+      created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('project_trades index',
+    `CREATE INDEX IF NOT EXISTS project_trades_project_idx ON project_trades(project_id)`);
+
+  // Dépenses réelles d'un projet (factures fournisseurs, matériaux, autres) → rentabilité réelle.
+  await run('project_expenses create',
+    `CREATE TABLE IF NOT EXISTS project_expenses (
+      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id        UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id        UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      type              TEXT NOT NULL DEFAULT 'supplier_invoice'
+                          CHECK (type IN ('supplier_invoice','material','equipment','permit','rental','other')),
+      description       TEXT,
+      amount            NUMERIC(12,2) NOT NULL DEFAULT 0,
+      subcontractor_id  UUID REFERENCES subcontractors(id) ON DELETE SET NULL,
+      expense_date      DATE,
+      created_by        UUID,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('project_expenses index',
+    `CREATE INDEX IF NOT EXISTS project_expenses_project_idx ON project_expenses(project_id)`);
 }
 
 export async function initializeDatabase() {

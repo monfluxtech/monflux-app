@@ -53,6 +53,13 @@ export const projects = {
   resetPortalToken: (id)    => http.post(`/projects/${id}/reset-portal-token`),
   getPortalMessages: (id)   => http.get(`/projects/${id}/portal-messages`),
   geocode:     (id)         => http.post(`/projects/${id}/geocode`),
+  // Batch J — rentabilité, corps de métiers, dépenses
+  profitability: (id)             => http.get(`/projects/${id}/profitability`),
+  addTrade:    (id, data)         => http.post(`/projects/${id}/trades`, data),
+  updateTrade: (id, tid, data)    => http.patch(`/projects/${id}/trades/${tid}`, data),
+  deleteTrade: (id, tid)          => http.delete(`/projects/${id}/trades/${tid}`),
+  addExpense:  (id, data)         => http.post(`/projects/${id}/expenses`, data),
+  deleteExpense: (id, eid)        => http.delete(`/projects/${id}/expenses/${eid}`),
 };
 
 export const leads = {

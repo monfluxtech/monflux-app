@@ -3,7 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import SlideOver from '../components/SlideOver';
 import { projects as projectsApi } from '../api';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp } from 'lucide-react';
+
+const num = (v) => Number(v) || 0;
+const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
+// Marge théorique = commande − (budgets + coûts métiers estimés). Réelle = facturé − (punch + dépenses).
+const theoMargin = (p) => num(p.contract_value) - (num(p.budget_materials) + num(p.budget_labor) + num(p.trades_estimated_cost));
+const realMargin = (p) => num(p.invoiced_real) - (num(p.labor_cost_real) + num(p.expenses_real));
 
 // Load Leaflet from CDN once (no npm dependency, no API key needed)
 let leafletPromise = null;
@@ -231,6 +237,19 @@ export default function Projets() {
               {p.address && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
               {p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(p.start_date).toLocaleDateString('fr-CA')}</span>}
               {p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
+              {(() => {
+                const hasReal = num(p.invoiced_real) > 0;
+                const m = hasReal ? realMargin(p) : theoMargin(p);
+                const rev = hasReal ? num(p.invoiced_real) : num(p.contract_value);
+                if (!rev && !m) return null;
+                const pos = m >= 0;
+                return (
+                  <span className={`flex items-center gap-1 font-medium ${pos ? 'text-green-600' : 'text-red-500'}`} title={hasReal ? 'Marge réelle' : 'Marge théorique'}>
+                    <TrendingUp size={11}/>{money(m)}{rev > 0 ? ` · ${Math.round((m / rev) * 100)}%` : ''}
+                    <span className="text-gray-300 font-normal">{hasReal ? 'réel' : 'prév.'}</span>
+                  </span>
+                );
+              })()}
             </div>
             {p.status === 'active' && (
               <div
@@ -324,6 +343,27 @@ export default function Projets() {
           <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (
           <>
+            {/* Portefeuille — synthèse rentabilité */}
+            {filtered.length > 0 && (() => {
+              const totContract = filtered.reduce((s, p) => s + num(p.contract_value), 0);
+              const totInvoiced = filtered.reduce((s, p) => s + num(p.invoiced_real), 0);
+              const totReal = filtered.reduce((s, p) => s + realMargin(p), 0);
+              const totTheo = filtered.reduce((s, p) => s + theoMargin(p), 0);
+              const stat = (label, val, color) => (
+                <div className="flex-1 min-w-[110px]">
+                  <p className="text-xs text-gray-400">{label}</p>
+                  <p className={`text-lg font-bold ${color || 'text-gray-900'}`}>{money(val)}</p>
+                </div>
+              );
+              return (
+                <div className="card mb-5 flex flex-wrap gap-4">
+                  {stat('Valeur portefeuille', totContract)}
+                  {stat('Facturé', totInvoiced)}
+                  {stat('Marge théorique', totTheo, totTheo >= 0 ? 'text-green-600' : 'text-red-500')}
+                  {stat('Marge réelle', totReal, totReal >= 0 ? 'text-green-600' : 'text-red-500')}
+                </div>
+              );
+            })()}
             {active.length > 0 && (
               <div className="mb-6">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">En cours ({active.length})</p>

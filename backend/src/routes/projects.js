@@ -8,19 +8,26 @@ router.use(authenticateToken, resolveCompany);
 // GET /api/projects — list all projects for company (Gantt feed)
 router.get('/', async (req, res) => {
   try {
+    // Scalar subqueries keep the per-project financials correct (joining phases +
+    // members + timesheets at once would fan out and multiply the SUMs).
     const { rows } = await query(
       `SELECT p.*,
               c.name AS client_name, c.email AS client_email, c.phone AS client_phone,
-              COUNT(DISTINCT pp.id) AS phase_count,
-              COUNT(DISTINCT pm2.id) AS member_count,
-              COALESCE(SUM(t.hours_total), 0) AS total_hours_logged
+              (SELECT COUNT(*) FROM project_phases pp WHERE pp.project_id = p.id) AS phase_count,
+              (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
+              (SELECT COALESCE(SUM(ts.hours_total),0) FROM timesheets ts WHERE ts.project_id = p.id) AS total_hours_logged,
+              (SELECT COALESCE(SUM(i.total),0) FROM invoices i
+                 WHERE i.project_id = p.id AND i.status <> 'draft') AS invoiced_real,
+              (SELECT COALESCE(SUM(e.amount),0) FROM project_expenses e WHERE e.project_id = p.id) AS expenses_real,
+              (SELECT COALESCE(SUM(tr.estimated_cost),0) FROM project_trades tr WHERE tr.project_id = p.id) AS trades_estimated_cost,
+              (SELECT COALESCE(SUM(ts.hours_total * COALESCE(sc.hourly_rate, comp.default_labor_cost_rate)),0)
+                 FROM timesheets ts
+                 LEFT JOIN subcontractors sc ON sc.id = ts.subcontractor_id
+                 WHERE ts.project_id = p.id) AS labor_cost_real
        FROM projects p
        LEFT JOIN contacts c ON c.id = p.client_id
-       LEFT JOIN project_phases pp ON pp.project_id = p.id
-       LEFT JOIN project_members pm2 ON pm2.project_id = p.id
-       LEFT JOIN timesheets t ON t.project_id = p.id
+       LEFT JOIN companies comp ON comp.id = p.company_id
        WHERE p.company_id = $1
-       GROUP BY p.id, c.name, c.email, c.phone
        ORDER BY p.start_date ASC NULLS LAST, p.created_at DESC`,
       [req.company_id]
     );
@@ -43,7 +50,7 @@ router.get('/:id', async (req, res) => {
     );
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
 
-    const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }] = await Promise.all([
+    const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }] = await Promise.all([
       query(`SELECT * FROM project_phases WHERE project_id = $1 ORDER BY display_order`, [req.params.id]),
       query(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
       query(
@@ -55,13 +62,28 @@ router.get('/:id', async (req, res) => {
         [req.params.id]
       ),
       query(
-        `SELECT id, type, name, file_url, extraction_done, created_at
+        `SELECT id, type, name, file_url, mime_type, extraction_done, created_at
          FROM project_documents WHERE project_id = $1 ORDER BY created_at DESC`,
+        [req.params.id]
+      ),
+      query(
+        `SELECT t.*, s.name AS subcontractor_name, s.company_name AS subcontractor_company,
+                s.phone AS subcontractor_phone, s.hourly_rate AS subcontractor_hourly_rate
+         FROM project_trades t
+         LEFT JOIN subcontractors s ON s.id = t.chosen_subcontractor_id
+         WHERE t.project_id = $1 ORDER BY t.created_at`,
+        [req.params.id]
+      ),
+      query(
+        `SELECT e.*, s.name AS subcontractor_name
+         FROM project_expenses e
+         LEFT JOIN subcontractors s ON s.id = e.subcontractor_id
+         WHERE e.project_id = $1 ORDER BY e.expense_date DESC NULLS LAST, e.created_at DESC`,
         [req.params.id]
       ),
     ]);
 
-    res.json({ ...project, phases, milestones, members, documents: docs });
+    res.json({ ...project, phases, milestones, members, documents: docs, trades, expenses });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -265,6 +287,170 @@ router.get('/:id/portal-messages', async (req, res) => {
       [req.params.id]
     );
     res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Batch J — Rentabilité (théorique + réelle) ────────────────────────────────
+// GET /api/projects/:id/profitability
+// Théorique = montant de commande + coûts estimés (budgets + RFQ/métiers).
+// Réelle    = factures clients émises − (punch × taux + dépenses/factures fournisseurs).
+router.get('/:id/profitability', async (req, res) => {
+  try {
+    const { rows: [p] } = await query(
+      `SELECT p.id, p.contract_value, p.budget_materials, p.budget_labor,
+              comp.default_labor_cost_rate
+       FROM projects p
+       LEFT JOIN companies comp ON comp.id = p.company_id
+       WHERE p.id = $1 AND p.company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+
+    const [{ rows: [t] }, { rows: [r] }] = await Promise.all([
+      query(`SELECT COALESCE(SUM(estimated_cost),0) AS trades_est FROM project_trades WHERE project_id = $1`, [req.params.id]),
+      query(
+        `SELECT
+           (SELECT COALESCE(SUM(i.total),0) FROM invoices i
+              WHERE i.project_id = $1 AND i.status <> 'draft') AS invoiced,
+           (SELECT COALESCE(SUM(e.amount),0) FROM project_expenses e WHERE e.project_id = $1) AS expenses,
+           (SELECT COALESCE(SUM(ts.hours_total),0) FROM timesheets ts WHERE ts.project_id = $1) AS hours,
+           (SELECT COALESCE(SUM(ts.hours_total * COALESCE(sc.hourly_rate, $2)),0)
+              FROM timesheets ts LEFT JOIN subcontractors sc ON sc.id = ts.subcontractor_id
+              WHERE ts.project_id = $1) AS labor_cost`,
+        [req.params.id, Number(p.default_labor_cost_rate) || 0]
+      ),
+    ]);
+
+    const num = (v) => Number(v) || 0;
+    const contract = num(p.contract_value);
+    const tradesEst = num(t.trades_est);
+    const budgets = num(p.budget_materials) + num(p.budget_labor);
+
+    // Théorique
+    const costTheo = budgets + tradesEst;
+    const marginTheo = contract - costTheo;
+
+    // Réel
+    const invoiced = num(r.invoiced);
+    const laborCost = num(r.labor_cost);
+    const expenses = num(r.expenses);
+    const costReal = laborCost + expenses;
+    const marginReal = invoiced - costReal;
+
+    const pct = (margin, rev) => (rev > 0 ? Math.round((margin / rev) * 1000) / 10 : null);
+
+    res.json({
+      theoretical: {
+        revenue: contract,
+        cost: costTheo,
+        cost_breakdown: { budget_materials: num(p.budget_materials), budget_labor: num(p.budget_labor), trades_estimated: tradesEst },
+        margin: marginTheo,
+        margin_pct: pct(marginTheo, contract),
+      },
+      actual: {
+        revenue: invoiced,
+        cost: costReal,
+        cost_breakdown: { labor_punch: laborCost, expenses, hours_logged: num(r.hours), labor_cost_rate: num(p.default_labor_cost_rate) },
+        margin: marginReal,
+        margin_pct: pct(marginReal, invoiced),
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Corps de métiers requis + sous-traitant choisi par métier ─────────────────
+async function assertProjectInCompany(projectId, companyId) {
+  const { rows } = await query(`SELECT id FROM projects WHERE id = $1 AND company_id = $2`, [projectId, companyId]);
+  return rows.length > 0;
+}
+
+router.post('/:id/trades', async (req, res) => {
+  const { trade, status, chosen_subcontractor_id, estimated_cost, notes } = req.body;
+  if (!trade) return res.status(400).json({ error: 'Corps de métier requis' });
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    const { rows: [row] } = await query(
+      `INSERT INTO project_trades (project_id, trade, status, chosen_subcontractor_id, estimated_cost, notes)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [req.params.id, trade, status || 'to_find', chosen_subcontractor_id || null, estimated_cost ?? null, notes || null]
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.patch('/:id/trades/:tradeId', async (req, res) => {
+  const allowed = ['trade','status','chosen_subcontractor_id','estimated_cost','notes'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
+  const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+  const values = [...Object.values(updates), req.params.tradeId, req.params.id];
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    const { rows: [row] } = await query(
+      `UPDATE project_trades SET ${setClause}, updated_at = NOW()
+       WHERE id = $${values.length - 1} AND project_id = $${values.length} RETURNING *`,
+      values
+    );
+    if (!row) return res.status(404).json({ error: 'Métier introuvable' });
+    res.json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.delete('/:id/trades/:tradeId', async (req, res) => {
+  try {
+    const { rowCount } = await query(
+      `DELETE FROM project_trades WHERE id = $1 AND project_id = $2`,
+      [req.params.tradeId, req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Métier introuvable' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Dépenses réelles (factures fournisseurs, matériaux…) ──────────────────────
+router.post('/:id/expenses', async (req, res) => {
+  const { type, description, amount, subcontractor_id, expense_date } = req.body;
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    const { rows: [row] } = await query(
+      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, subcontractor_id, expense_date, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [req.company_id, req.params.id, type || 'supplier_invoice', description || null,
+       Number(amount) || 0, subcontractor_id || null, expense_date || null, req.user.userId]
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.delete('/:id/expenses/:expenseId', async (req, res) => {
+  try {
+    const { rowCount } = await query(
+      `DELETE FROM project_expenses WHERE id = $1 AND project_id = $2 AND company_id = $3`,
+      [req.params.expenseId, req.params.id, req.company_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Dépense introuvable' });
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
