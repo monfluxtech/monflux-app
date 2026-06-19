@@ -107,24 +107,69 @@ export default function Rapport() {
           <StatCard label="Leads actifs" value={data.leads.filter(l=>['new','contacted'].includes(l.status)).length} sub="nouveaux / contactés" color="#f59e0b"/>
         </div>
 
-        {/* Revenue chart */}
-        <div className="card mb-6">
-          <h2 className="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">
-            <TrendingUp size={14} className="text-brand"/> Facturation — 6 derniers mois
-          </h2>
-          <div className="flex items-end gap-3 h-32">
-            {monthlyRevenue.map((m, i) => (
-              <div key={i} className="flex flex-col items-center flex-1 gap-1">
-                <div className="w-full rounded-t-md transition-all" style={{
-                  height: `${Math.round(m.revenue / maxRev * 100)}%`,
-                  minHeight: m.revenue > 0 ? 4 : 0,
-                  background: '#F26522',
-                  opacity: i === 5 ? 1 : 0.5 + i * 0.1,
-                }}/>
-                <p className="text-xs text-gray-400">{m.label}</p>
-                {m.revenue > 0 && <p className="text-xs font-semibold text-gray-600">{Math.round(m.revenue/1000)}k</p>}
-              </div>
-            ))}
+        {/* Revenue chart + Lead funnel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <div className="card">
+            <h2 className="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">
+              <TrendingUp size={14} className="text-brand"/> Facturation — 6 derniers mois
+            </h2>
+            <div className="flex items-end gap-2 h-28 mb-1">
+              {monthlyRevenue.map((m, i) => (
+                <div key={i} className="flex flex-col items-center flex-1 gap-1 group">
+                  <div
+                    className="w-full rounded-t-md transition-all relative"
+                    style={{
+                      height: `${Math.round(m.revenue / maxRev * 100)}%`,
+                      minHeight: m.revenue > 0 ? 4 : 0,
+                      background: i === 5 ? '#F26522' : '#F26522',
+                      opacity: 0.4 + i * 0.12,
+                    }}
+                    title={`${m.label}: ${m.revenue.toLocaleString('fr-CA')}$`}
+                  />
+                  <p className="text-xs text-gray-400">{m.label}</p>
+                  <p className="text-xs font-semibold text-gray-600 h-4">
+                    {m.revenue > 0 ? `${Math.round(m.revenue/1000)}k` : ''}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Lead funnel */}
+          <div className="card">
+            <h2 className="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">
+              <Users size={14} className="text-brand"/> Entonnoir des leads
+            </h2>
+            {(() => {
+              const stages = [
+                { key: 'all',       label: 'Leads total',        count: data.leads.length,                                               color: '#6b7280' },
+                { key: 'contacted', label: 'Contactés',           count: data.leads.filter(l=>['contacted','quote_sent','won'].includes(l.status)).length, color: '#F26522' },
+                { key: 'quoted',    label: 'Soumission envoyée',  count: data.leads.filter(l=>['quote_sent','won'].includes(l.status)).length, color: '#6366f1' },
+                { key: 'won',       label: 'Gagnés',              count: wonLeads.length,                                                color: '#22c55e' },
+              ];
+              const max = stages[0].count || 1;
+              return (
+                <div className="space-y-2">
+                  {stages.map(s => (
+                    <div key={s.key}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-500">{s.label}</span>
+                        <span className="text-xs font-bold" style={{ color: s.color }}>{s.count}</span>
+                      </div>
+                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${Math.round(s.count / max * 100)}%`, background: s.color }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-50">
+                    Taux de conversion global : <strong style={{color:'#22c55e'}}>{convRate}%</strong>
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

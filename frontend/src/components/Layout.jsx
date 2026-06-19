@@ -3,11 +3,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuthStore, useUIStore } from '../store';
 import { dashboard as dashApi } from '../api';
 import FloatingChat from './FloatingChat';
+import SearchModal from './SearchModal';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
   LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
-  AlertCircle, Clock, FileQuestion,
+  AlertCircle, Clock, FileQuestion, Search,
 } from 'lucide-react';
 
 const NAV = [
@@ -34,6 +35,7 @@ export default function Layout({ children }) {
   const { user, logout } = useAuthStore();
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
   const navigate = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -50,6 +52,18 @@ export default function Layout({ children }) {
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Global Cmd+K shortcut
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(o => !o);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, []);
 
   // Load notifications
@@ -109,6 +123,17 @@ export default function Layout({ children }) {
           <button onClick={toggleSidebar} className="btn-ghost p-1.5 rounded-md">
             <Menu size={16} />
           </button>
+
+          {/* Search bar trigger */}
+          <button
+            className="hidden sm:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-400 hover:border-gray-300 hover:bg-gray-100 transition-colors ml-2"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search size={12} />
+            <span>Rechercher…</span>
+            <kbd className="ml-2 bg-white border border-gray-200 px-1 rounded text-gray-300 font-mono">⌘K</kbd>
+          </button>
+
           <div className="flex-1" />
 
           {/* Notification bell */}
@@ -246,6 +271,9 @@ export default function Layout({ children }) {
           {children}
         </main>
       </div>
+
+      {/* Global search */}
+      {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}
 
       {/* Floating AI chat */}
       <FloatingChat />

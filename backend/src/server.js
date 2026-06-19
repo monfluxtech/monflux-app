@@ -24,6 +24,7 @@ import pdfRoutes        from './routes/pdf.js';
 import emailRoutes      from './routes/email.js';
 import publicRoutes     from './routes/public.js';
 import dashboardRoutes  from './routes/dashboard.js';
+import searchRoutes     from './routes/search.js';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ app.use('/api/public',      publicRoutes);
 app.use('/api/dashboard',   dashboardRoutes);
 
 // ── Routes authentifiées ────────────────────────────────────
+app.use('/api/search',      searchRoutes);
 app.use('/api/onboarding',  onboardingRoutes);
 app.use('/api/companies',   companiesRoutes);
 app.use('/api/projects',    projectsRoutes);
