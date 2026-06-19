@@ -212,6 +212,45 @@ router.patch('/:id/phases/:phaseId', async (req, res) => {
   }
 });
 
+// Geocode an address via OpenStreetMap Nominatim (free, no API key). Best-effort.
+async function geocodeAddress(parts) {
+  const q = parts.filter(Boolean).join(', ');
+  if (!q.trim()) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;
+    const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (construction SaaS)' } });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data?.length) return null;
+    return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+  } catch (err) {
+    console.warn('geocode error:', err.message);
+    return null;
+  }
+}
+
+// POST /api/projects/:id/geocode — resolve the project address to map coordinates
+router.post('/:id/geocode', async (req, res) => {
+  try {
+    const { rows: [p] } = await query(
+      `SELECT id, address, city FROM projects WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+    const coords = await geocodeAddress([p.address, p.city, 'Québec', 'Canada']);
+    if (!coords) return res.status(422).json({ error: 'Adresse introuvable sur la carte' });
+    const { rows: [updated] } = await query(
+      `UPDATE projects SET latitude = $1, longitude = $2, geocoded_at = NOW()
+       WHERE id = $3 AND company_id = $4 RETURNING id, latitude, longitude`,
+      [coords.lat, coords.lng, req.params.id, req.company_id]
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // GET /api/projects/:id/portal-messages — contractor reads client feedback
 router.get('/:id/portal-messages', async (req, res) => {
   try {

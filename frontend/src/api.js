@@ -52,6 +52,7 @@ export const projects = {
   updatePhase: (id, pid, data) => http.patch(`/projects/${id}/phases/${pid}`, data),
   resetPortalToken: (id)    => http.post(`/projects/${id}/reset-portal-token`),
   getPortalMessages: (id)   => http.get(`/projects/${id}/portal-messages`),
+  geocode:     (id)         => http.post(`/projects/${id}/geocode`),
 };
 
 export const leads = {

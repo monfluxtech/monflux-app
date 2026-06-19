@@ -100,6 +100,11 @@ async function applyMigrations() {
   await run('companies: add social_links',
     `ALTER TABLE companies ADD COLUMN IF NOT EXISTS social_links JSONB DEFAULT '{}'::jsonb`);
 
+  // ── Project map coordinates (2026-06) ────────────────────────────────────────
+  await run('projects: add latitude',  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7)`);
+  await run('projects: add longitude', `ALTER TABLE projects ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7)`);
+  await run('projects: add geocoded_at', `ALTER TABLE projects ADD COLUMN IF NOT EXISTS geocoded_at TIMESTAMPTZ`);
+
   // ── AI usage metering — monthly request quota + add-on credits (2026-06) ─────
   await run('ai_usage create',
     `CREATE TABLE IF NOT EXISTS ai_usage (

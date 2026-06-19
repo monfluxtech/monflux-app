@@ -1,8 +1,95 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi } from '../api';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon } from 'lucide-react';
+
+// Load Leaflet from CDN once (no npm dependency, no API key needed)
+let leafletPromise = null;
+function loadLeaflet() {
+  if (typeof window !== 'undefined' && window.L) return Promise.resolve(window.L);
+  if (leafletPromise) return leafletPromise;
+  leafletPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => resolve(window.L);
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+  return leafletPromise;
+}
+
+function MapView({ projects, onGeocodeAll, geocoding }) {
+  const navigate = useNavigate();
+  const mapEl = useRef(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadLeaflet().then((L) => {
+      if (cancelled || !mapEl.current || mapRef.current) return;
+      mapRef.current = L.map(mapEl.current, { scrollWheelZoom: false }).setView([46.81, -71.21], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap', maxZoom: 19,
+      }).addTo(mapRef.current);
+      layerRef.current = L.layerGroup().addTo(mapRef.current);
+      setReady(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !window.L || !layerRef.current) return;
+    const L = window.L;
+    layerRef.current.clearLayers();
+    const located = projects.filter(p => p.latitude && p.longitude);
+    const bounds = [];
+    located.forEach((p) => {
+      const lat = Number(p.latitude), lng = Number(p.longitude);
+      const color = SC[p.status] || '#94a3b8';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>`,
+        iconSize: [18, 18], iconAnchor: [9, 9],
+      });
+      const m = L.marker([lat, lng], { icon });
+      m.bindTooltip(`${p.name}${p.contract_value ? ` · ${Number(p.contract_value).toLocaleString('fr-CA')}$` : ''}`, { direction: 'top', offset: [0, -8] });
+      m.on('click', () => navigate(`/projets/${p.id}`));
+      m.addTo(layerRef.current);
+      bounds.push([lat, lng]);
+    });
+    if (bounds.length) mapRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+  }, [ready, projects, navigate]);
+
+  const located = projects.filter(p => p.latitude && p.longitude).length;
+  const missing = projects.filter(p => p.address && (!p.latitude || !p.longitude)).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 text-xs text-gray-500">
+        <span>{located} chantier(s) localisé(s){missing > 0 ? ` · ${missing} sans position` : ''}</span>
+        {missing > 0 && (
+          <button className="btn-secondary text-xs py-1" onClick={onGeocodeAll} disabled={geocoding}>
+            {geocoding ? <Loader2 size={12} className="animate-spin"/> : <MapPin size={12}/>}
+            Localiser {missing} chantier{missing > 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
+      <div ref={mapEl} style={{ height: 520, borderRadius: 16, overflow: 'hidden', zIndex: 0 }} className="border border-gray-100" />
+      {located === 0 && (
+        <p className="text-center text-sm text-gray-400 mt-3">
+          Aucun chantier localisé. Ajoutez une adresse aux projets puis cliquez « Localiser ».
+        </p>
+      )}
+    </div>
+  );
+}
 
 const SB = { active:'badge-green', lead:'badge-gray', quote:'badge-yellow', on_hold:'badge-blue', completed:'badge-gray', cancelled:'badge-red' };
 const SL = { active:'Actif', lead:'Lead', quote:'Soumission', on_hold:'En pause', completed:'Terminé', cancelled:'Annulé' };
@@ -90,11 +177,28 @@ export default function Projets() {
   const others = filtered.filter(p=>p.status!=='active');
 
   const [sliderProject, setSliderProject] = useState(null);
+  const [view, setView] = useState('list');
+  const [geocoding, setGeocoding] = useState(false);
 
   const saveProgress = useCallback(async (id, pct) => {
     setItems(i => i.map(p => p.id === id ? { ...p, progress_pct: pct } : p));
     try { await projectsApi.update(id, { progress_pct: pct }); } catch {}
   }, []);
+
+  // Geocode all projects that have an address but no coordinates (rate-limited for Nominatim)
+  const geocodeAll = useCallback(async () => {
+    const missing = items.filter(p => p.address && (!p.latitude || !p.longitude));
+    if (!missing.length) return;
+    setGeocoding(true);
+    for (const p of missing) {
+      try {
+        const { data } = await projectsApi.geocode(p.id);
+        setItems(i => i.map(pr => pr.id === p.id ? { ...pr, latitude: data.latitude, longitude: data.longitude } : pr));
+      } catch {}
+      await new Promise(r => setTimeout(r, 1100)); // respect Nominatim ~1 req/s
+    }
+    setGeocoding(false);
+  }, [items]);
 
   const ProjectCard = ({ p }) => {
     const pct = p.progress_pct || 0;
@@ -175,9 +279,22 @@ export default function Projets() {
   return (
     <Layout>
       <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-gray-900">Projets</h1>
-          <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={15}/> Nouveau projet</button>
+          <div className="flex items-center gap-2">
+            {/* List / Map toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view==='list'?'bg-white shadow-sm text-gray-900 font-medium':'text-gray-400'}`}
+                onClick={()=>setView('list')}
+              ><List size={13}/> Liste</button>
+              <button
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view==='map'?'bg-white shadow-sm text-gray-900 font-medium':'text-gray-400'}`}
+                onClick={()=>setView('map')}
+              ><MapIcon size={13}/> Carte</button>
+            </div>
+            <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={15}/> Nouveau projet</button>
+          </div>
         </div>
 
         {showNew && <ProjectModal onClose={()=>setShowNew(false)} onSave={handleSave}/>}
@@ -197,6 +314,8 @@ export default function Projets() {
 
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
+        ) : view === 'map' ? (
+          <MapView projects={filtered} onGeocodeAll={geocodeAll} geocoding={geocoding} />
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (
