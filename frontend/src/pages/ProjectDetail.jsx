@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, Trash2, StickyNote, Receipt, FileText } from 'lucide-react';
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
@@ -136,16 +136,36 @@ export default function ProjectDetail() {
   const [timesheets, setTimesheets] = useState([]);
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
+  const [projectInvoices, setProjectInvoices] = useState([]);
+  const [notes, setNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const notesTimer = useRef(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }] = await Promise.all([
-        projectsApi.get(id), tsApi.list({ project_id: id }),
+      const [{ data: proj }, { data: ts }, { data: invs }] = await Promise.all([
+        projectsApi.get(id),
+        tsApi.list({ project_id: id }),
+        invoicesApi.list({ project_id: id }),
       ]);
       setProject(proj);
       setTimesheets(ts);
+      setProjectInvoices(invs);
+      setNotes(proj.notes || '');
     } catch {} finally { setLoading(false); }
+  };
+
+  const saveNotes = async (val) => {
+    setNotesSaving(true);
+    try { await projectsApi.update(id, { notes: val }); }
+    catch {} finally { setNotesSaving(false); }
+  };
+
+  const handleNotesChange = (val) => {
+    setNotes(val);
+    clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(() => saveNotes(val), 1200);
   };
 
   useEffect(() => { load(); }, [id]);
@@ -279,6 +299,51 @@ export default function ProjectDetail() {
             </div>
           )}
         </div>
+
+        {/* Notes */}
+        <div className="card mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <StickyNote size={15} className="text-brand" />
+            <h2 className="font-semibold text-gray-900 text-sm">Notes de chantier</h2>
+            {notesSaving && <span className="text-xs text-gray-400 ml-auto">Enregistrement…</span>}
+          </div>
+          <textarea
+            className="input resize-none"
+            style={{ minHeight: 96 }}
+            placeholder="Ajoutez des notes, remarques ou observations sur ce projet…"
+            value={notes}
+            onChange={e => handleNotesChange(e.target.value)}
+          />
+        </div>
+
+        {/* Factures liées */}
+        {projectInvoices.length > 0 && (
+          <div className="card mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Receipt size={15} className="text-brand" />
+                <h2 className="font-semibold text-gray-900 text-sm">Factures ({projectInvoices.length})</h2>
+              </div>
+              <button className="btn-ghost text-xs py-1 px-2" onClick={() => navigate('/factures')}>Voir tout</button>
+            </div>
+            <div className="space-y-2">
+              {projectInvoices.map(inv => {
+                const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
+                const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
+                return (
+                  <div key={inv.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                    <FileText size={13} className="text-gray-300 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{inv.title || `Facture ${inv.number}`}</p>
+                    </div>
+                    <span className={`badge ${SB[inv.status]||'badge-gray'} text-xs`}>{SL[inv.status]||inv.status}</span>
+                    <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(inv.total||0).toLocaleString('fr-CA')}$</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* QR Punch */}
         <div className="card">

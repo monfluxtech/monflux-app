@@ -5,10 +5,11 @@ const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
 router.get('/', async (req, res) => {
-  const { status } = req.query;
+  const { status, project_id } = req.query;
   let sql = `SELECT * FROM invoices WHERE company_id = $1`;
   const params = [req.company_id];
-  if (status) { params.push(status); sql += ` AND status = $${params.length}`; }
+  if (status)     { params.push(status);     sql += ` AND status = $${params.length}`; }
+  if (project_id) { params.push(project_id); sql += ` AND project_id = $${params.length}`; }
   sql += ' ORDER BY created_at DESC';
   const { rows } = await query(sql, params);
   res.json(rows);
