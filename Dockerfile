@@ -12,3 +12,4 @@ EXPOSE 5000
 RUN chmod +x start.sh
 
 CMD ["sh", "start.sh"]
+# cache-bust 1781834590
