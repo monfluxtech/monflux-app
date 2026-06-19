@@ -42,6 +42,16 @@ async function applyMigrations() {
     }
   };
 
+  // ── Portal messages — client feedback from project portal (2026-06) ────────
+  await run('portal_messages create',
+    `CREATE TABLE IF NOT EXISTS portal_messages (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      author_name TEXT NOT NULL DEFAULT 'Client',
+      content     TEXT NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+
   // ── Projects portal token (2026-06) ─────────────────────────────────────────
   await run('portal_token column',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`);

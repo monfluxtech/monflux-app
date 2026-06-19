@@ -262,9 +262,8 @@ router.post('/portal/:token/feedback', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Portail introuvable' });
 
     await query(
-      `INSERT INTO project_notes (project_id, content, author_name, is_client_message, created_at)
-       VALUES ($1, $2, $3, true, NOW())
-       ON CONFLICT DO NOTHING`,
+      `INSERT INTO portal_messages (project_id, content, author_name)
+       VALUES ($1, $2, $3)`,
       [project.id, message.trim(), author_name?.trim() || 'Client']
     );
     res.json({ success: true });
