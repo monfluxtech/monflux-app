@@ -30,6 +30,10 @@ export const getClient = () => pool.connect();
 
 async function applyMigrations() {
   const migrations = [
+    // Projects portal token — shareable client progress link (added 2026-06)
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS projects_portal_token_idx ON projects(portal_token) WHERE portal_token IS NOT NULL`,
+
     // Quittances — Quebec satisfaction certificates (added 2026-06)
     `CREATE TABLE IF NOT EXISTS quittances (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

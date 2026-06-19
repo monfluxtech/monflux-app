@@ -152,4 +152,59 @@ router.post('/quittance/:token/sign', async (req, res) => {
   }
 });
 
+// GET /api/public/portal/:token — client project progress portal
+router.get('/portal/:token', async (req, res) => {
+  try {
+    const { rows: [project] } = await query(
+      `SELECT p.id, p.name, p.status, p.address, p.city, p.start_date, p.end_date,
+              p.progress_percent, p.description,
+              co.name AS company_name, co.phone AS company_phone, co.email AS company_email,
+              co.website AS company_website, co.logo_url AS company_logo
+       FROM projects p
+       JOIN companies co ON co.id = p.company_id
+       WHERE p.portal_token = $1`,
+      [req.params.token]
+    );
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const { rows: phases } = await query(
+      `SELECT name, status, progress_percent, display_order
+       FROM project_phases
+       WHERE project_id = $1
+       ORDER BY display_order`,
+      [project.id]
+    );
+
+    const { id, ...safeProject } = project;
+    res.json({ ...safeProject, phases });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/portal/:token/feedback — client leaves a note (optional)
+router.post('/portal/:token/feedback', async (req, res) => {
+  try {
+    const { message, author_name } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error: 'Message requis' });
+    const { rows: [project] } = await query(
+      `SELECT id FROM projects WHERE portal_token = $1`,
+      [req.params.token]
+    );
+    if (!project) return res.status(404).json({ error: 'Portail introuvable' });
+
+    await query(
+      `INSERT INTO project_notes (project_id, content, author_name, is_client_message, created_at)
+       VALUES ($1, $2, $3, true, NOW())
+       ON CONFLICT DO NOTHING`,
+      [project.id, message.trim(), author_name?.trim() || 'Client']
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -147,6 +147,8 @@ export default function ProjectDetail() {
   const [showQuittanceForm, setShowQuittanceForm] = useState(false);
   const [quittanceForm, setQuittanceForm] = useState({ client_name:'', client_email:'', project_description:'', amount_paid:'', notes:'' });
   const [savingQuittance, setSavingQuittance] = useState(false);
+  const [portalCopied, setPortalCopied] = useState(false);
+  const [resettingPortal, setResettingPortal] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -219,6 +221,21 @@ export default function ProjectDetail() {
       setQuittance(data);
       setShowQuittanceForm(false);
     } catch {} finally { setSavingQuittance(false); }
+  };
+
+  const resetPortalToken = async () => {
+    if (!confirm('Générer un nouveau lien ? L\'ancien lien ne fonctionnera plus.')) return;
+    setResettingPortal(true);
+    try {
+      const { data } = await projectsApi.resetPortalToken(id);
+      setProject(p => ({ ...p, portal_token: data.portal_token }));
+    } catch {} finally { setResettingPortal(false); }
+  };
+
+  const copyPortalLink = () => {
+    if (!project.portal_token) return;
+    navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
+    setPortalCopied(true); setTimeout(() => setPortalCopied(false), 2000);
   };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
@@ -500,6 +517,62 @@ export default function ProjectDetail() {
                   </a>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Client Portal */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-3">
+            <Globe size={15} className="text-brand"/>
+            <h2 className="font-semibold text-gray-900 text-sm">Portail client</h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">Partagez ce lien avec votre client pour qu'il suive l'avancement du chantier en temps réel.</p>
+
+          {project.portal_token ? (
+            <div className="space-y-3">
+              <div className="bg-gray-50 rounded-xl px-3 py-2 flex items-center gap-2">
+                <Globe size={13} className="text-gray-300 flex-shrink-0"/>
+                <span className="text-xs text-gray-500 truncate flex-1 font-mono">{FRONTEND_URL}/portal/{project.portal_token}</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  className="btn-primary text-xs py-1.5 flex-1"
+                  onClick={copyPortalLink}
+                >
+                  {portalCopied ? <CheckCircle size={13} className="text-green-300"/> : <Link2 size={13}/>}
+                  {portalCopied ? 'Copié !' : 'Copier le lien'}
+                </button>
+                <a
+                  href={`${FRONTEND_URL}/portal/${project.portal_token}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="btn-secondary text-xs py-1.5"
+                  title="Aperçu du portail"
+                >
+                  <ExternalLink size={13}/> Aperçu
+                </a>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici le lien pour suivre l'avancement de vos travaux en temps réel : ${FRONTEND_URL}/portal/${project.portal_token}`)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="btn-secondary text-xs py-1.5 text-green-600"
+                  title="Envoyer par WhatsApp"
+                >
+                  <MessageCircle size={13}/>
+                </a>
+                <button
+                  className="btn-ghost text-xs py-1.5 text-gray-400"
+                  onClick={resetPortalToken}
+                  disabled={resettingPortal}
+                  title="Générer un nouveau lien (invalide l'ancien)"
+                >
+                  {resettingPortal ? <Loader2 size={13} className="animate-spin"/> : '↻'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <Globe size={28} className="text-gray-200 mx-auto mb-3"/>
+              <p className="text-sm text-gray-400 mb-4">Le lien portail sera disponible au prochain rechargement (migration DB en cours).</p>
             </div>
           )}
         </div>

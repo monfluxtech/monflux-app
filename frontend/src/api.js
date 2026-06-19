@@ -50,6 +50,7 @@ export const projects = {
   delete:      (id)         => http.delete(`/projects/${id}`),
   addPhase:    (id, data)   => http.post(`/projects/${id}/phases`, data),
   updatePhase: (id, pid, data) => http.patch(`/projects/${id}/phases/${pid}`, data),
+  resetPortalToken: (id)    => http.post(`/projects/${id}/reset-portal-token`),
 };
 
 export const leads = {

@@ -17,6 +17,7 @@ import PunchPublic   from './pages/PunchPublic';
 import QuotePublic      from './pages/QuotePublic';
 import InvoicePublic    from './pages/InvoicePublic';
 import QuittancePublic  from './pages/QuittancePublic';
+import ProjectPortal    from './pages/ProjectPortal';
 import Chat          from './pages/Chat';
 import Parametres    from './pages/Parametres';
 
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/soumission/:token"  element={<QuotePublic />} />
         <Route path="/facture/:token"      element={<InvoicePublic />} />
         <Route path="/quittance/:token"   element={<QuittancePublic />} />
+        <Route path="/portal/:token"      element={<ProjectPortal />} />
 
         {/* Onboarding (requires token but no company yet) */}
         <Route path="/onboarding"    element={<Onboarding />} />

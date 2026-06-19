@@ -160,6 +160,23 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// POST /api/projects/:id/reset-portal-token — regenerate the public portal link
+router.post('/:id/reset-portal-token', async (req, res) => {
+  try {
+    const { rows: [project] } = await query(
+      `UPDATE projects SET portal_token = gen_random_uuid()
+       WHERE id = $1 AND company_id = $2
+       RETURNING portal_token`,
+      [req.params.id, req.company_id]
+    );
+    if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
+    res.json({ portal_token: project.portal_token });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // POST /api/projects/:id/phases
 router.post('/:id/phases', async (req, res) => {
   const { name, display_order, color, start_date, end_date } = req.body;
