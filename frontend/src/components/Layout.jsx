@@ -5,7 +5,7 @@ import FloatingChat from './FloatingChat';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
-  LogOut, User, ChevronRight, BookUser,
+  LogOut, User, ChevronRight, BookUser, BarChart3,
 } from 'lucide-react';
 
 const NAV = [
@@ -17,6 +17,7 @@ const NAV = [
   { to: '/factures',        icon: Receipt,         label: 'Factures' },
   { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
   { to: '/punch',           icon: QrCode,          label: 'Pointage QR' },
+  { to: '/rapport',         icon: BarChart3,       label: 'Rapport' },
   { to: '/parametres',      icon: Settings,        label: 'Paramètres' },
 ];
 
