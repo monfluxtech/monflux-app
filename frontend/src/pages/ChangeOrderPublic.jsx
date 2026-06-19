@@ -58,7 +58,7 @@ export default function ChangeOrderPublic() {
     </div>
   );
 
-  const isApproved = result === 'approved' || co?.status === 'approved';
+  const isApproved = result === 'approved' || co?.status === 'approved' || !!co?.approved_at;
   const isRejected = result === 'rejected' || co?.status === 'rejected';
   const isFinal = isApproved || isRejected;
 
@@ -84,8 +84,8 @@ export default function ChangeOrderPublic() {
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Demande approuvée</h2>
             <p className="text-gray-500 text-sm">
-              {co?.signed_at
-                ? `Approuvée le ${new Date(co.signed_at).toLocaleDateString('fr-CA', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}`
+              {(co?.approved_at || co?.signed_at)
+                ? `Approuvée le ${new Date(co.approved_at || co.signed_at).toLocaleDateString('fr-CA', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}`
                 : 'Votre approbation a été enregistrée.'}
             </p>
             <p className="text-xs text-gray-400 mt-3">L'entrepreneur a été informé. Merci!</p>
@@ -234,14 +234,14 @@ export default function ChangeOrderPublic() {
               </div>
             )}
 
-            {isApproved && co?.signer_name && (
+            {isApproved && (co?.approved_by || co?.signer_name) && (
               <div className="border-t border-gray-100 pt-4 flex items-center gap-3">
                 <CheckCircle2 size={18} className="text-green-500 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-gray-800">Approuvée par <strong>{co.signer_name}</strong></p>
-                  {co.signed_at && (
+                  <p className="text-sm font-medium text-gray-800">Approuvée par <strong>{co.approved_by || co.signer_name}</strong></p>
+                  {(co.approved_at || co.signed_at) && (
                     <p className="text-xs text-gray-400">
-                      {new Date(co.signed_at).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                      {new Date(co.approved_at || co.signed_at).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })}
                     </p>
                   )}
                 </div>

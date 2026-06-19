@@ -162,7 +162,7 @@ router.get('/change-order/:token', async (req, res) => {
        FROM change_orders co
        JOIN companies c ON c.id = co.company_id
        LEFT JOIN projects p ON p.id = co.project_id
-       WHERE co.public_token = $1`,
+       WHERE co.public_token::text = $1 `,
       [req.params.token]
     );
     if (!co) return res.status(404).json({ error: 'Demande introuvable ou lien invalide' });
@@ -176,18 +176,25 @@ router.post('/change-order/:token/approve', async (req, res) => {
   try {
     const { signer_name } = req.body;
     const { rows: [co] } = await query(
-      `SELECT id, signed_at FROM change_orders WHERE public_token = $1`,
+      `SELECT id, approved_at, signed_at FROM change_orders WHERE public_token::text = $1 `,
       [req.params.token]
     );
     if (!co) return res.status(404).json({ error: 'Demande introuvable' });
-    if (co.signed_at) return res.status(409).json({ error: 'Déjà approuvée' });
+    if (co.approved_at || co.signed_at) return res.status(409).json({ error: 'Déjà approuvée' });
 
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     await query(
-      `UPDATE change_orders SET status = 'approved', signed_at = NOW(), signed_ip = $1,
-         signer_name = COALESCE($2, signer_name), updated_at = NOW()
-       WHERE public_token = $3`,
-      [ip, signer_name || null, req.params.token]
+      `UPDATE change_orders
+       SET status = 'approved',
+           approved_at = NOW(),
+           approved_by = COALESCE($1, approved_by),
+           approved_ip = $2,
+           signer_name = COALESCE($1, signer_name),
+           signed_at   = NOW(),
+           signed_ip   = $2,
+           updated_at  = NOW()
+       WHERE public_token::text = $3 `,
+      [signer_name || null, ip, req.params.token]
     );
     res.json({ success: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
@@ -197,14 +204,15 @@ router.post('/change-order/:token/approve', async (req, res) => {
 router.post('/change-order/:token/reject', async (req, res) => {
   try {
     const { rows: [co] } = await query(
-      `SELECT id, signed_at FROM change_orders WHERE public_token = $1`,
+      `SELECT id, approved_at, rejected_at FROM change_orders WHERE public_token::text = $1 `,
       [req.params.token]
     );
     if (!co) return res.status(404).json({ error: 'Demande introuvable' });
-    if (co.signed_at) return res.status(409).json({ error: 'Déjà traitée' });
+    if (co.approved_at || co.rejected_at) return res.status(409).json({ error: 'Déjà traitée' });
 
     await query(
-      `UPDATE change_orders SET status = 'rejected', updated_at = NOW() WHERE public_token = $1`,
+      `UPDATE change_orders SET status = 'rejected', rejected_at = NOW(), updated_at = NOW()
+       WHERE public_token::text = $1 `,
       [req.params.token]
     );
     res.json({ success: true });

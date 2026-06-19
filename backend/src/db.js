@@ -29,59 +29,62 @@ export const query = (text, params) => pool.query(text, params);
 export const getClient = () => pool.connect();
 
 async function applyMigrations() {
-  const migrations = [
-    // Projects portal token — shareable client progress link (added 2026-06)
-    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS projects_portal_token_idx ON projects(portal_token) WHERE portal_token IS NOT NULL`,
-
-    // Change orders — demandes de modification signées par le client (added 2026-06)
-    `CREATE TABLE IF NOT EXISTS change_orders (
-      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-      project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
-      title           TEXT NOT NULL,
-      description     TEXT,
-      amount          NUMERIC(12,2) DEFAULT 0,
-      public_token    UUID NOT NULL DEFAULT gen_random_uuid(),
-      status          TEXT NOT NULL DEFAULT 'draft'
-                        CHECK (status IN ('draft','sent','approved','rejected')),
-      signed_at       TIMESTAMPTZ,
-      signed_ip       TEXT,
-      signer_name     TEXT,
-      notes           TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS change_orders_token_idx ON change_orders(public_token)`,
-
-    // Quittances — Quebec satisfaction certificates (added 2026-06)
-    `CREATE TABLE IF NOT EXISTS quittances (
-      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-      project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
-      client_name     TEXT NOT NULL,
-      client_email    TEXT,
-      project_description TEXT,
-      amount_paid     NUMERIC(12,2) DEFAULT 0,
-      public_token    UUID NOT NULL DEFAULT gen_random_uuid(),
-      status          TEXT NOT NULL DEFAULT 'draft'
-                        CHECK (status IN ('draft','sent','signed')),
-      signed_at       TIMESTAMPTZ,
-      signed_ip       TEXT,
-      notes           TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS quittances_token_idx ON quittances(public_token)`,
-  ];
-  for (const sql of migrations) {
-    await pool.query(sql).catch(err => {
+  // Each migration runs independently; errors are logged but don't stop the server.
+  const run = async (label, sql) => {
+    try {
+      await pool.query(sql);
+      console.log(`✅ migration: ${label}`);
+    } catch (err) {
+      // "already exists" = idempotent, expected on re-deploy. Anything else is a real warning.
       if (!err.message.includes('already exists')) {
-        console.warn('Migration warning:', err.message);
+        console.warn(`⚠️  migration [${label}]:`, err.message);
       }
-    });
-  }
-  console.log('✅ Incremental migrations applied');
+    }
+  };
+
+  // ── Projects portal token (2026-06) ─────────────────────────────────────────
+  await run('portal_token column',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`);
+  await run('portal_token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS projects_portal_token_idx ON projects(portal_token) WHERE portal_token IS NOT NULL`);
+
+  // ── Fix quittances table (2026-06) ──────────────────────────────────────────
+  // The original schema.sql quittances had invoice_id NOT NULL (incompatible).
+  // Drop and recreate with the correct schema for client satisfaction certificates.
+  await run('quittances drop old',
+    `DROP TABLE IF EXISTS quittances CASCADE`);
+  await run('quittances create',
+    `CREATE TABLE IF NOT EXISTS quittances (
+      id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id          UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id          UUID REFERENCES projects(id) ON DELETE SET NULL,
+      client_name         TEXT NOT NULL DEFAULT '',
+      client_email        TEXT,
+      project_description TEXT,
+      amount_paid         NUMERIC(12,2) DEFAULT 0,
+      public_token        UUID NOT NULL DEFAULT gen_random_uuid(),
+      status              TEXT NOT NULL DEFAULT 'draft'
+                            CHECK (status IN ('draft','sent','signed')),
+      signed_at           TIMESTAMPTZ,
+      signed_ip           TEXT,
+      notes               TEXT,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('quittances token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS quittances_token_idx ON quittances(public_token)`);
+
+  // ── Fix change_orders table (2026-06) ────────────────────────────────────────
+  // The original schema.sql change_orders has number INT NOT NULL (no DEFAULT),
+  // which causes INSERT failures. Also missing signer_name / signed_ip columns.
+  await run('change_orders: make number nullable',
+    `ALTER TABLE change_orders ALTER COLUMN number DROP NOT NULL`);
+  await run('change_orders: add signer_name',
+    `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS signer_name TEXT`);
+  await run('change_orders: add signed_at',
+    `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ`);
+  await run('change_orders: add signed_ip',
+    `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS signed_ip TEXT`);
 }
 
 export async function initializeDatabase() {

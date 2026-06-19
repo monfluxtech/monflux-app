@@ -25,10 +25,15 @@ router.post('/', async (req, res) => {
   const { project_id, title, description, amount, notes } = req.body;
   if (!title) return res.status(400).json({ error: 'Titre requis' });
   try {
+    // Generate next number per company (handles both old INT column and new nullable)
+    const { rows: [numRow] } = await query(
+      `SELECT COALESCE(MAX(number), 0) + 1 AS next_num FROM change_orders WHERE company_id = $1`,
+      [req.company_id]
+    );
     const { rows: [co] } = await query(
-      `INSERT INTO change_orders (company_id, project_id, title, description, amount, notes)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.company_id, project_id || null, title, description || null, amount || 0, notes || null]
+      `INSERT INTO change_orders (company_id, project_id, title, description, amount, notes, number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.company_id, project_id || null, title, description || null, amount || 0, notes || null, numRow.next_num]
     );
     res.status(201).json(co);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
@@ -39,6 +44,10 @@ router.patch('/:id', async (req, res) => {
   const allowed = ['title', 'description', 'amount', 'status', 'notes'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
+
+  // Map frontend 'sent' → valid DB enum value 'pending_approval'
+  if (updates.status === 'sent') updates.status = 'pending_approval';
+
   const set = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const vals = [...Object.values(updates), req.params.id, req.company_id];
   try {

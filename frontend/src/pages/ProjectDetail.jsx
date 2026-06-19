@@ -645,8 +645,8 @@ export default function ProjectDetail() {
           ) : (
             <div className="space-y-2">
               {changeOrdersList.map(co => {
-                const statusColor = co.status==='approved'?'text-green-600':co.status==='rejected'?'text-red-500':co.status==='sent'?'text-blue-500':'text-gray-400';
-                const statusLabel = co.status==='approved'?'Approuvée':co.status==='rejected'?'Refusée':co.status==='sent'?'Envoyée':'Brouillon';
+                const statusColor = co.status==='approved'?'text-green-600':co.status==='rejected'?'text-red-500':co.status==='pending_approval'?'text-blue-500':'text-gray-400';
+                const statusLabel = co.status==='approved'?'Approuvée':co.status==='rejected'?'Refusée':co.status==='pending_approval'?'Envoyée':'Brouillon';
                 return (
                   <div key={co.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status==='approved'?'bg-green-500':co.status==='rejected'?'bg-red-400':co.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
@@ -670,7 +670,7 @@ export default function ProjectDetail() {
                         target="_blank" rel="noopener noreferrer"
                         className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-white transition-colors"
                         title="Envoyer par WhatsApp"
-                        onClick={async()=>{ if(co.status==='draft') await changeOrdersApi.update(co.id,{status:'sent'}).then(()=>setChangeOrdersList(l=>l.map(c=>c.id===co.id?{...c,status:'sent'}:c))); }}
+                        onClick={async()=>{ if(co.status==='draft') await changeOrdersApi.update(co.id,{status:'pending_approval'}).then(()=>setChangeOrdersList(l=>l.map(c=>c.id===co.id?{...c,status:'pending_approval'}:c))); }}
                       >
                         <MessageCircle size={13}/>
                       </a>
