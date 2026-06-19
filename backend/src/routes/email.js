@@ -48,11 +48,14 @@ router.post('/quote/:id', async (req, res) => {
     const fileName = `soumission-${q.id.slice(0, 8)}.pdf`;
     const companyName = q.company_name || 'MONFLUX';
 
+    const frontendUrl = process.env.FRONTEND_URL || 'https://monflux.tech';
+    const viewLink = q.interactive_token ? `\n\nVoir en ligne : ${frontendUrl}/soumission/${q.interactive_token}` : '';
+
     await transporter.sendMail({
       from: `${companyName} <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to,
       subject: subject || `Soumission ${q.title || q.id.slice(0, 8)} — ${companyName}`,
-      text: message || `Bonjour,\n\nVeuillez trouver ci-joint votre soumission.\n\nCordialement,\n${companyName}`,
+      text: message || `Bonjour,\n\nVeuillez trouver ci-joint votre soumission.${viewLink}\n\nCordialement,\n${companyName}`,
       attachments: [{ filename: fileName, content: pdfBuffer, contentType: 'application/pdf' }],
     });
 
@@ -93,11 +96,14 @@ router.post('/invoice/:id', async (req, res) => {
     const fileName = `facture-${inv.invoice_number || inv.id.slice(0, 8)}.pdf`;
     const companyName = inv.company_name || 'MONFLUX';
 
+    const frontendUrl = process.env.FRONTEND_URL || 'https://monflux.tech';
+    const viewLink = inv.public_token ? `\n\nVoir en ligne : ${frontendUrl}/facture/${inv.public_token}` : '';
+
     await transporter.sendMail({
       from: `${companyName} <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to,
-      subject: subject || `Facture ${inv.invoice_number || inv.id.slice(0, 8)} — ${companyName}`,
-      text: message || `Bonjour,\n\nVeuillez trouver ci-joint votre facture.\n\nMontant dû : ${Number(inv.amount_due||0).toLocaleString('fr-CA')}$\n\nCordialement,\n${companyName}`,
+      subject: subject || `Facture ${inv.number || inv.id.slice(0, 8)} — ${companyName}`,
+      text: message || `Bonjour,\n\nVeuillez trouver ci-joint votre facture.\n\nMontant dû : ${Number(inv.amount_due||0).toLocaleString('fr-CA')}$${viewLink}\n\nCordialement,\n${companyName}`,
       attachments: [{ filename: fileName, content: pdfBuffer, contentType: 'application/pdf' }],
     });
 

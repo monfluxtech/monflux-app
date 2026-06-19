@@ -1,0 +1,108 @@
+import express from 'express';
+import { query } from '../db.js';
+
+const router = express.Router();
+
+// GET /api/public/quote/:token — no auth required
+router.get('/quote/:token', async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      `SELECT q.*, co.name AS company_name, co.phone AS company_phone, co.email AS company_email,
+              co.address AS company_address, co.logo_url AS company_logo
+       FROM quotes q
+       JOIN companies co ON co.id = q.company_id
+       WHERE q.interactive_token = $1`,
+      [req.params.token]
+    );
+    if (!q) return res.status(404).json({ error: 'Soumission introuvable' });
+
+    // Record view
+    await query(
+      `UPDATE quotes SET viewed_at = COALESCE(viewed_at, NOW()), viewed_count = viewed_count + 1 WHERE interactive_token = $1`,
+      [req.params.token]
+    );
+
+    const { rows: items } = await query(
+      `SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`,
+      [q.id]
+    );
+
+    // Strip internal fields
+    const { company_id, ...safe } = q;
+    res.json({ ...safe, items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/quote/:token/sign
+router.post('/quote/:token/sign', async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      `SELECT id, status, signed_at FROM quotes WHERE interactive_token = $1`,
+      [req.params.token]
+    );
+    if (!q) return res.status(404).json({ error: 'Soumission introuvable' });
+    if (q.signed_at) return res.status(409).json({ error: 'Déjà signée' });
+
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const { rows: [updated] } = await query(
+      `UPDATE quotes SET status = 'signed', signed_at = NOW(), signed_ip = $1 WHERE interactive_token = $2 RETURNING *`,
+      [ip, req.params.token]
+    );
+    res.json({ success: true, signed_at: updated.signed_at });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/quote/:token/decline
+router.post('/quote/:token/decline', async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      `SELECT id, signed_at FROM quotes WHERE interactive_token = $1`,
+      [req.params.token]
+    );
+    if (!q) return res.status(404).json({ error: 'Soumission introuvable' });
+    await query(
+      `UPDATE quotes SET status = 'rejected' WHERE interactive_token = $1 AND signed_at IS NULL`,
+      [req.params.token]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/public/invoice/:token
+router.get('/invoice/:token', async (req, res) => {
+  try {
+    const { rows: [inv] } = await query(
+      `SELECT i.*, co.name AS company_name, co.phone AS company_phone,
+              co.email AS company_email, co.address AS company_address
+       FROM invoices i
+       JOIN companies co ON co.id = i.company_id
+       WHERE i.public_token = $1`,
+      [req.params.token]
+    );
+    if (!inv) return res.status(404).json({ error: 'Facture introuvable' });
+
+    // Track view
+    await query(`UPDATE invoices SET viewed_at = COALESCE(viewed_at, NOW()) WHERE public_token = $1`, [req.params.token]);
+
+    const { rows: items } = await query(
+      `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY order_idx`,
+      [inv.id]
+    );
+    const { company_id, ...safe } = inv;
+    res.json({ ...safe, items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+export default router;

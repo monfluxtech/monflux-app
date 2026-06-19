@@ -14,6 +14,8 @@ import Contacts from './pages/Contacts';
 import Rapport from './pages/Rapport';
 import Punch         from './pages/Punch';
 import PunchPublic   from './pages/PunchPublic';
+import QuotePublic   from './pages/QuotePublic';
+import InvoicePublic from './pages/InvoicePublic';
 import Chat          from './pages/Chat';
 import Parametres    from './pages/Parametres';
 
@@ -28,7 +30,9 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/"              element={<Auth />} />
-        <Route path="/punch/:token"  element={<PunchPublic />} />
+        <Route path="/punch/:token"       element={<PunchPublic />} />
+        <Route path="/soumission/:token"  element={<QuotePublic />} />
+        <Route path="/facture/:token"     element={<InvoicePublic />} />
 
         {/* Onboarding (requires token but no company yet) */}
         <Route path="/onboarding"    element={<Onboarding />} />

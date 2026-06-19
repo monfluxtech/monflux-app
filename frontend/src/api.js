@@ -133,6 +133,11 @@ export const ai = {
   newConversation: (data)  => http.post('/chat/conversations', data),
 };
 
+export const dashboard = {
+  summary:  () => http.get('/dashboard/summary'),
+  activity: () => http.get('/dashboard/activity'),
+};
+
 export const dev = {
   plans:   ()            => http.get('/dev/plans'),
   current: ()            => http.get('/dev/current'),

@@ -22,6 +22,8 @@ import devRoutes        from './routes/dev.js';
 import docsRoutes       from './routes/documents.js';
 import pdfRoutes        from './routes/pdf.js';
 import emailRoutes      from './routes/email.js';
+import publicRoutes     from './routes/public.js';
+import dashboardRoutes  from './routes/dashboard.js';
 
 dotenv.config();
 
@@ -53,6 +55,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ── Routes publiques ────────────────────────────────────────
 app.use('/api/auth',        authRoutes);
+app.use('/api/public',      publicRoutes);
+app.use('/api/dashboard',   dashboardRoutes);
 
 // ── Routes authentifiées ────────────────────────────────────
 app.use('/api/onboarding',  onboardingRoutes);
