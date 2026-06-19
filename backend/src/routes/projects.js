@@ -212,4 +212,24 @@ router.patch('/:id/phases/:phaseId', async (req, res) => {
   }
 });
 
+// GET /api/projects/:id/portal-messages — contractor reads client feedback
+router.get('/:id/portal-messages', async (req, res) => {
+  try {
+    const { rows: [p] } = await query(
+      `SELECT id FROM projects WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+    const { rows } = await query(
+      `SELECT id, author_name, content, created_at
+       FROM portal_messages WHERE project_id = $1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

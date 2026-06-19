@@ -154,17 +154,19 @@ export default function ProjectDetail() {
   const [coForm, setCoForm] = useState({ title:'', description:'', amount:'', notes:'' });
   const [savingCO, setSavingCO] = useState(false);
   const [copiedCO, setCopiedCO] = useState(null);
+  const [portalMessages, setPortalMessages] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
         quotesApi.list(),
         quittancesApi.list({ project_id: id }),
         changeOrdersApi.list({ project_id: id }),
+        projectsApi.getPortalMessages(id).catch(() => ({ data: [] })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -172,6 +174,7 @@ export default function ProjectDetail() {
       setProjectQuotes(qs.filter(q => q.project_id === id));
       setQuittance(quits?.[0] || null);
       setChangeOrdersList(cos || []);
+      setPortalMessages(msgs || []);
       setNotes(proj.notes || '');
     } catch {} finally { setLoading(false); }
   };
@@ -697,8 +700,37 @@ export default function ProjectDetail() {
           )}
         </div>
 
+        {/* Portal Messages */}
+        {portalMessages.length > 0 && (
+          <div className="card mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageCircle size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Messages du portail client</h2>
+              <span className="bg-brand/10 text-brand text-xs rounded-full px-1.5 py-0.5">{portalMessages.length}</span>
+            </div>
+            <div className="space-y-3">
+              {portalMessages.map(msg => (
+                <div key={msg.id} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold text-gray-500">{(msg.author_name?.[0] || 'C').toUpperCase()}</span>
+                  </div>
+                  <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-700">{msg.author_name}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(msg.created_at).toLocaleDateString('fr-CA', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 leading-snug">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* QR Punch */}
-        <div className="card">
+        <div className="card mt-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Pointage QR</h2></div>
             {!qrData && (

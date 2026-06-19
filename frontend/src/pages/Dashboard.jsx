@@ -130,7 +130,11 @@ function LivePresence({ workers }) {
   );
 }
 
-function ProjectTimeline({ projects }) {
+const STATUS_COLOR = { active:'#22c55e', on_hold:'#f59e0b', completed:'#6b7280', cancelled:'#ef4444', lead:'#3b82f6', quote:'#6366f1' };
+const STATUS_LABEL = { active:'Actif', on_hold:'En pause', completed:'Terminé', cancelled:'Annulé', lead:'Lead', quote:'Soumission' };
+
+function ProjectTimeline({ projects, onNavigate }) {
+  const [hoveredId, setHoveredId] = useState(null);
   const dated = projects.filter(p => p.start_date && p.end_date);
   if (dated.length === 0) return null;
 
@@ -140,18 +144,14 @@ function ProjectTimeline({ projects }) {
   const minDate = new Date(Math.min(...starts));
   const maxDate = new Date(Math.max(...ends, today));
   const range = maxDate - minDate || 1;
-  const toPercent = d => Math.max(0, Math.min(100, ((new Date(d) - minDate) / range) * 100));
-  const todayPct = toPercent(today);
+  const toPct = d => Math.max(0, Math.min(100, ((new Date(d) - minDate) / range) * 100));
+  const todayPct = toPct(today);
 
-  // Build month labels
   const labels = [];
   const cursor = new Date(minDate);
   cursor.setDate(1);
   while (cursor <= maxDate) {
-    labels.push({
-      label: cursor.toLocaleDateString('fr-CA', { month: 'short' }),
-      pct: toPercent(cursor),
-    });
+    labels.push({ label: cursor.toLocaleDateString('fr-CA', { month: 'short' }), pct: toPct(cursor) });
     cursor.setMonth(cursor.getMonth() + 1);
   }
 
@@ -159,60 +159,121 @@ function ProjectTimeline({ projects }) {
     <div className="card mb-4">
       <h2 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-1.5">
         <Calendar size={14} className="text-indigo-500" /> Calendrier des chantiers
+        <span className="text-xs text-gray-300 font-normal ml-1">— cliquer pour ouvrir</span>
       </h2>
       <div className="relative select-none">
         {/* Month ticks */}
         <div className="relative h-5 mb-1 border-b border-gray-100">
           {labels.map((m, i) => (
-            <span
-              key={i}
-              className="absolute text-xs text-gray-300 -translate-x-1/2"
-              style={{ left: `${m.pct}%` }}
-            >
+            <span key={i} className="absolute text-xs text-gray-300 -translate-x-1/2" style={{ left: `${m.pct}%` }}>
               {m.label}
             </span>
           ))}
         </div>
+
         {/* Project bars */}
         <div className="space-y-1.5 pt-1">
           {dated.map(p => {
-            const left = toPercent(p.start_date);
-            const width = toPercent(p.end_date) - left;
+            const left = toPct(p.start_date);
+            const width = toPct(p.end_date) - left;
             const isLate = p.status === 'active' && new Date(p.end_date) < today;
             const pct = p.progress_pct || 0;
+            const isHovered = hoveredId === p.id;
+            const tipLeft = left + width / 2;
+            const anchorLeft = tipLeft > 65 ? 'right-0' : tipLeft < 35 ? 'left-0' : 'left-1/2 -translate-x-1/2';
+
             return (
-              <div key={p.id} className="relative h-7 bg-gray-50 rounded-lg overflow-hidden group">
+              <div
+                key={p.id}
+                className="relative h-8"
+                onMouseEnter={() => setHoveredId(p.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                {/* Row background */}
+                <div className="absolute inset-0 bg-gray-50 rounded-lg" />
+
+                {/* Bar */}
                 <div
-                  className={`absolute h-full rounded-lg transition-all flex items-center px-2 text-xs text-white font-medium truncate ${isLate ? 'bg-red-400' : 'bg-brand'}`}
-                  style={{ left: `${left}%`, width: `${Math.max(width, 1.5)}%` }}
-                  title={`${p.name} — ${pct}%`}
+                  className={`absolute h-full rounded-lg transition-all duration-150 cursor-pointer flex items-center px-2 text-xs text-white font-medium overflow-hidden
+                    ${isLate ? 'bg-red-400 hover:bg-red-500' : 'bg-brand hover:brightness-110'}
+                    ${isHovered ? 'shadow-md ring-2 ring-white z-10' : ''}`}
+                  style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
+                  onClick={() => onNavigate(p.id)}
                 >
-                  {width > 10 && <span className="truncate">{p.name}</span>}
+                  {/* Progress fill */}
+                  {pct > 0 && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-white/25 rounded-lg pointer-events-none"
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                  {width > 8 && <span className="relative truncate">{p.name}</span>}
                 </div>
-                {/* Progress overlay */}
-                {pct > 0 && (
+
+                {/* Project label (outside bar when bar is too narrow) */}
+                {width <= 8 && (
+                  <span
+                    className="absolute text-xs text-gray-500 truncate"
+                    style={{ left: `${Math.min(left + Math.max(width, 2) + 0.5, 95)}%`, top: '50%', transform: 'translateY(-50%)', maxWidth: 100 }}
+                  >
+                    {p.name}
+                  </span>
+                )}
+
+                {/* Hover tooltip */}
+                {isHovered && (
                   <div
-                    className="absolute h-full rounded-lg bg-white/20 pointer-events-none"
-                    style={{ left: `${left}%`, width: `${Math.max(width * pct / 100, 0.5)}%` }}
-                  />
+                    className={`absolute bottom-full mb-2 z-50 pointer-events-none ${anchorLeft}`}
+                    style={{ left: tipLeft > 65 ? 'auto' : tipLeft < 35 ? 'auto' : `${tipLeft}%` }}
+                  >
+                    <div className="bg-gray-900 text-white rounded-xl shadow-xl p-3 w-52 text-xs">
+                      <p className="font-semibold text-sm mb-1 truncate">{p.name}</p>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: STATUS_COLOR[p.status] || '#6b7280' }}/>
+                        <span style={{ color: STATUS_COLOR[p.status] || '#9ca3af' }}>{STATUS_LABEL[p.status] || p.status}</span>
+                        {isLate && <span className="text-red-400 font-medium ml-auto">En retard</span>}
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-full h-1.5 bg-white/20 rounded-full mb-2">
+                        <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex justify-between text-gray-400 mb-1.5">
+                        <span>Avancement</span>
+                        <span className="text-white font-semibold">{pct}%</span>
+                      </div>
+                      {p.contract_value > 0 && (
+                        <div className="flex justify-between text-gray-400 mb-1">
+                          <span>Contrat</span>
+                          <span className="text-white">{Number(p.contract_value).toLocaleString('fr-CA')}$</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-gray-400 border-t border-white/10 pt-1.5 mt-0.5">
+                        <span>Fin prévue</span>
+                        <span className={isLate ? 'text-red-400' : 'text-white'}>
+                          {new Date(p.end_date).toLocaleDateString('fr-CA', { day:'numeric', month:'short' })}
+                        </span>
+                      </div>
+                      <div className="text-center mt-2 text-gray-500 text-xs">Cliquer pour ouvrir →</div>
+                    </div>
+                    {/* Arrow */}
+                    <div className="flex justify-center">
+                      <div className="w-2 h-2 bg-gray-900 rotate-45 -mt-1" />
+                    </div>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
+
         {/* Today line */}
         {todayPct >= 0 && todayPct <= 100 && (
-          <div
-            className="absolute top-0 bottom-0 w-px bg-brand/50 pointer-events-none"
-            style={{ left: `${todayPct}%` }}
-          >
-            <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-brand" />
+          <div className="absolute top-0 bottom-0 w-px bg-brand/60 pointer-events-none z-20" style={{ left: `${todayPct}%` }}>
+            <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-brand" />
+            <div className="absolute top-2 left-1 text-xs text-brand/70 whitespace-nowrap font-medium">auj.</div>
           </div>
         )}
       </div>
-      <p className="text-xs text-gray-300 mt-2 text-right">
-        La ligne orange = aujourd'hui
-      </p>
     </div>
   );
 }
@@ -344,7 +405,7 @@ export default function Dashboard() {
             <LivePresence workers={presence} />
 
             {/* Project timeline */}
-            <ProjectTimeline projects={activeProjs} />
+            <ProjectTimeline projects={activeProjs} onNavigate={(id) => navigate(`/projets/${id}`)} />
 
             {/* 3-col grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
