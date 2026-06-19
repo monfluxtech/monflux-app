@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi } from '../api';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search } from 'lucide-react';
 
 const SB = { active:'badge-green', lead:'badge-gray', quote:'badge-yellow', on_hold:'badge-blue', completed:'badge-gray', cancelled:'badge-red' };
 const SL = { active:'Actif', lead:'Lead', quote:'Soumission', on_hold:'En pause', completed:'Terminé', cancelled:'Annulé' };
@@ -56,6 +56,8 @@ export default function Projets() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(searchParams.get('new') === '1');
   const [editItem, setEditItem] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const navigate = useNavigate();
 
   const load = async () => {
@@ -78,8 +80,14 @@ export default function Projets() {
     setItems(i=>i.filter(p=>p.id!==id));
   };
 
-  const active = items.filter(p=>p.status==='active');
-  const others = items.filter(p=>p.status!=='active');
+  const filtered = items.filter(p => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || p.name?.toLowerCase().includes(q) || p.address?.toLowerCase().includes(q);
+    const matchStatus = !statusFilter || p.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+  const active = filtered.filter(p=>p.status==='active');
+  const others = filtered.filter(p=>p.status!=='active');
 
   const ProjectCard = ({ p }) => {
     const pct = p.progress_pct || 0;
@@ -124,10 +132,22 @@ export default function Projets() {
         {showNew && <ProjectModal onClose={()=>setShowNew(false)} onSave={handleSave}/>}
         {editItem && <ProjectModal project={editItem} onClose={()=>setEditItem(null)} onSave={handleSave}/>}
 
+        {/* Search + filter bar */}
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <div className="relative flex-1 min-w-48">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300"/>
+            <input className="input pl-8" placeholder="Rechercher par nom ou adresse…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <select className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+            <option value="">Tous les statuts</option>
+            {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
-        ) : items.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">Aucun projet. Créez-en un!</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (
           <>
             {active.length > 0 && (

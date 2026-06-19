@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi, email as emailApi } from '../api';
-import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail } from 'lucide-react';
+import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2 } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
@@ -153,6 +153,13 @@ export default function Factures() {
   const handleCreate = (data) => { setItems(i=>[data,...i]); setShowCreate(false); };
   const handleEdit = (data) => { setItems(i=>i.map(inv=>inv.id===data.id?{...inv,...data}:inv)); setEditItem(null); };
 
+  const markPaid = async (inv) => {
+    if (!confirm(`Marquer la facture ${inv.number} comme payée ?`)) return;
+    const { data } = await invoicesApi.update(inv.id, { status: 'paid', amount_due: 0 });
+    setItems(i => i.map(x => x.id === data.id ? { ...x, ...data } : x));
+    toast('Facture marquée comme payée', 'success');
+  };
+
   const del = async (id) => {
     if (!confirm('Supprimer cette facture ?')) return;
     await invoicesApi.delete(id);
@@ -214,6 +221,23 @@ export default function Factures() {
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <p className="font-bold text-gray-900 text-sm mr-1">{Number(inv.total).toLocaleString('fr-CA')}$</p>
+                  {inv.public_token && (
+                    <button
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-purple-500"
+                      title="Copier le lien client"
+                      onClick={() => {
+                        const url = `${window.location.origin}/facture/${inv.public_token}`;
+                        navigator.clipboard.writeText(url).then(() => toast('Lien copié !', 'success'));
+                      }}
+                    ><Link2 size={13}/></button>
+                  )}
+                  {!['paid','cancelled'].includes(inv.status) && (
+                    <button
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
+                      title="Marquer comme payée"
+                      onClick={() => markPaid(inv)}
+                    ><CheckCircle size={13}/></button>
+                  )}
                   <button
                     className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
                     title="Télécharger PDF"
