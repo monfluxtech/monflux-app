@@ -28,7 +28,6 @@ const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
-      'https://monflux-app.vercel.app',
       'https://monflux.tech',
       process.env.FRONTEND_URL,
     ].filter(Boolean)
@@ -36,7 +35,9 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (/\.vercel\.app$/.test(origin)) return cb(null, true);
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
