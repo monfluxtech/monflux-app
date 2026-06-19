@@ -166,6 +166,14 @@ export const changeOrders = {
   delete: (id)        => http.delete(`/change-orders/${id}`),
 };
 
+export const members = {
+  list:         ()              => http.get('/members'),
+  invite:       (data)          => http.post('/members/invite', data),
+  updateRole:   (id, role)      => http.patch(`/members/${id}/role`, { role }),
+  remove:       (id)            => http.delete(`/members/${id}`),
+  cancelInvite: (id)            => http.delete(`/members/invites/${id}`),
+};
+
 export const dev = {
   plans:   ()            => http.get('/dev/plans'),
   current: ()            => http.get('/dev/current'),

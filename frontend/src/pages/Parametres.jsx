@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { auth as authApi, companies } from '../api';
+import { auth as authApi, companies, members as membersApi } from '../api';
 import { useAuthStore, useDevStore } from '../store';
-import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2 } from 'lucide-react';
+import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield } from 'lucide-react';
 
 const LEAD_SOURCES = [
   { key: 'soumissions_reno', label: 'SoumissionsRenovations.ca', desc: 'Scraping des leads publics sur le site (nécessite accord avec le site)' },
@@ -242,6 +242,197 @@ function CompanyTab() {
   );
 }
 
+const ROLE_LABELS = {
+  owner:           'Propriétaire',
+  chef_chantier:   'Chef de chantier',
+  technicien:      'Technicien',
+  sous_traitant:   'Sous-traitant',
+  client_readonly: 'Client (lecture)',
+};
+const ROLE_COLORS = {
+  owner:           'bg-brand/10 text-brand',
+  chef_chantier:   'bg-blue-100 text-blue-700',
+  technicien:      'bg-green-100 text-green-700',
+  sous_traitant:   'bg-purple-100 text-purple-700',
+  client_readonly: 'bg-gray-100 text-gray-500',
+};
+const ASSIGNABLE_ROLES = ['chef_chantier', 'technicien', 'sous_traitant', 'client_readonly'];
+
+function TeamTab() {
+  const { user } = useAuthStore();
+  const [data, setData]       = useState({ members: [], invites: [] });
+  const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole]   = useState('technicien');
+  const [inviting, setInviting]       = useState(false);
+  const [inviteMsg, setInviteMsg]     = useState(null);
+  const [removing, setRemoving]       = useState({});
+
+  const isOwner = data.members.find(m => m.email === user?.email)?.is_owner;
+
+  const load = () => membersApi.list()
+    .then(({ data: d }) => setData(d))
+    .catch(() => {})
+    .finally(() => setLoading(false));
+
+  useEffect(() => { load(); }, []);
+
+  const invite = async (e) => {
+    e.preventDefault();
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      const { data: res } = await membersApi.invite({ email: inviteEmail, role: inviteRole });
+      setInviteMsg({ ok: true, text: res.added ? `${res.user.name || inviteEmail} ajouté comme ${ROLE_LABELS[inviteRole]}.` : res.message });
+      setInviteEmail('');
+      load();
+    } catch (err) {
+      setInviteMsg({ ok: false, text: err.response?.data?.error || 'Erreur lors de l\'invitation.' });
+    } finally { setInviting(false); }
+  };
+
+  const changeRole = async (memberId, role) => {
+    try {
+      await membersApi.updateRole(memberId, role);
+      setData(d => ({ ...d, members: d.members.map(m => m.id === memberId ? { ...m, role } : m) }));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+    }
+  };
+
+  const removeMember = async (memberId, name) => {
+    if (!confirm(`Retirer ${name} de l'équipe ?`)) return;
+    setRemoving(r => ({ ...r, [memberId]: true }));
+    try {
+      await membersApi.remove(memberId);
+      setData(d => ({ ...d, members: d.members.filter(m => m.id !== memberId) }));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+    } finally { setRemoving(r => ({ ...r, [memberId]: false })); }
+  };
+
+  const cancelInvite = async (inviteId) => {
+    try {
+      await membersApi.cancelInvite(inviteId);
+      setData(d => ({ ...d, invites: d.invites.filter(i => i.id !== inviteId) }));
+    } catch {}
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-gray-400"><Loader2 size={14} className="animate-spin"/> Chargement…</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Members list */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Users size={15}/> Membres ({data.members.length})</h3>
+        <div className="space-y-2">
+          {data.members.map(m => (
+            <div key={m.id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0" style={{ background: '#F26522' }}>
+                {(m.name?.[0] || m.email[0]).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{m.name || m.email}</p>
+                {m.name && <p className="text-xs text-gray-400 truncate">{m.email}</p>}
+              </div>
+              {m.is_owner ? (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS.owner}`}>{ROLE_LABELS.owner}</span>
+              ) : isOwner ? (
+                <select
+                  className="input py-0.5 text-xs w-40"
+                  value={m.role}
+                  onChange={e => changeRole(m.id, e.target.value)}
+                >
+                  {ASSIGNABLE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                </select>
+              ) : (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS[m.role] || ROLE_COLORS.technicien}`}>{ROLE_LABELS[m.role] || m.role}</span>
+              )}
+              {isOwner && !m.is_owner && (
+                <button
+                  onClick={() => removeMember(m.id, m.name || m.email)}
+                  disabled={removing[m.id]}
+                  className="p-1.5 text-gray-300 hover:text-red-500 transition-colors rounded-lg"
+                >
+                  {removing[m.id] ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pending invites */}
+      {data.invites.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Invitations en attente</h3>
+          <div className="space-y-2">
+            {data.invites.map(inv => (
+              <div key={inv.id} className="flex items-center gap-3 py-2 px-3 rounded-xl border border-dashed border-gray-200 bg-gray-50">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600">{inv.email}</p>
+                  <p className="text-xs text-gray-400">{ROLE_LABELS[inv.role] || inv.role} · En attente de connexion</p>
+                </div>
+                {isOwner && (
+                  <button onClick={() => cancelInvite(inv.id)} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Annuler</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Invite form — owner only */}
+      {isOwner && (
+        <div className="border-t border-gray-100 pt-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><UserPlus size={15}/> Inviter un membre</h3>
+          <form onSubmit={invite} className="flex gap-2 flex-wrap">
+            <input
+              className="input flex-1 min-w-48"
+              type="email"
+              placeholder="courriel@exemple.com"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              required
+            />
+            <select className="input w-44" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
+              {ASSIGNABLE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+            <button type="submit" className="btn-primary flex-shrink-0" disabled={inviting}>
+              {inviting ? <Loader2 size={14} className="animate-spin"/> : <UserPlus size={14}/>}
+              Inviter
+            </button>
+          </form>
+          {inviteMsg && (
+            <p className={`text-xs mt-2 ${inviteMsg.ok ? 'text-green-600' : 'text-red-500'}`}>{inviteMsg.text}</p>
+          )}
+          <p className="text-xs text-gray-400 mt-2">
+            Si l'utilisateur a déjà un compte MONFLUX, il est ajouté immédiatement. Sinon, l'invitation s'active à sa première connexion.
+          </p>
+        </div>
+      )}
+
+      {/* Role legend */}
+      <div className="border-t border-gray-100 pt-4">
+        <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5"><Shield size={12}/> Rôles disponibles</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {[
+            ['chef_chantier', 'Accès complet aux projets et à l\'équipe'],
+            ['technicien', 'Punch, feuilles de temps, tâches assignées'],
+            ['sous_traitant', 'Corps de métiers et documents partagés'],
+            ['client_readonly', 'Portail client lecture seule'],
+          ].map(([role, desc]) => (
+            <div key={role} className="flex items-start gap-2 p-2 rounded-lg bg-gray-50">
+              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${ROLE_COLORS[role]}`}>{ROLE_LABELS[role]}</span>
+              <p className="text-xs text-gray-400 leading-tight">{desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DevTab() {
   const [devPlans, setDevPlans] = useState([]);
   const [devCurrent, setDevCurrent] = useState(null);
@@ -304,6 +495,7 @@ function DevTab() {
 const TABS = [
   { id: 'profil',   label: 'Mon profil',    icon: User },
   { id: 'company',  label: 'Entreprise',    icon: Building2 },
+  { id: 'team',     label: 'Équipe',        icon: Users },
   { id: 'sources',  label: 'Sources leads', icon: Settings },
 ];
 
@@ -348,6 +540,7 @@ export default function Parametres() {
         <div className="card">
           {activeTab === 'profil'  && <ProfileTab />}
           {activeTab === 'company' && <CompanyTab />}
+          {activeTab === 'team'    && <TeamTab />}
           {activeTab === 'sources' && <LeadSourcesTab />}
           {activeTab === 'dev'     && devEnabled && <DevTab />}
         </div>

@@ -157,6 +157,50 @@ async function applyMigrations() {
     )`);
   await run('project_expenses index',
     `CREATE INDEX IF NOT EXISTS project_expenses_project_idx ON project_expenses(project_id)`);
+
+  // ── Member invites — pending email invitations (2026-06) ────────────────────
+  await run('member_invites create',
+    `CREATE TABLE IF NOT EXISTS member_invites (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      email       TEXT NOT NULL,
+      role        TEXT NOT NULL DEFAULT 'technicien',
+      invited_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+      accepted_at TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('member_invites unique',
+    `CREATE UNIQUE INDEX IF NOT EXISTS member_invites_company_email_pending_idx
+     ON member_invites(company_id, email) WHERE accepted_at IS NULL`);
+
+  // ── Accept pending invite on signup (function + trigger) ────────────────────
+  await run('accept_invite_fn',
+    `CREATE OR REPLACE FUNCTION accept_member_invites()
+     RETURNS TRIGGER LANGUAGE plpgsql AS $$
+     BEGIN
+       INSERT INTO company_members (company_id, user_id, role, is_owner)
+       SELECT company_id, NEW.id, role, FALSE
+       FROM member_invites
+       WHERE LOWER(email) = LOWER(NEW.email) AND accepted_at IS NULL
+       ON CONFLICT DO NOTHING;
+
+       UPDATE member_invites
+       SET accepted_at = NOW()
+       WHERE LOWER(email) = LOWER(NEW.email) AND accepted_at IS NULL;
+
+       RETURN NEW;
+     END;
+     $$`);
+  await run('accept_invite_trigger',
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_trigger WHERE tgname = 'trg_accept_member_invites'
+       ) THEN
+         CREATE TRIGGER trg_accept_member_invites
+         AFTER INSERT ON users
+         FOR EACH ROW EXECUTE FUNCTION accept_member_invites();
+       END IF;
+     END $$`);
 }
 
 export async function initializeDatabase() {
