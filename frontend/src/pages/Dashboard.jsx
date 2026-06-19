@@ -289,6 +289,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState(null);
   const [hl, setHL] = useState(false);
+  const [askInput, setAskInput] = useState('');
+
+  const askAI = (q) => {
+    const question = (q || askInput).trim();
+    if (!question) { navigate('/chat'); return; }
+    navigate(`/chat?q=${encodeURIComponent(question)}`);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -328,13 +335,62 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="p-6 max-w-6xl mx-auto">
-        <div className="mb-5">
+        <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-900">
             {greet}{name ? `, ${name}` : ''} 👋
           </h1>
           <p className="text-sm text-gray-400 mt-0.5 capitalize">
             {new Date().toLocaleDateString('fr-CA', { weekday:'long', day:'numeric', month:'long' })}
           </p>
+        </div>
+
+        {/* AI ask-bar — central control: ask the assistant anything, or use a suggestion */}
+        <div className="mb-5 rounded-2xl p-4 sm:p-5" style={{ background:'linear-gradient(135deg, #fff7ed 0%, #ffffff 55%)', border:'1px solid #fde6d3' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background:'#F26522' }}>
+              <Sparkles size={15} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900 leading-tight">Assistant IA MONFLUX</p>
+              <p className="text-xs text-gray-500 leading-tight truncate">
+                {summary
+                  ? `${summary.active_projects ?? 0} chantier(s) actif(s) · ${summary.new_leads ?? 0} lead(s) à suivre · ${summary.outstanding > 0 ? `${Math.round(summary.outstanding/1000)}k$ à encaisser` : 'rien à encaisser'}${summary.overdue_count > 0 ? ` · ${summary.overdue_count} en retard` : ''}`
+                  : 'Posez une question ou demandez une action en langage naturel.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="flex gap-2 mb-3">
+            <input
+              className="input flex-1 bg-white"
+              placeholder="Demandez à l'IA : « Résume mes chantiers » ou « Crée un lead… »"
+              value={askInput}
+              onChange={e => setAskInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && askAI()}
+            />
+            <button className="btn-primary px-4 flex-shrink-0" onClick={() => askAI()}>
+              <Sparkles size={14}/> Demander
+            </button>
+          </div>
+
+          {/* Suggestion chips */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              'Résume mes chantiers actifs',
+              'Quelles factures sont en retard ?',
+              'Montre mes leads à rappeler',
+              'Génère une estimation de rénovation cuisine',
+            ].map((s) => (
+              <button
+                key={s}
+                onClick={() => askAI(s)}
+                className="text-xs px-3 py-1.5 rounded-full bg-white border border-gray-200 text-gray-600 hover:border-brand hover:text-brand transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (

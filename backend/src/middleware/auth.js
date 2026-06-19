@@ -75,3 +75,51 @@ export function requireFeature(featureKey) {
     next();
   };
 }
+
+// Default monthly AI request allowance per plan (overridable via plan.features.ai_monthly_limit)
+const AI_DEFAULT_LIMITS = { free: 30, solo: 150, pro: 1000, business: 3000, enterprise: 100000 };
+
+export function aiMonthlyLimit(plan) {
+  if (plan?.is_dev_override) return 100000;
+  const fromFeature = Number(plan?.features?.ai_monthly_limit);
+  if (Number.isFinite(fromFeature) && fromFeature > 0) return fromFeature;
+  return AI_DEFAULT_LIMITS[plan?.slug] ?? 30;
+}
+
+// Reads (and lazily creates) the current-period AI usage row for a company.
+export async function getAiUsage(company_id, plan) {
+  const period = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const { rows: [row] } = await query(
+    `INSERT INTO ai_usage (company_id, period) VALUES ($1, $2)
+     ON CONFLICT (company_id, period) DO UPDATE SET updated_at = NOW()
+     RETURNING used, credits`,
+    [company_id, period]
+  );
+  const limit = aiMonthlyLimit(plan);
+  return { period, used: row.used, credits: row.credits, limit, remaining: limit + row.credits - row.used };
+}
+
+// Enforces the monthly AI quota (plan allowance + purchased add-on credits).
+// Increments usage only when the request is allowed.
+export function enforceAiQuota(req, res, next) {
+  getAiUsage(req.company_id, req.plan)
+    .then(async (usage) => {
+      if (usage.remaining <= 0) {
+        return res.status(429).json({
+          error: "Limite de requêtes IA atteinte pour ce mois.",
+          code: 'ai_quota_exceeded',
+          used: usage.used,
+          limit: usage.limit,
+          credits: usage.credits,
+          addon_available: true,
+        });
+      }
+      await query(
+        `UPDATE ai_usage SET used = used + 1, updated_at = NOW() WHERE company_id = $1 AND period = $2`,
+        [req.company_id, usage.period]
+      );
+      req.ai_usage = { ...usage, used: usage.used + 1, remaining: usage.remaining - 1 };
+      next();
+    })
+    .catch((err) => { console.error('enforceAiQuota error:', err); next(); }); // fail-open: never block on metering error
+}

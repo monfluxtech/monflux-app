@@ -133,6 +133,8 @@ export const ai = {
   actions:      ()       => http.get('/ai/actions'),
   updateAction: (id, data) => http.patch(`/ai/actions/${id}`, data),
   newConversation: (data)  => http.post('/chat/conversations', data),
+  usage:        ()       => http.get('/ai/usage'),
+  buyCredits:   (amount) => http.post('/ai/credits', { amount }),
 };
 
 export const dashboard = {

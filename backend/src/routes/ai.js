@@ -1,7 +1,7 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db.js';
-import { authenticateToken, resolveCompany, requireFeature } from '../middleware/auth.js';
+import { authenticateToken, resolveCompany, requireFeature, enforceAiQuota, getAiUsage } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
@@ -50,7 +50,7 @@ Priorise ce qui demande attention immédiate. Sois direct et actionnable.`,
 });
 
 // POST /api/ai/estimate — AI material estimation
-router.post('/estimate', requireFeature('ai_estimation'), async (req, res) => {
+router.post('/estimate', requireFeature('ai_estimation'), enforceAiQuota, async (req, res) => {
   const { description, extracted_dimensions, project_type, preferred_suppliers = ['rona','home_depot'] } = req.body;
 
   try {
@@ -121,6 +121,38 @@ router.patch('/actions/:id', async (req, res) => {
     [status, req.params.id, req.company_id]
   );
   res.json(a);
+});
+
+// GET /api/ai/usage — current month AI request usage + remaining (quota + credits)
+router.get('/usage', async (req, res) => {
+  try {
+    const usage = await getAiUsage(req.company_id, req.plan);
+    res.json(usage);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/ai/credits — add add-on AI credits to the current period.
+// NOTE: payment processing is NOT wired here — this records the credits only.
+// A real purchase must go through the billing flow before calling this.
+router.post('/credits', async (req, res) => {
+  const amount = Math.max(0, Math.min(10000, Number(req.body?.amount) || 0));
+  if (!amount) return res.status(400).json({ error: 'Montant de crédits invalide' });
+  try {
+    const period = new Date().toISOString().slice(0, 7);
+    await query(
+      `INSERT INTO ai_usage (company_id, period, credits) VALUES ($1, $2, $3)
+       ON CONFLICT (company_id, period) DO UPDATE SET credits = ai_usage.credits + $3, updated_at = NOW()`,
+      [req.company_id, period, amount]
+    );
+    const usage = await getAiUsage(req.company_id, req.plan);
+    res.json(usage);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 export default router;

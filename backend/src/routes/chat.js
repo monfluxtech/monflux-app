@@ -1,7 +1,7 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { query, getClient } from '../db.js';
-import { authenticateToken, resolveCompany } from '../middleware/auth.js';
+import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
@@ -211,7 +211,7 @@ async function buildBusinessSnapshot(company_id) {
 }
 
 // POST /api/chat — general AI chat (streaming + tool use)
-router.post('/', async (req, res) => {
+router.post('/', enforceAiQuota, async (req, res) => {
   const { messages, context_type = 'general', project_id, conversation_id } = req.body;
   if (!messages?.length) return res.status(400).json({ error: 'Messages requis' });
 

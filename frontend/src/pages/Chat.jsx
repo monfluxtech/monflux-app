@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { ai } from '../api';
 import { Send, Loader2, Plus, Sparkles } from 'lucide-react';
@@ -19,8 +20,32 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoSent = useRef(false);
+  const [usage, setUsage] = useState(null);
+  const [quotaHit, setQuotaHit] = useState(false);
+  const [buying, setBuying] = useState(false);
+
+  const loadUsage = () => ai.usage().then(({ data }) => setUsage(data)).catch(() => {});
+  useEffect(() => { loadUsage(); }, []);
+
+  const buyCredits = async () => {
+    setBuying(true);
+    try { const { data } = await ai.buyCredits(100); setUsage(data); setQuotaHit(false); }
+    catch {} finally { setBuying(false); }
+  };
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+  // Auto-send a question passed via ?q= (e.g. from the dashboard AI ask-bar)
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q && !autoSent.current) {
+      autoSent.current = true;
+      setSearchParams({}, { replace: true });
+      send(q);
+    }
+  }, [searchParams]);
 
   const newConversation = async () => {
     const { data } = await ai.newConversation({ context_type: 'general' });
@@ -47,6 +72,20 @@ export default function Chat() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messages: next, conversation_id: activeConvId }),
       });
+
+      // Quota exceeded (or other non-streaming error) → JSON body, not SSE
+      if (!res.ok) {
+        let data = {};
+        try { data = await res.json(); } catch {}
+        if (res.status === 429 || data.code === 'ai_quota_exceeded') {
+          setQuotaHit(true);
+          setMessages((m) => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:`⚠️ Vous avez atteint votre limite de ${data.limit ?? ''} requêtes IA ce mois-ci. Achetez des crédits supplémentaires pour continuer.`}; return c; });
+        } else {
+          setMessages((m) => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:data.error||"Erreur. Réessayez."}; return c; });
+        }
+        return;
+      }
+
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       while (true) {
@@ -63,6 +102,7 @@ export default function Chat() {
           }
         }
       }
+      loadUsage();
     } catch {
       setMessages((m) => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:"Erreur. Réessayez."}; return c; });
     } finally {
@@ -86,7 +126,32 @@ export default function Chat() {
           <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
             <Sparkles size={15} className="text-brand" />
             <span className="text-sm font-semibold text-gray-900">Assistant IA MONFLUX</span>
+            {usage && (
+              <span className="ml-auto flex items-center gap-2">
+                <span className={`text-xs ${usage.remaining <= 5 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                  {Math.max(0, usage.remaining)} requête{usage.remaining > 1 ? 's' : ''} restante{usage.remaining > 1 ? 's' : ''} ce mois
+                </span>
+                {usage.remaining <= 10 && (
+                  <button onClick={buyCredits} disabled={buying} className="text-xs px-2 py-1 rounded-lg bg-brand/10 text-brand font-medium hover:bg-brand/20">
+                    {buying ? '…' : '+100 crédits'}
+                  </button>
+                )}
+              </span>
+            )}
           </div>
+
+          {/* Quota banner */}
+          {quotaHit && (
+            <div className="mx-5 mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-800">Limite IA mensuelle atteinte</p>
+                <p className="text-xs text-amber-600">Achetez des crédits supplémentaires pour continuer à utiliser l'assistant.</p>
+              </div>
+              <button onClick={buyCredits} disabled={buying} className="btn-primary text-xs py-1.5 flex-shrink-0">
+                {buying ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>} Acheter 100 crédits
+              </button>
+            </div>
+          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
