@@ -137,6 +137,7 @@ export default function ProjectDetail() {
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
+  const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const notesTimer = useRef(null);
@@ -144,14 +145,16 @@ export default function ProjectDetail() {
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
+        quotesApi.list(),
       ]);
       setProject(proj);
       setTimesheets(ts);
       setProjectInvoices(invs);
+      setProjectQuotes(qs.filter(q => q.project_id === id));
       setNotes(proj.notes || '');
     } catch {} finally { setLoading(false); }
   };
@@ -350,6 +353,36 @@ export default function ProjectDetail() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Soumissions liées */}
+        {projectQuotes.length > 0 && (
+          <div className="card mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FileText size={15} className="text-brand" />
+                <h2 className="font-semibold text-gray-900 text-sm">Soumissions & Avenants ({projectQuotes.length})</h2>
+              </div>
+              <button className="btn-secondary text-xs py-1 px-2" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent('Avenant — '+project.name)}`)}><Plus size={12}/> Avenant</button>
+            </div>
+            {(() => {
+              const QSB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
+              const QSL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
+              return (
+                <div className="space-y-2">
+                  {projectQuotes.map(q => (
+                    <div key={q.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">{q.title || 'Soumission'}</p>
+                      </div>
+                      <span className={`badge ${QSB[q.status]||'badge-gray'} text-xs`}>{QSL[q.status]||q.status}</span>
+                      {q.total > 0 && <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(q.total).toLocaleString('fr-CA')}$</p>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 

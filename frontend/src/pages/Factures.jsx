@@ -90,6 +90,52 @@ function CreateModal({ projects, onClose, onSave }) {
   );
 }
 
+function PartialPaymentModal({ inv, onClose, onSave }) {
+  const [amount, setAmount] = useState('');
+  const [saving, setSaving] = useState(false);
+  const remaining = Number(inv.amount_due || inv.total || 0);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const paid = Number(amount);
+    if (paid <= 0 || paid > remaining) return;
+    setSaving(true);
+    try {
+      const newAmountPaid = (Number(inv.amount_paid || 0)) + paid;
+      const newAmountDue = remaining - paid;
+      const status = newAmountDue <= 0 ? 'paid' : 'partial';
+      const { data } = await invoicesApi.update(inv.id, {
+        amount_paid: newAmountPaid,
+        amount_due: Math.max(0, newAmountDue),
+        status,
+        ...(status === 'paid' ? { paid_at: new Date().toISOString() } : {}),
+      });
+      onSave(data);
+    } catch {} finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-sm">
+        <h2 className="font-semibold text-gray-900 mb-1 text-sm">Paiement reçu</h2>
+        <p className="text-xs text-gray-400 mb-4">{inv.number} — Solde dû : {remaining.toLocaleString('fr-CA')}$</p>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="label">Montant reçu ($)</label>
+            <input className="input" type="number" step="0.01" min="0.01" max={remaining} value={amount} onChange={e=>setAmount(e.target.value)} autoFocus required/>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn-primary flex-1" disabled={saving || !amount || Number(amount) <= 0}>
+              {saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function EditModal({ inv, onClose, onSave }) {
   const [status, setStatus] = useState(inv.status);
   const [due_date, setDueDate] = useState(inv.due_date ? inv.due_date.slice(0,10) : '');
@@ -135,6 +181,7 @@ export default function Factures() {
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [partialItem, setPartialItem] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -178,6 +225,7 @@ export default function Factures() {
 
         {showCreate && <CreateModal projects={projects} onClose={()=>setShowCreate(false)} onSave={handleCreate} />}
         {editItem && <EditModal inv={editItem} onClose={()=>setEditItem(null)} onSave={handleEdit} />}
+        {partialItem && <PartialPaymentModal inv={partialItem} onClose={()=>setPartialItem(null)} onSave={data=>{handleEdit(data);setPartialItem(null);}} />}
 
         {totalOverdue > 0 && (
           <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
@@ -232,11 +280,20 @@ export default function Factures() {
                     ><Link2 size={13}/></button>
                   )}
                   {!['paid','cancelled'].includes(inv.status) && (
-                    <button
-                      className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
-                      title="Marquer comme payée"
-                      onClick={() => markPaid(inv)}
-                    ><CheckCircle size={13}/></button>
+                    <>
+                      <button
+                        className="btn-ghost p-1.5 text-gray-400 hover:text-orange-500"
+                        title="Paiement partiel reçu"
+                        onClick={() => setPartialItem(inv)}
+                      >
+                        <span className="text-xs font-bold">½</span>
+                      </button>
+                      <button
+                        className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
+                        title="Marquer comme payée (complète)"
+                        onClick={() => markPaid(inv)}
+                      ><CheckCircle size={13}/></button>
+                    </>
                   )}
                   <button
                     className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
