@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import { useToast } from '../components/Toast';
 import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi, email as emailApi } from '../api';
 import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail } from 'lucide-react';
 
@@ -127,6 +128,7 @@ function EditModal({ inv, onClose, onSave }) {
 }
 
 export default function Factures() {
+  const toast = useToast();
   const [items, setItems] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -220,7 +222,7 @@ export default function Factures() {
                   <button
                     className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
                     title="Envoyer par courriel"
-                    onClick={() => { const to = prompt('Adresse courriel du client :'); if(to) emailApi.sendInvoice(inv.id,{to}).then(()=>alert(`Envoyé à ${to}`)).catch(e=>alert(e.response?.data?.detail||'Erreur envoi')); }}
+                    onClick={() => { const to = prompt('Adresse courriel du client :'); if(to) emailApi.sendInvoice(inv.id,{to}).then(()=>toast(`Facture envoyée à ${to}`, 'success')).catch(e=>toast(e.response?.data?.detail||'Erreur envoi — SMTP non configuré', 'error')); }}
                   ><Mail size={14}/></button>
                   <button className="btn-ghost p-1.5 text-gray-400 hover:text-blue-500" onClick={()=>setEditItem(inv)}><Pencil size={14}/></button>
                   <button className="btn-ghost p-1.5 text-gray-400 hover:text-red-500" onClick={()=>del(inv.id)}><Trash2 size={14}/></button>

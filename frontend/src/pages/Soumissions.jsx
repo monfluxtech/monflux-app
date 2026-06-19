@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi, ai as aiApi, email as emailApi } from '../api';
+import { useToast } from '../components/Toast';
 import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download, Sparkles, Mail } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
@@ -180,6 +181,7 @@ function EditModal({ quote, onClose, onSave }) {
 
 export default function Soumissions() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [leadList, setLeadList] = useState([]);
@@ -214,7 +216,7 @@ export default function Soumissions() {
       const { data } = await quotesApi.convert(quote.id);
       setItems(i => i.map(q => q.id === quote.id ? { ...q, status: 'converted' } : q));
       navigate('/projets');
-    } catch { alert('Erreur lors de la conversion'); } finally { setConverting(null); }
+    } catch { toast('Erreur lors de la conversion', 'error'); } finally { setConverting(null); }
   };
 
   const getLeadName = (lead_id) => leadList.find(l => l.id === lead_id)?.title || '';
@@ -270,7 +272,7 @@ export default function Soumissions() {
                     <button
                       className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
                       title="Envoyer par courriel"
-                      onClick={() => { const to = prompt('Adresse courriel du client :'); if(to) emailApi.sendQuote(q.id,{to}).then(()=>alert(`Envoyé à ${to}`)).catch(e=>alert(e.response?.data?.detail||'Erreur envoi')); }}
+                      onClick={() => { const to = prompt('Adresse courriel du client :'); if(to) emailApi.sendQuote(q.id,{to}).then(()=>toast(`Soumission envoyée à ${to}`, 'success')).catch(e=>toast(e.response?.data?.detail||'Erreur envoi — SMTP non configuré', 'error')); }}
                     >
                       <Mail size={13}/>
                     </button>

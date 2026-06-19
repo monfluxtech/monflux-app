@@ -15,7 +15,7 @@ const LEAD_SOURCES = [
 const FREQ_OPTIONS = [6, 12, 24, 48, 72];
 
 function ProfileTab() {
-  const { user, setAuth } = useAuthStore();
+  const { user, company, plan, token, setAuth } = useAuthStore();
   const [form, setForm] = useState({ name: user?.name || '', phone: user?.phone || '', language: user?.language || 'fr' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -26,9 +26,7 @@ function ProfileTab() {
     setSaving(true);
     try {
       const { data } = await authApi.update(form);
-      // Update store with new name
-      const token = localStorage.getItem('token');
-      setAuth({ token, user: { ...user, ...data }, company: null, plan: null });
+      setAuth({ token, user: { ...user, ...data }, company, plan });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {} finally { setSaving(false); }

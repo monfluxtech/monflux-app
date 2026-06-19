@@ -42,7 +42,7 @@ export default function Dashboard() {
     catch {} finally { setHL(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load().then(() => loadHealth()); }, []);
 
   const hotLeads    = d.leads.filter(l => ['new','contacted'].includes(l.status));
   const activeProjs = d.projects.filter(p => p.status === 'active');
