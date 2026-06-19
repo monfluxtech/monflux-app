@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { quotes as quotesApi, leads as leadsApi, pdf as pdfApi, ai as aiApi, email as emailApi } from '../api';
 import { useToast } from '../components/Toast';
-import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download, Sparkles, Mail, Link2 } from 'lucide-react';
+import { Plus, Loader2, FileText, ClipboardList, Pencil, Trash2, FolderKanban, ExternalLink, Download, Sparkles, Mail, Link2, MessageCircle } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
@@ -265,16 +265,26 @@ export default function Soumissions() {
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {q.interactive_token && (
-                      <button
-                        className="btn-ghost p-1.5 text-gray-400 hover:text-purple-500"
-                        title="Copier le lien client"
-                        onClick={() => {
-                          const url = `${window.location.origin}/soumission/${q.interactive_token}`;
-                          navigator.clipboard.writeText(url).then(() => toast('Lien copié !', 'success'));
-                        }}
-                      >
-                        <Link2 size={13}/>
-                      </button>
+                      <>
+                        <button
+                          className="btn-ghost p-1.5 text-gray-400 hover:text-purple-500"
+                          title="Copier le lien client"
+                          onClick={() => {
+                            const url = `${window.location.origin}/soumission/${q.interactive_token}`;
+                            navigator.clipboard.writeText(url).then(() => toast('Lien copié !', 'success'));
+                          }}
+                        >
+                          <Link2 size={13}/>
+                        </button>
+                        <a
+                          className="btn-ghost p-1.5 text-gray-400 hover:text-green-600"
+                          title="Envoyer par WhatsApp"
+                          href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre soumission "${q.title||''}". Vous pouvez la consulter et l'accepter ici : ${window.location.origin}/soumission/${q.interactive_token}`)}`}
+                          target="_blank" rel="noreferrer"
+                        >
+                          <MessageCircle size={13}/>
+                        </a>
+                      </>
                     )}
                     <button
                       className="btn-ghost p-1.5 text-gray-400 hover:text-brand"
