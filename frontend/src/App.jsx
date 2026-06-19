@@ -10,6 +10,7 @@ import Leads         from './pages/Leads';
 import Soumissions   from './pages/Soumissions';
 import Factures      from './pages/Factures';
 import SousTraitants from './pages/SousTraitants';
+import Contacts from './pages/Contacts';
 import Punch         from './pages/Punch';
 import PunchPublic   from './pages/PunchPublic';
 import Chat          from './pages/Chat';
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/soumissions"        element={<Guard><Soumissions /></Guard>} />
         <Route path="/factures"           element={<Guard><Factures /></Guard>} />
         <Route path="/sous-traitants"     element={<Guard><SousTraitants /></Guard>} />
+        <Route path="/contacts"           element={<Guard><Contacts /></Guard>} />
         <Route path="/punch"              element={<Guard><Punch /></Guard>} />
         <Route path="/chat"               element={<Guard><Chat /></Guard>} />
         <Route path="/parametres"         element={<Guard><Parametres /></Guard>} />

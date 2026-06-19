@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi } from '../api';
-import { QrCode, Plus, Clock, Loader2, Calendar, CheckCircle } from 'lucide-react';
+import { QrCode, Plus, Clock, Loader2, Calendar, CheckCircle, Download } from 'lucide-react';
 
 export default function Punch() {
   const [projectList, setProjectList] = useState([]);
@@ -113,7 +113,29 @@ export default function Punch() {
 
         {/* Timesheet list */}
         <div className="card">
-          <h2 className="font-semibold text-gray-900 text-sm mb-4">Journal de pointage</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-900 text-sm">Journal de pointage</h2>
+            <button
+              className="btn-ghost text-xs py-1 px-2 flex items-center gap-1"
+              onClick={() => {
+                const rows = [['Nom','Projet','Entrée','Sortie','Heures']];
+                timesheets.forEach(t => rows.push([
+                  t.user_name||t.sub_name||'Anonyme',
+                  t.project_name||'',
+                  t.clock_in ? new Date(t.clock_in).toLocaleString('fr-CA') : '',
+                  t.clock_out ? new Date(t.clock_out).toLocaleString('fr-CA') : 'En cours',
+                  t.hours_total||'',
+                ]));
+                const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+                a.download = `pointage-${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+              }}
+            >
+              <Download size={12} /> Exporter CSV
+            </button>
+          </div>
           {tsLoading ? (
             <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Chargement…</div>
           ) : (

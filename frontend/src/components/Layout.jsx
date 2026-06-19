@@ -5,13 +5,14 @@ import FloatingChat from './FloatingChat';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
-  LogOut, User, ChevronRight,
+  LogOut, User, ChevronRight, BookUser,
 } from 'lucide-react';
 
 const NAV = [
   { to: '/dashboard',       icon: LayoutDashboard, label: 'Tableau de bord' },
   { to: '/projets',         icon: FolderKanban,    label: 'Projets & Gantt' },
   { to: '/leads',           icon: Users,           label: 'Leads' },
+  { to: '/contacts',        icon: BookUser,        label: 'Contacts' },
   { to: '/soumissions',     icon: FileText,        label: 'Soumissions' },
   { to: '/factures',        icon: Receipt,         label: 'Factures' },
   { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
