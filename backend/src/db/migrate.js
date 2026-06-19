@@ -11,7 +11,9 @@ const schemaPath = path.join(__dirname, '../../../schema.sql');
 
 const client = new pg.Client({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL?.includes('sslmode=disable'))
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 async function migrate() {
