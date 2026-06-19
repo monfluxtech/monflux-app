@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { leads as leadsApi, quotes as quotesApi } from '../api';
-import { Plus, Loader2, Phone, Mail, Pencil, Trash2, FileText, ClipboardList, FolderKanban } from 'lucide-react';
+import { Plus, Loader2, Phone, Mail, Pencil, Trash2, FileText, ClipboardList, FolderKanban, Bell, BellOff } from 'lucide-react';
 
 const COLS = [
   { key:'new',         label:'Nouveau',           color:'#3b82f6' },
@@ -132,7 +132,7 @@ function QuoteModal({ lead, format, onClose, onDone }) {
   );
 }
 
-function LeadCard({ lead, onEdit, onDelete, onQuote, onTerrain, onConvert, dragStart }) {
+function LeadCard({ lead, onEdit, onDelete, onQuote, onTerrain, onConvert, onFollowup, dragStart }) {
   const [converting, setConverting] = useState(false);
 
   const doConvert = async () => {
@@ -140,15 +140,22 @@ function LeadCard({ lead, onEdit, onDelete, onQuote, onTerrain, onConvert, dragS
     try { await onConvert(lead); } finally { setConverting(false); }
   };
 
+  const followUpDate = lead.follow_up_at ? new Date(lead.follow_up_at) : null;
+  const followUpOverdue = followUpDate && followUpDate < new Date();
+  const followUpToday = followUpDate && followUpDate.toDateString() === new Date().toDateString();
+
   return (
     <div
-      className="card p-3 cursor-grab active:cursor-grabbing select-none hover:shadow-md transition-shadow"
+      className={`card p-3 cursor-grab active:cursor-grabbing select-none hover:shadow-md transition-shadow ${followUpOverdue ? 'ring-2 ring-orange-300' : ''}`}
       draggable
       onDragStart={e => dragStart(e, lead.id)}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-semibold text-gray-900 leading-tight">{lead.title}</p>
         <div className="flex gap-0.5 flex-shrink-0">
+          <button className="p-1 text-gray-300 hover:text-orange-500 rounded" title="Rappel" onClick={e=>{e.stopPropagation();onFollowup(lead);}}>
+            <Bell size={11} className={followUpDate ? 'text-orange-400' : ''}/>
+          </button>
           <button className="p-1 text-gray-300 hover:text-blue-500 rounded" onClick={e=>{e.stopPropagation();onEdit(lead)}}><Pencil size={11}/></button>
           <button className="p-1 text-gray-300 hover:text-red-500 rounded" onClick={e=>{e.stopPropagation();onDelete(lead.id)}}><Trash2 size={11}/></button>
         </div>
@@ -163,6 +170,12 @@ function LeadCard({ lead, onEdit, onDelete, onQuote, onTerrain, onConvert, dragS
         <p className="text-xs text-gray-400 mb-1.5">
           {lead.budget_min?`${Number(lead.budget_min).toLocaleString('fr-CA')}$`:''}
           {lead.budget_max?` – ${Number(lead.budget_max).toLocaleString('fr-CA')}$`:''}
+        </p>
+      )}
+      {followUpDate && (
+        <p className={`text-xs flex items-center gap-1 mb-1.5 font-medium ${followUpOverdue?'text-red-500':followUpToday?'text-orange-500':'text-gray-400'}`}>
+          <Bell size={10}/>
+          {followUpOverdue?'Rappel en retard':'Rappel'} : {followUpDate.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}
         </p>
       )}
       <div className="flex gap-1 mt-2 flex-wrap">
@@ -186,6 +199,8 @@ export default function Leads() {
   const [showNew, setShowNew] = useState(searchParams.get('new') === '1');
   const [editLead, setEditLead] = useState(null);
   const [quoteModal, setQuoteModal] = useState(null);
+  const [followupLead, setFollowupLead] = useState(null);
+  const [followupDate, setFollowupDate] = useState('');
   const [dragOver, setDragOver] = useState(null);
   const dragId = useRef(null);
 
@@ -230,6 +245,14 @@ export default function Leads() {
     navigate('/projets');
   };
 
+  const saveFollowup = async () => {
+    if (!followupLead) return;
+    const val = followupDate ? new Date(followupDate).toISOString() : null;
+    await leadsApi.update(followupLead.id, { follow_up_at: val });
+    setItems(i => i.map(l => l.id === followupLead.id ? { ...l, follow_up_at: val } : l));
+    setFollowupLead(null);
+  };
+
   const byStatus = (status) => items.filter(l=>l.status===status);
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
@@ -242,8 +265,36 @@ export default function Leads() {
           <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={14}/> Nouveau lead</button>
         </div>
 
+        {/* Follow-up alerts */}
+        {(() => {
+          const due = items.filter(l => l.follow_up_at && new Date(l.follow_up_at) <= new Date() && !['won','lost'].includes(l.status));
+          if (!due.length) return null;
+          return (
+            <div className="mb-3 px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-xl flex items-center gap-2">
+              <Bell size={14} className="text-orange-500 flex-shrink-0"/>
+              <p className="text-xs font-medium text-orange-700 flex-1">
+                {due.length} rappel{due.length>1?'s':''} en attente : {due.slice(0,2).map(l=>l.title).join(', ')}{due.length>2?'…':''}
+              </p>
+            </div>
+          );
+        })()}
+
         {showNew && <LeadModal onClose={()=>setShowNew(false)} onSave={handleSave}/>}
         {editLead && <LeadModal lead={editLead} onClose={()=>setEditLead(null)} onSave={handleSave}/>}
+        {followupLead && (
+          <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+            <div className="card w-full max-w-xs">
+              <h2 className="font-semibold text-gray-900 mb-1 text-sm">Rappel pour</h2>
+              <p className="text-xs text-gray-400 mb-3 truncate">{followupLead.title}</p>
+              <input className="input mb-3" type="date" value={followupDate} onChange={e=>setFollowupDate(e.target.value)}/>
+              <div className="flex gap-2">
+                <button className="btn-secondary flex-1 text-sm" onClick={()=>setFollowupLead(null)}>Annuler</button>
+                {followupLead.follow_up_at && <button className="btn-ghost flex-1 text-sm text-red-500" onClick={async()=>{await leadsApi.update(followupLead.id,{follow_up_at:null});setItems(i=>i.map(l=>l.id===followupLead.id?{...l,follow_up_at:null}:l));setFollowupLead(null);}}>Supprimer</button>}
+                <button className="btn-primary flex-1 text-sm" onClick={saveFollowup}>Enregistrer</button>
+              </div>
+            </div>
+          </div>
+        )}
         {quoteModal && (
           <QuoteModal
             lead={quoteModal.lead} format={quoteModal.format}
@@ -296,6 +347,7 @@ export default function Leads() {
                       onQuote={l=>setQuoteModal({lead:l,format:'pdf'})}
                       onTerrain={l=>setQuoteModal({lead:l,format:'field_estimate'})}
                       onConvert={convertToProject}
+                      onFollowup={l=>{setFollowupLead(l);setFollowupDate(l.follow_up_at?l.follow_up_at.slice(0,10):'');}}
                       dragStart={(e,id)=>{dragId.current=id; e.dataTransfer.effectAllowed='move';}}
                     />
                   ))}
