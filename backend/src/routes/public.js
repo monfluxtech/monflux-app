@@ -157,7 +157,7 @@ router.get('/portal/:token', async (req, res) => {
   try {
     const { rows: [project] } = await query(
       `SELECT p.id, p.name, p.status, p.address, p.city, p.start_date, p.end_date,
-              p.progress_percent, p.description,
+              p.progress_pct, p.description,
               co.name AS company_name, co.phone AS company_phone, co.email AS company_email,
               co.website AS company_website, co.logo_url AS company_logo
        FROM projects p
@@ -168,7 +168,7 @@ router.get('/portal/:token', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
 
     const { rows: phases } = await query(
-      `SELECT name, status, progress_percent, display_order
+      `SELECT name, status, progress_pct, display_order
        FROM project_phases
        WHERE project_id = $1
        ORDER BY display_order`,

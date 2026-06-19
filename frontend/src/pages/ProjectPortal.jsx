@@ -126,7 +126,7 @@ export default function ProjectPortal() {
     </div>
   );
 
-  const progress = data.progress_percent || 0;
+  const progress = data.progress_pct || 0;
   const statusColor = STATUS_COLOR[data.status] || '#9ca3af';
   const statusLabel = STATUS_LABEL[data.status] || data.status;
 
@@ -218,7 +218,7 @@ export default function ProjectPortal() {
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Étapes du chantier</h2>
             <div className="space-y-3">
               {data.phases.map((phase, idx) => {
-                const pct = phase.progress_percent || 0;
+                const pct = phase.progress_pct || 0;
                 const phColor = PHASE_STATUS_COLOR[phase.status] || '#d1d5db';
                 const isCompleted = phase.status === 'completed';
                 return (
