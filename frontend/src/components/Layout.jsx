@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore, useUIStore } from '../store';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
-  Hardhat, QrCode, MessageSquare, Settings, LogOut, Menu, Moon, Sun, Zap
+  HardHat, QrCode, MessageSquare, Settings, LogOut, Menu, Moon, Sun, Zap
 } from 'lucide-react';
 
 const NAV = [
@@ -11,7 +11,7 @@ const NAV = [
   { to: '/leads',           icon: Users,           label: 'Leads' },
   { to: '/soumissions',     icon: FileText,        label: 'Soumissions' },
   { to: '/factures',        icon: Receipt,         label: 'Factures' },
-  { to: '/sous-traitants',  icon: Hardhat,         label: 'Sous-traitants' },
+  { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
   { to: '/punch',           icon: QrCode,          label: 'Pointage QR' },
   { to: '/chat',            icon: MessageSquare,   label: 'Assistant IA' },
   { to: '/parametres',      icon: Settings,        label: 'Paramètres' },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { subcontractors as subsApi } from '../api';
-import { Plus, Loader2, Hardhat, Star, Phone, Mail } from 'lucide-react';
+import { Plus, Loader2, HardHat, Star, Phone, Mail } from 'lucide-react';
 
 export default function SousTraitants() {
   const [items, setItems] = useState([]);
