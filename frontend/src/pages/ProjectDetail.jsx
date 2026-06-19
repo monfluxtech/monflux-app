@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, Trash2, StickyNote, Receipt, FileText } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, Trash2, StickyNote, Receipt, FileText, GitBranch } from 'lucide-react';
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
@@ -202,9 +202,17 @@ export default function ProjectDetail() {
   return (
     <Layout>
       <div className="p-6 max-w-5xl mx-auto">
-        <button className="btn-ghost mb-4 text-sm" onClick={()=>navigate('/projets')}>
-          <ArrowLeft size={14}/> Projets
-        </button>
+        <div className="flex items-center justify-between mb-4">
+          <button className="btn-ghost text-sm" onClick={()=>navigate('/projets')}>
+            <ArrowLeft size={14}/> Projets
+          </button>
+          <button
+            className="btn-secondary text-xs"
+            onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent('Avenant — '+project.name)}`)}
+          >
+            <GitBranch size={13}/> Créer un avenant
+          </button>
+        </div>
 
         {/* Header */}
         <div className="card mb-4">

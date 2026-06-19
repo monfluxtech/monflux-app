@@ -9,8 +9,8 @@ const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée',
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
 const STATUSES = ['draft','sent','viewed','signed','rejected','expired'];
 
-function CreateModal({ leads, onClose, onSave }) {
-  const [form, setForm] = useState({ lead_id:'', title:'', format:'pdf', items:[{name:'',qty:1,unit:'un.',unit_price:''}] });
+function CreateModal({ leads, onClose, onSave, initialTitle = '', initialLeadId = '' }) {
+  const [form, setForm] = useState({ lead_id: initialLeadId, title: initialTitle, format:'pdf', items:[{name:'',qty:1,unit:'un.',unit_price:''}] });
   const [saving, setSaving] = useState(false);
   const [aiDesc, setAiDesc] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -187,6 +187,8 @@ export default function Soumissions() {
   const [leadList, setLeadList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(searchParams.get('new') === '1');
+  const initialTitle = searchParams.get('title') ? decodeURIComponent(searchParams.get('title')) : '';
+  const initialLeadId = searchParams.get('lead_id') || '';
   const [editItem, setEditItem] = useState(null);
   const [converting, setConverting] = useState(null);
 
@@ -229,7 +231,7 @@ export default function Soumissions() {
           <button className="btn-primary" onClick={() => setShowCreate(true)}><Plus size={15}/> Nouvelle soumission</button>
         </div>
 
-        {showCreate && <CreateModal leads={leadList} onClose={()=>setShowCreate(false)} onSave={handleCreate} />}
+        {showCreate && <CreateModal leads={leadList} onClose={()=>setShowCreate(false)} onSave={handleCreate} initialTitle={initialTitle} initialLeadId={initialLeadId} />}
         {editItem && <EditModal quote={editItem} onClose={()=>setEditItem(null)} onSave={handleEdit} />}
 
         {loading ? (
