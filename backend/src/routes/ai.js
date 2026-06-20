@@ -6,9 +6,14 @@ import { authenticateToken, resolveCompany, requireFeature, enforceAiQuota, getA
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let anthropic = null;
+const initAnthropicIfReady = () => {
+  if (!anthropic && process.env.ANTHROPIC_API_KEY) {
+    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return anthropic;
+};
 
-// Le client fournit ANTHROPIC_API_KEY ; on dégrade gracieusement si absent.
 const aiReady = () => !!process.env.ANTHROPIC_API_KEY;
 function aiNotConfigured(res) {
   return res.status(503).json({
@@ -20,6 +25,7 @@ function aiNotConfigured(res) {
 
 // POST /api/ai/health-check — AI dashboard health summary
 router.get('/health-check', requireFeature('ai_health_check'), async (req, res) => {
+  if (!aiReady()) return aiNotConfigured(res);
   try {
     const [projects, overdueinv, pendingLeads, pendingActions] = await Promise.all([
       query(`SELECT id,name,status,progress_pct,end_date,contract_value FROM projects WHERE company_id=$1 AND status='active'`, [req.company_id]),
@@ -35,7 +41,8 @@ router.get('/health-check', requireFeature('ai_health_check'), async (req, res) 
       pending_actions: pendingActions.rows[0].n,
     };
 
-    const msg = await anthropic.messages.create({
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
       messages: [{
@@ -61,6 +68,7 @@ Priorise ce qui demande attention immédiate. Sois direct et actionnable.`,
 
 // POST /api/ai/estimate — AI material estimation
 router.post('/estimate', requireFeature('ai_estimation'), enforceAiQuota, async (req, res) => {
+  if (!aiReady()) return aiNotConfigured(res);
   const { description, extracted_dimensions, project_type, preferred_suppliers = ['rona','home_depot'] } = req.body;
 
   try {
@@ -94,7 +102,8 @@ Retourne UNIQUEMENT un JSON valide avec ce format:
   "notes": ""
 }`;
 
-    const msg = await anthropic.messages.create({
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
@@ -146,7 +155,8 @@ Retourne UNIQUEMENT un JSON valide :
   "summary": "résumé actionnable en 2-3 phrases en français québécois"
 }`;
 
-    const msg = await anthropic.messages.create({
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
@@ -200,7 +210,8 @@ Retourne UNIQUEMENT un JSON valide :
   "overall_impact": "low|medium|high"
 }`;
 
-    const msg = await anthropic.messages.create({
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],

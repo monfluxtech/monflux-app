@@ -1,10 +1,17 @@
 import express from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
-// Le client fournit ANTHROPIC_API_KEY ; on dégrade gracieusement si absent.
+let anthropic = null;
+const initAnthropicIfReady = () => {
+  if (!anthropic && process.env.ANTHROPIC_API_KEY) {
+    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return anthropic;
+};
 const aiReady = () => !!process.env.ANTHROPIC_API_KEY;
 
 router.get('/project/:projectId', async (req, res) => {
@@ -69,9 +76,6 @@ router.post('/:id/analyze', async (req, res) => {
 
     await query(`UPDATE site_media SET ai_status = 'pending', ai_error = NULL WHERE id = $1`, [m.id]);
 
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     const instructions = `Tu es un inspecteur de chantier expert au Québec (normes RBQ, CNESST, Code de construction).
 Analyse cette ${m.type === 'photo' ? 'photo de chantier' : 'note de chantier'} et identifie :
 1. Les NON-CONFORMITÉS (Code de construction, normes RBQ, malfaçons visibles)
@@ -104,7 +108,8 @@ Si rien n'est détecté, retourne des tableaux vides et un résumé positif.`;
       content = [{ type: 'text', text: `${instructions}\n\nContenu de la note :\n"${text}"` }];
     }
 
-    const msg = await anthropic.messages.create({
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{ role: 'user', content }],
