@@ -107,13 +107,16 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
+  // Bind port first so Railway's health check can respond immediately,
+  // even while the DB is still connecting (cold start on Railway).
+  app.listen(PORT, () => {
+    console.log(`✅ MONFLUX 2.0 Backend — port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+  });
+
   try {
     await initializeDatabase();
-    app.listen(PORT, () => {
-      console.log(`✅ MONFLUX 2.0 Backend — port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
-    });
   } catch (err) {
-    console.error('Startup failed:', err);
+    console.error('Startup failed — DB unavailable:', err.message);
     process.exit(1);
   }
 }
