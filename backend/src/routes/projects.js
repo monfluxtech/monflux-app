@@ -126,16 +126,26 @@ router.post('/', async (req, res) => {
       `INSERT INTO projects
          (company_id, name, description, type, status, address, city, postal_code,
           client_id, lead_id, start_date, end_date, contract_value,
-          budget_materials, budget_labor, created_from_project)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          budget_materials, budget_labor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         req.company_id, name, description, type || 'other', status || 'brouillon',
         address, city, postal_code, client_id || null, lead_id || null,
         start_date || null, end_date || null, contract_value || null,
-        budget_materials || null, budget_labor || null, created_from_project || null,
+        budget_materials || null, budget_labor || null,
       ]
     );
+
+    // Update created_from_project after insert (column added via migration)
+    if (created_from_project) {
+      try {
+        await query(
+          `UPDATE projects SET created_from_project = $1 WHERE id = $2`,
+          [created_from_project, project.id]
+        );
+      } catch (_) { /* column not yet migrated — ignore */ }
+    }
 
     // If reusing a past project, copy its phases
     if (created_from_project) {
