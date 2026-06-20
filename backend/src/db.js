@@ -248,6 +248,15 @@ async function applyMigrations() {
       "contacts":false,"contrats":false,"commandes":false,"factures_achat":false
      }'::jsonb
      WHERE modules_enabled IS NULL OR modules_enabled = '{}'::jsonb`);
+
+  // ── Refonte v3 B2 — onboarding intelligent : métiers, responsabilités,
+  //    checklists terrain (2026-06) ────────────────────────────────────────────
+  await run('companies trades column',
+    `ALTER TABLE companies ADD COLUMN IF NOT EXISTS trades JSONB DEFAULT '[]'::jsonb`);
+  await run('users responsibilities column',
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS responsibilities JSONB DEFAULT '[]'::jsonb`);
+  await run('company_config field_checklists column',
+    `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS field_checklists JSONB DEFAULT '{}'::jsonb`);
 }
 
 export async function initializeDatabase() {

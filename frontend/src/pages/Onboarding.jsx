@@ -2,13 +2,28 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { onboarding } from '../api';
 import { useAuthStore } from '../store';
-import { Send, Loader2, CheckCircle } from 'lucide-react';
+import { Send, Loader2, CheckCircle, Check, ArrowRight } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
 
 const WELCOME = `Bonjour! 👋 Je suis l'assistant MONFLUX.
 
-Je vais créer votre profil en quelques questions. Commençons : **quel est le nom de votre entreprise?** (ou votre nom si vous êtes un particulier)`;
+Je vais configurer ton espace en quelques questions — ton métier, ton rôle dans les projets, et les vues qui te seront utiles. Commençons : **quel est le nom de ton entreprise?** (ou ton nom si tu gères tes propres projets)`;
+
+// Retire les blocs de contrôle du texte affiché et extrait les options cliquables.
+const CONTROL_RE = /<OPTIONS(?:\s+multi)?>[\s\S]*?<\/OPTIONS>|<PROFILE_COMPLETE>[\s\S]*?<\/PROFILE_COMPLETE>/g;
+function parseAssistant(raw = '') {
+  let options = null, multi = false;
+  const m = raw.match(/<OPTIONS(\s+multi)?>([\s\S]*?)<\/OPTIONS>/);
+  if (m) {
+    multi = !!m[1];
+    try { const arr = JSON.parse(m[2].trim()); if (Array.isArray(arr)) options = arr; } catch {}
+  }
+  let text = raw.replace(CONTROL_RE, '');
+  // Pendant le streaming, masque les balises encore incomplètes.
+  text = text.replace(/<OPTIONS[\s\S]*$/, '').replace(/<PROFILE_COMPLETE[\s\S]*$/, '');
+  return { text: text.trim(), options, multi };
+}
 
 export default function Onboarding() {
   const [messages, setMessages] = useState([{ role: 'assistant', content: WELCOME }]);
@@ -18,6 +33,7 @@ export default function Onboarding() {
   const [profile, setProfile] = useState(null);
   const [completing, setCompleting] = useState(false);
   const [done, setDone] = useState(false);
+  const [selected, setSelected] = useState([]);
   const bottomRef = useRef(null);
   const { setCompany, user } = useAuthStore();
   const navigate = useNavigate();
@@ -30,12 +46,14 @@ export default function Onboarding() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  const send = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = { role: 'user', content: input.trim() };
+  const send = async (textArg) => {
+    const content = (typeof textArg === 'string' ? textArg : input).trim();
+    if (!content || loading) return;
+    const userMsg = { role: 'user', content };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput('');
+    setSelected([]);
     setLoading(true);
 
     const aiMsg = { role: 'assistant', content: '' };
@@ -127,25 +145,72 @@ export default function Onboarding() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-2">
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === 'user' ? 'flex justify-end fade-in' : 'flex justify-start fade-in'}>
-              {m.role === 'assistant' && (
-                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mr-2 mt-0.5" style={{background:'#F26522'}}>
-                  <span className="text-white text-xs font-bold">M</span>
+          {messages.map((m, i) => {
+            const isAssistant = m.role === 'assistant';
+            const parsed = isAssistant ? parseAssistant(m.content) : null;
+            const display = isAssistant ? parsed.text : m.content;
+            const isLast = i === messages.length - 1;
+            const showChips = isAssistant && isLast && parsed?.options?.length && !loading && !completing && !profile;
+            return (
+              <div key={i} className={isAssistant ? 'flex justify-start fade-in' : 'flex justify-end fade-in'}>
+                {isAssistant && (
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mr-2 mt-0.5" style={{background:'#F26522'}}>
+                    <span className="text-white text-xs font-bold">M</span>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2 max-w-[85%]">
+                  <div className={isAssistant ? 'chat-bubble-ai' : 'chat-bubble-user'}>
+                    {display
+                      ? display.split('\n').map((line, j) => (
+                          <p key={j} className={j > 0 ? 'mt-1' : ''} dangerouslySetInnerHTML={{
+                            __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          }} />
+                        ))
+                      : <span className="flex gap-1 py-0.5"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
+                    }
+                  </div>
+
+                  {showChips && (
+                    <div className="flex flex-wrap gap-2">
+                      {parsed.multi ? (
+                        <>
+                          {parsed.options.map((opt) => {
+                            const on = selected.includes(opt);
+                            return (
+                              <button
+                                key={opt}
+                                onClick={() => setSelected((s) => on ? s.filter((x) => x !== opt) : [...s, opt])}
+                                className={`text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1 ${on ? 'border-brand bg-orange-50 text-brand font-medium' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                              >
+                                {on && <Check size={12} />}{opt}
+                              </button>
+                            );
+                          })}
+                          <button
+                            onClick={() => send(selected.join(', '))}
+                            disabled={!selected.length}
+                            className="text-xs px-3 py-1.5 rounded-full bg-brand text-white font-medium flex items-center gap-1 disabled:opacity-40"
+                          >
+                            Continuer <ArrowRight size={12} />
+                          </button>
+                        </>
+                      ) : (
+                        parsed.options.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => send(opt)}
+                            className="text-xs px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 hover:border-brand hover:text-brand hover:bg-orange-50 transition-colors"
+                          >
+                            {opt}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-              <div className={m.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}>
-                {m.content
-                  ? m.content.split('\n').map((line, j) => (
-                      <p key={j} className={j > 0 ? 'mt-1' : ''} dangerouslySetInnerHTML={{
-                        __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                      }} />
-                    ))
-                  : <span className="flex gap-1 py-0.5"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
-                }
               </div>
-            </div>
-          ))}
+            );
+          })}
           {loading && messages[messages.length - 1]?.content === '' && null}
           {completing && (
             <div className="flex items-center gap-2 text-sm text-gray-500 self-center mt-2">
