@@ -5,7 +5,15 @@ import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+let _anthropic = null;
+const anthropic = () => {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+};
 
 const LEAD_SOURCES = ['manual','email','whatsapp','facebook_ads','google_lsa','soumissions_reno','kijiji','referral','website','other'];
 const PROJECT_TYPES = ['kitchen','bathroom','basement','addition','new_build','roofing','exterior','commercial','interior','other'];
@@ -245,7 +253,7 @@ Ne dis JAMAIS que tu ne peux pas consulter les données — tu as l'outil list_r
     let fullText = '';
 
     // First streaming call — with tools enabled
-    const stream = await anthropic.messages.stream({
+    const stream = await anthropic().messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
@@ -279,7 +287,7 @@ Ne dis JAMAIS que tu ne peux pas consulter les données — tu as l'outil list_r
       }
       convo.push({ role: 'user', content: toolResults });
 
-      const nextStream = await anthropic.messages.stream({
+      const nextStream = await anthropic().messages.stream({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: systemPrompt,

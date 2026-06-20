@@ -4,7 +4,15 @@ import { query } from '../db.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+let _anthropic = null;
+const anthropic = () => {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+};
 
 // ── Normalisation des modules choisis → clés de visibilité (cf. front config) ─
 const MODULE_ALIASES = {
@@ -193,7 +201,7 @@ Règles JSON :
 - N'invente JAMAIS de données. Si inconnu, mets null. Ne mets pas le bloc OPTIONS dans le même message que PROFILE_COMPLETE.`;
 
   try {
-    const stream = await anthropic.messages.stream({
+    const stream = await anthropic().messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       system: systemPrompt,

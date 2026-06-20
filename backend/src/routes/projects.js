@@ -6,7 +6,14 @@ import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let _anthropic = null;
+const anthropic = () => {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+};
 
 // GET /api/projects — list all projects for company (Gantt feed)
 router.get('/', async (req, res) => {
@@ -524,7 +531,7 @@ Retourne UNIQUEMENT un JSON valide:
 Règles: sois prudent et transparent. Si l'info terrain est insuffisante, élargis la fourchette low/high,
 baisse la confiance et liste ce qui manque dans missing_info. N'invente pas de précision que tu n'as pas.`;
 
-    const msg = await anthropic.messages.create({
+    const msg = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
