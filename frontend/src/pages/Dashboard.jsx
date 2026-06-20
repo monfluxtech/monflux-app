@@ -309,7 +309,7 @@ export default function Dashboard() {
       ]);
       setSummary(sum.data);
       setActivity(act.data);
-      setActiveProjs(projs.data.filter(p => p.status === 'active').slice(0, 6));
+      setActiveProjs(projs.data.filter(p => ['en_chantier','a_facturer','planifie'].includes(p.status)).slice(0, 6));
       setHotLeads(leads.data.filter(l => ['new','contacted'].includes(l.status)).slice(0, 5));
       setPresence(pres.data || []);
     } catch {} finally { setLoading(false); }
@@ -354,7 +354,7 @@ export default function Dashboard() {
               <p className="text-sm font-semibold text-gray-900 leading-tight">Assistant IA MONFLUX</p>
               <p className="text-xs text-gray-500 leading-tight truncate">
                 {summary
-                  ? `${summary.active_projects ?? 0} chantier(s) actif(s) · ${summary.new_leads ?? 0} lead(s) à suivre · ${summary.outstanding > 0 ? `${Math.round(summary.outstanding/1000)}k$ à encaisser` : 'rien à encaisser'}${summary.overdue_count > 0 ? ` · ${summary.overdue_count} en retard` : ''}`
+                  ? `${summary.active_projects ?? 0} chantier(s) actif(s) · ${summary.to_invoice ?? 0} à facturer · ${summary.outstanding > 0 ? `${Math.round(summary.outstanding/1000)}k$ à encaisser` : 'rien à encaisser'}${summary.overdue_count > 0 ? ` · ${summary.overdue_count} en retard` : ''}`
                   : 'Posez une question ou demandez une action en langage naturel.'}
               </p>
             </div>
@@ -416,41 +416,41 @@ export default function Dashboard() {
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
               <KPI
-                icon={Users} label="Leads à suivre"
-                value={String(summary?.new_leads ?? 0)} raw={summary?.new_leads ?? 0}
-                color="#F26522" onClick={() => navigate('/leads')}
-              />
-              <KPI
-                icon={FolderKanban} label="Chantiers actifs"
+                icon={HardHat} label="En chantier"
                 value={String(summary?.active_projects ?? 0)} raw={summary?.active_projects ?? 0}
                 color="#22c55e" onClick={() => navigate('/projets')}
               />
               <KPI
-                icon={Receipt} label="À encaisser"
+                icon={Receipt} label="À facturer"
+                value={String(summary?.to_invoice ?? 0)} raw={summary?.to_invoice ?? 0}
+                color="#eab308" onClick={() => navigate('/projets')}
+              />
+              <KPI
+                icon={TrendingUp} label="Pipeline (contrats)"
+                value={summary?.contracted_value > 0 ? `${Math.round(summary.contracted_value/1000)}k$` : '0$'}
+                raw={summary?.contracted_value ?? 0}
+                color="#F26522" onClick={() => navigate('/projets')}
+              />
+              <KPI
+                icon={FolderKanban} label="À encaisser"
                 value={summary?.outstanding > 0 ? `${Math.round(summary.outstanding/1000)}k$` : '0$'}
                 raw={summary?.outstanding ?? 0}
                 color={summary?.overdue_count > 0 ? '#ef4444' : '#6b7280'}
                 sub={summary?.overdue_count > 0 ? `${summary.overdue_count} en retard` : undefined}
                 onClick={() => navigate('/factures')}
               />
-              <KPI
-                icon={TrendingUp} label="Pipeline"
-                value={summary?.pipeline_value > 0 ? `${Math.round(summary.pipeline_value/1000)}k$` : '0$'}
-                raw={summary?.pipeline_value ?? 0}
-                color="#6366f1" onClick={() => navigate('/soumissions')}
-              />
             </div>
 
             {/* Quick actions */}
             <div className="flex gap-2 mb-5 flex-wrap">
-              <button className="btn-primary" onClick={() => navigate('/leads?new=1')}>
-                <Plus size={14}/> Nouveau lead
+              <button className="btn-primary" onClick={() => navigate('/projets?new=1')}>
+                <Plus size={14}/> Nouveau projet
               </button>
               <button className="btn-secondary" onClick={() => navigate('/soumissions?new=1')}>
                 <FileText size={14}/> Nouvelle soumission
               </button>
-              <button className="btn-secondary" onClick={() => navigate('/projets?new=1')}>
-                <FolderKanban size={14}/> Nouveau projet
+              <button className="btn-secondary" onClick={() => navigate('/contacts?new=1')}>
+                <Users size={14}/> Nouveau contact
               </button>
               <button className="btn-secondary" onClick={() => navigate('/punch')}>
                 <QrCode size={14}/> Pointer

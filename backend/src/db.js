@@ -344,6 +344,21 @@ async function applyMigrations() {
   // Impact IA d'un avenant — stocké sur change_orders
   await run('change_orders: add ai_impact',
     `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS ai_impact JSONB`);
+
+  // ── B11 — Contacts CRM : client récurrent, relances, liens projet ────────────
+  await run('contacts: is_recurring',
+    `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN NOT NULL DEFAULT FALSE`);
+  await run('contacts: source',
+    `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source TEXT`);
+  await run('contacts: follow_up_at',
+    `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMPTZ`);
+  await run('contacts: follow_up_note',
+    `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS follow_up_note TEXT`);
+  // Link contacts to projects
+  await run('projects: contact_id',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL`);
+  await run('projects: contact_id index',
+    `CREATE INDEX IF NOT EXISTS projects_contact_idx ON projects(contact_id)`);
 }
 
 export async function initializeDatabase() {

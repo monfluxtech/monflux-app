@@ -354,10 +354,13 @@ function ProjectModal({ project, onClose, onSave }) {
   } : { ...EMPTY });
   const [saving, setSaving] = useState(false);
   const [generatingPhases, setGeneratingPhases] = useState(false);
+  const [error, setError] = useState(null);
   const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   const submit = async (e) => {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
     try {
       const payload = {
         name: form.name, address: form.address || null, city: form.city || null,
@@ -365,9 +368,11 @@ function ProjectModal({ project, onClose, onSave }) {
         start_date: form.start_date || null, end_date: form.end_date || null,
         contract_value: form.contract_value || null,
       };
-      const { data: proj } = project
+      const res = project
         ? await projectsApi.update(project.id, payload)
         : await projectsApi.create(payload);
+      const proj = res?.data ?? res;
+      if (!proj?.id) throw new Error('Réponse invalide du serveur');
 
       // On création avec description → générer phases IA en arrière-plan
       if (!project && form.description) {
@@ -391,7 +396,9 @@ function ProjectModal({ project, onClose, onSave }) {
       }
 
       onSave(proj, !!project);
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      setError(err?.response?.data?.error || err?.message || 'Erreur lors de la création');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -410,6 +417,7 @@ function ProjectModal({ project, onClose, onSave }) {
       }
     >
       <form id="project-form" onSubmit={submit} className="space-y-3">
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">{error}</div>}
         <div><label className="label">{t('project_name')} *</label><input className="input" value={form.name} onChange={f('name')} required /></div>
         <div>
           <label className="label flex items-center gap-1">

@@ -79,6 +79,7 @@ export const contacts = {
   get:    (id)          => http.get(`/contacts/${id}`),
   create: (data)        => http.post('/contacts', data),
   update: (id, data)    => http.patch(`/contacts/${id}`, data),
+  touch:  (id)          => http.post(`/contacts/${id}/touch`),
   delete: (id)          => http.delete(`/contacts/${id}`),
 };
 
