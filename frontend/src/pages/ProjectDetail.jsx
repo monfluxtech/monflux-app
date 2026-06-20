@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -173,6 +173,217 @@ function PhaseModal({ projectId, phase, onClose, onSave }) {
   );
 }
 
+const FIELD_STATUS = {
+  ok:    { label: 'Conforme',     color: '#22c55e' },
+  watch: { label: 'À surveiller', color: '#f59e0b' },
+  issue: { label: 'Problème',     color: '#ef4444' },
+};
+
+// Édition de l'en-tête riche du projet.
+function InfoModal({ project, onClose, onSave }) {
+  const [form, setForm] = useState({
+    payment_terms: project.payment_terms || '',
+    project_manager: project.project_manager || '',
+    materials_buyer: project.materials_buyer || '',
+    permits_responsible: project.permits_responsible || '',
+    permits_required: !!project.permits_required,
+    approvers: (project.approvers || []).join(', '),
+    machines: (project.machines || []).join(', '),
+  });
+  const [saving, setSaving] = useState(false);
+  const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const submit = async (e) => {
+    e.preventDefault(); setSaving(true);
+    try {
+      const payload = {
+        payment_terms: form.payment_terms || null,
+        project_manager: form.project_manager || null,
+        materials_buyer: form.materials_buyer || null,
+        permits_responsible: form.permits_responsible || null,
+        permits_required: form.permits_required,
+        approvers: form.approvers.split(',').map((s) => s.trim()).filter(Boolean),
+        machines: form.machines.split(',').map((s) => s.trim()).filter(Boolean),
+      };
+      const { data } = await projectsApi.update(project.id, payload);
+      onSave(data);
+    } catch {} finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <h2 className="font-semibold text-gray-900 mb-4">Infos du projet</h2>
+        <form onSubmit={submit} className="space-y-3">
+          <div><label className="label">Termes de paiement</label><input className="input" value={form.payment_terms} onChange={f('payment_terms')} placeholder="30% dépôt · 40% mi-chantier · 30% fin"/></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Chargé de projet</label><input className="input" value={form.project_manager} onChange={f('project_manager')} placeholder="Nom"/></div>
+            <div><label className="label">Acheteur matériaux</label><input className="input" value={form.materials_buyer} onChange={f('materials_buyer')} placeholder="Nom"/></div>
+          </div>
+          <div><label className="label">Approbateurs (séparés par des virgules)</label><input className="input" value={form.approvers} onChange={f('approvers')} placeholder="Marie, Jean"/></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Responsable des permis</label><input className="input" value={form.permits_responsible} onChange={f('permits_responsible')} placeholder="Nom"/></div>
+            <label className="flex items-center gap-2 text-sm text-gray-600 mt-6"><input type="checkbox" checked={form.permits_required} onChange={(e) => setForm((p) => ({ ...p, permits_required: e.target.checked }))}/> Permis requis</label>
+          </div>
+          <div><label className="label">Machines / équipements (virgules)</label><input className="input" value={form.machines} onChange={f('machines')} placeholder="Excavatrice, échafaudage, nacelle"/></div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn-primary flex-1" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin"/>} Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Checklist terrain (générée par métier à l'onboarding) → estimation IA du prix global.
+function FieldEstimation({ project, onUpdated }) {
+  const checklists = project.field_checklists || {};
+  const tradeKeys = Object.keys(checklists);
+  const initial = project.field_assessment || {};
+  const [checks, setChecks] = useState(initial.checks || {});
+  const [notOnSite, setNotOnSite] = useState(!!initial.not_on_site);
+  const [estimate, setEstimate] = useState(initial.ai_estimate || null);
+  const [estimating, setEstimating] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const saveTimer = useRef(null);
+
+  const persist = (nextChecks, nextNotOnSite) => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      projectsApi.update(project.id, {
+        field_assessment: { ...initial, checks: nextChecks, not_on_site: nextNotOnSite },
+      }).catch(() => {});
+    }, 900);
+  };
+
+  const setItem = (key, label, patch) => {
+    setChecks((prev) => {
+      const next = { ...prev, [key]: { label, ...(prev[key] || {}), ...patch } };
+      persist(next, notOnSite);
+      return next;
+    });
+  };
+
+  const runEstimate = async () => {
+    setEstimating(true); setMsg(null);
+    try {
+      const { data } = await projectsApi.estimateField(project.id, { field_assessment: { checks, not_on_site: notOnSite } });
+      setEstimate(data.estimate);
+      onUpdated?.();
+    } catch { setMsg({ err: true, text: "L'estimation a échoué. Réessaie." }); }
+    finally { setEstimating(false); }
+  };
+
+  const sendPrice = async () => {
+    setSending(true);
+    try {
+      const { data } = await projectsApi.sendPrice(project.id, { price: estimate?.expected_price });
+      setMsg({ err: false, text: data.message });
+      onUpdated?.();
+    } catch {} finally { setSending(false); }
+  };
+
+  const requestMedia = async () => {
+    setRequesting(true);
+    try {
+      const items = tradeKeys.flatMap((t) => checklists[t] || []);
+      const { data } = await projectsApi.requestClientMedia(project.id, {
+        items, message: "Peux-tu m'envoyer des photos/vidéos de ces éléments pour finaliser l'estimation?",
+      });
+      setMsg({ err: false, text: data.message });
+    } catch {} finally { setRequesting(false); }
+  };
+
+  if (!tradeKeys.length) {
+    return (
+      <div className="card mb-4">
+        <div className="flex items-center gap-2 mb-2"><ClipboardCheck size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Estimation terrain</h2></div>
+        <p className="text-xs text-gray-400">Les listes de vérification terrain sont générées selon les corps de métier choisis à l'onboarding. Complète ton profil métier pour les activer ici.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2"><ClipboardCheck size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Estimation terrain</h2></div>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" checked={notOnSite} onChange={(e) => { setNotOnSite(e.target.checked); persist(checks, e.target.checked); }}/> Pas sur place</label>
+      </div>
+
+      {notOnSite && (
+        <div className="mb-3 p-3 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-between gap-3">
+          <p className="text-xs text-orange-700">Demande au client des photos/vidéos pour répondre à la checklist à distance.</p>
+          <button className="btn-secondary text-xs flex-shrink-0" onClick={requestMedia} disabled={requesting}>{requesting ? <Loader2 size={12} className="animate-spin"/> : <Camera size={12}/>} Demander au client</button>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {tradeKeys.map((trade) => (
+          <div key={trade}>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{trade.replace(/_/g, ' ')}</p>
+            <div className="space-y-1.5">
+              {(checklists[trade] || []).map((label, i) => {
+                const key = `${trade}__${i}`;
+                const item = checks[key] || {};
+                return (
+                  <div key={key} className="flex items-start gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700">{label}</p>
+                      {item.status && (
+                        <input className="input mt-1 py-1 text-xs" placeholder="Note (mesure, état, problème…)" value={item.note || ''} onChange={(e) => setItem(key, label, { note: e.target.value })}/>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      {Object.entries(FIELD_STATUS).map(([k, v]) => (
+                        <button key={k} onClick={() => setItem(key, label, { status: item.status === k ? '' : k })} title={v.label}
+                          className="w-6 h-6 rounded-full border text-[10px] font-bold flex items-center justify-center transition-colors"
+                          style={item.status === k ? { background: v.color, borderColor: v.color, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
+                          {v.label[0]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button className="btn-primary w-full mt-4" onClick={runEstimate} disabled={estimating}>
+        {estimating ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>} Estimer le prix global (IA)
+      </button>
+
+      {estimate && (
+        <div className="mt-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
+          <div className="flex items-end justify-between gap-3 mb-2">
+            <div>
+              <p className="text-xs text-gray-400">Prix global estimé</p>
+              <p className="text-2xl font-bold text-gray-900">{money(estimate.expected_price)}</p>
+              <p className="text-xs text-gray-400">Fourchette {money(estimate.low_price)} – {money(estimate.high_price)} · confiance {estimate.confidence}</p>
+            </div>
+            <button className="btn-primary text-xs flex-shrink-0" onClick={sendPrice} disabled={sending}>{sending ? <Loader2 size={12} className="animate-spin"/> : <Send size={12}/>} Envoyer au client</button>
+          </div>
+          {estimate.breakdown?.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {estimate.breakdown.map((b, i) => (
+                <div key={i} className="flex justify-between text-xs gap-3"><span className="text-gray-600">{b.poste}</span><span className="text-gray-900 font-medium flex-shrink-0">{money(b.amount)}</span></div>
+              ))}
+            </div>
+          )}
+          {estimate.assumptions?.length > 0 && <p className="text-[11px] text-gray-400 mt-2"><strong>Hypothèses :</strong> {estimate.assumptions.join(' · ')}</p>}
+          {estimate.missing_info?.length > 0 && <p className="text-[11px] text-orange-500 mt-1"><strong>À préciser :</strong> {estimate.missing_info.join(' · ')}</p>}
+          {estimate.notes && <p className="text-[11px] text-gray-500 mt-1">{estimate.notes}</p>}
+        </div>
+      )}
+
+      {msg && <p className={`text-xs mt-2 ${msg.err ? 'text-red-500' : 'text-green-600'}`}>{msg.text}</p>}
+      {project.price_sent_at && !msg && <p className="text-xs text-gray-400 mt-2">Prix envoyé le {new Date(project.price_sent_at).toLocaleDateString('fr-CA')}.</p>}
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -210,6 +421,7 @@ export default function ProjectDetail() {
   const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '' });
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -444,6 +656,39 @@ export default function ProjectDetail() {
             <div className="h-full rounded-full bg-brand transition-all" style={{width:`${pct}%`}}/>
           </div>
         </div>
+
+        {/* Infos du projet — termes de paiement en haut + en-tête riche */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900 text-sm">Infos du projet</h2>
+            <button className="btn-ghost text-xs text-gray-400 hover:text-brand" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
+          </div>
+          <div className="mb-3 p-3 rounded-xl bg-orange-50 border border-orange-100 flex items-center gap-2">
+            <CreditCard size={16} className="text-brand flex-shrink-0"/>
+            <div>
+              <p className="text-[11px] text-gray-400 uppercase tracking-wide">Termes de paiement</p>
+              <p className="text-sm font-medium text-gray-900">{project.payment_terms || 'À définir'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-sm">
+            {[
+              ['Chargé de projet', project.project_manager],
+              ['Acheteur matériaux', project.materials_buyer],
+              ['Approbateurs', (project.approvers || []).join(', ')],
+              ['Responsable permis', project.permits_responsible],
+              ['Permis requis', project.permits_required ? 'Oui' : 'Non'],
+              ['Machines', (project.machines || []).join(', ')],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
+                <p className="text-gray-800 truncate">{value || '—'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Estimation terrain */}
+        <FieldEstimation project={project} onUpdated={load} />
 
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-3 mb-4">
@@ -1074,6 +1319,13 @@ export default function ProjectDetail() {
         </div>
       </div>
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
+      {showInfo && (
+        <InfoModal
+          project={project}
+          onClose={() => setShowInfo(false)}
+          onSave={(data) => { setProject((p) => ({ ...p, ...data })); setShowInfo(false); }}
+        />
+      )}
     </Layout>
   );
 }

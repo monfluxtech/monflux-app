@@ -60,6 +60,10 @@ export const projects = {
   deleteTrade: (id, tid)          => http.delete(`/projects/${id}/trades/${tid}`),
   addExpense:  (id, data)         => http.post(`/projects/${id}/expenses`, data),
   deleteExpense: (id, eid)        => http.delete(`/projects/${id}/expenses/${eid}`),
+  // Batch 3 — estimation terrain
+  estimateField:     (id, data)   => http.post(`/projects/${id}/estimate-field`, data),
+  sendPrice:         (id, data)   => http.post(`/projects/${id}/send-price`, data),
+  requestClientMedia:(id, data)   => http.post(`/projects/${id}/request-client-media`, data),
 };
 
 export const leads = {

@@ -1,9 +1,12 @@
 import express from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db.js';
-import { authenticateToken, resolveCompany } from '../middleware/auth.js';
+import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // GET /api/projects — list all projects for company (Gantt feed)
 router.get('/', async (req, res) => {
@@ -50,7 +53,7 @@ router.get('/:id', async (req, res) => {
     );
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
 
-    const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }] = await Promise.all([
+    const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }, { rows: cfgRows }] = await Promise.all([
       query(`SELECT * FROM project_phases WHERE project_id = $1 ORDER BY display_order`, [req.params.id]),
       query(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
       query(
@@ -81,9 +84,20 @@ router.get('/:id', async (req, res) => {
          WHERE e.project_id = $1 ORDER BY e.expense_date DESC NULLS LAST, e.created_at DESC`,
         [req.params.id]
       ),
+      query(
+        `SELECT cc.field_checklists, comp.trades AS company_trades
+         FROM companies comp
+         LEFT JOIN company_config cc ON cc.company_id = comp.id
+         WHERE comp.id = $1`,
+        [req.company_id]
+      ),
     ]);
 
-    res.json({ ...project, phases, milestones, members, documents: docs, trades, expenses });
+    res.json({
+      ...project, phases, milestones, members, documents: docs, trades, expenses,
+      field_checklists: cfgRows?.[0]?.field_checklists || {},
+      company_trades: cfgRows?.[0]?.company_trades || [],
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -141,9 +155,16 @@ router.post('/', async (req, res) => {
 // PATCH /api/projects/:id
 router.patch('/:id', async (req, res) => {
   const allowed = ['name','description','type','status','address','city','postal_code',
-    'start_date','end_date','contract_value','budget_materials','budget_labor','progress_pct','notes'];
+    'start_date','end_date','contract_value','budget_materials','budget_labor','progress_pct','notes',
+    // Batch 3 — en-tête riche + estimation terrain
+    'payment_terms','project_manager','approvers','materials_buyer','permits_responsible',
+    'permits_required','machines','field_assessment','estimated_price'];
+  // JSONB arrays/objects : stringifier (node-pg encoderait un Array en array PG).
+  const JSONB_FIELDS = ['approvers','machines','field_assessment'];
   const updates = Object.fromEntries(
-    Object.entries(req.body).filter(([k]) => allowed.includes(k))
+    Object.entries(req.body)
+      .filter(([k]) => allowed.includes(k))
+      .map(([k, v]) => [k, JSONB_FIELDS.includes(k) && v != null ? JSON.stringify(v) : v])
   );
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: 'Aucun champ valide fourni' });
@@ -451,6 +472,132 @@ router.delete('/:id/expenses/:expenseId', async (req, res) => {
     );
     if (!rowCount) return res.status(404).json({ error: 'Dépense introuvable' });
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Batch 3 — Estimation terrain : checklist → prix global (IA) ───────────────
+// POST /api/projects/:id/estimate-field
+router.post('/:id/estimate-field', enforceAiQuota, async (req, res) => {
+  const { field_assessment } = req.body;
+  try {
+    const { rows: [p] } = await query(
+      `SELECT p.name, p.description, p.type, p.address, p.city, p.contract_value
+       FROM projects p WHERE p.id = $1 AND p.company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+
+    const { rows: tradeRows } = await query(
+      `SELECT trade, estimated_cost FROM project_trades WHERE project_id = $1`,
+      [req.params.id]
+    );
+
+    const assessment = field_assessment || {};
+    const prompt = `Tu es un estimateur senior en construction au Québec. À partir d'une visite de chantier
+(la « checklist terrain » remplie ci-dessous), produis une ESTIMATION DE PRIX GLOBAL réaliste pour le client final
+(prix de vente, taxes en sus), en dollars canadiens.
+
+PROJET:
+- Nom: ${p.name}
+- Type: ${p.type || 'non spécifié'}
+- Adresse: ${[p.address, p.city].filter(Boolean).join(', ') || 'non spécifiée'}
+- Description: ${p.description || '—'}
+- Corps de métiers prévus: ${tradeRows.map(t => t.trade).join(', ') || 'non précisés'}
+
+CHECKLIST TERRAIN (réponses de l'inspection):
+${JSON.stringify(assessment, null, 2)}
+
+Retourne UNIQUEMENT un JSON valide:
+{
+  "expected_price": 0,
+  "low_price": 0,
+  "high_price": 0,
+  "confidence": "low|medium|high",
+  "breakdown": [{ "poste": "Démolition", "amount": 0, "basis": "courte justification" }],
+  "assumptions": ["hypothèse 1", "hypothèse 2"],
+  "missing_info": ["info manquante qui réduirait l'incertitude"],
+  "notes": "synthèse en 1-2 phrases"
+}
+Règles: sois prudent et transparent. Si l'info terrain est insuffisante, élargis la fourchette low/high,
+baisse la confiance et liste ce qui manque dans missing_info. N'invente pas de précision que tu n'as pas.`;
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = msg.content[0].text;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON in response');
+    const estimate = JSON.parse(jsonMatch[0]);
+
+    // Persiste le prix attendu + l'estimation dans field_assessment.ai_estimate.
+    const merged = { ...assessment, ai_estimate: { ...estimate, generated_at: new Date().toISOString() } };
+    await query(
+      `UPDATE projects SET estimated_price = $1, field_assessment = $2, updated_at = NOW()
+       WHERE id = $3 AND company_id = $4`,
+      [Number(estimate.expected_price) || null, JSON.stringify(merged), req.params.id, req.company_id]
+    );
+
+    res.json({ estimate, ai_usage: req.ai_usage });
+  } catch (err) {
+    console.error('estimate-field error:', err);
+    res.status(500).json({ error: "Erreur lors de l'estimation" });
+  }
+});
+
+// POST /api/projects/:id/send-price — envoyer le prix global au client
+// (Stub : enregistre l'envoi. La livraison email/WhatsApp s'activera avec les clés.)
+router.post('/:id/send-price', async (req, res) => {
+  const { price } = req.body;
+  try {
+    const { rows: [p] } = await query(
+      `UPDATE projects
+       SET estimated_price = COALESCE($1, estimated_price),
+           price_sent_at = NOW(),
+           status = CASE WHEN status IN ('brouillon','estimation') THEN 'prix_envoye' ELSE status END,
+           updated_at = NOW()
+       WHERE id = $2 AND company_id = $3
+       RETURNING id, estimated_price, price_sent_at, status`,
+      [price != null ? Number(price) : null, req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+    res.json({ ...p, delivery: 'recorded', stub: true,
+      message: 'Prix enregistré comme envoyé. La livraison automatique au client s’activera une fois les clés email/WhatsApp fournies.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/projects/:id/request-client-media — demander photos/vidéos au client
+// (Stub : enregistre la demande dans field_assessment ; livraison à activer.)
+router.post('/:id/request-client-media', async (req, res) => {
+  const { items, message } = req.body;
+  try {
+    const { rows: [p] } = await query(
+      `SELECT field_assessment, portal_token FROM projects WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!p) return res.status(404).json({ error: 'Projet introuvable' });
+    const assessment = p.field_assessment || {};
+    assessment.client_request = {
+      items: Array.isArray(items) ? items : [],
+      message: message || '',
+      requested_at: new Date().toISOString(),
+    };
+    await query(
+      `UPDATE projects SET field_assessment = $1, updated_at = NOW() WHERE id = $2 AND company_id = $3`,
+      [JSON.stringify(assessment), req.params.id, req.company_id]
+    );
+    res.json({
+      ok: true, stub: true,
+      portal_link: p.portal_token ? `/portal/${p.portal_token}` : null,
+      message: 'Demande enregistrée. L’envoi automatique (email/WhatsApp) s’activera avec les clés ; en attendant, partage le lien du portail au client.',
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

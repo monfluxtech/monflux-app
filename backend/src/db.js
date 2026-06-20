@@ -257,6 +257,19 @@ async function applyMigrations() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS responsibilities JSONB DEFAULT '[]'::jsonb`);
   await run('company_config field_checklists column',
     `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS field_checklists JSONB DEFAULT '{}'::jsonb`);
+
+  // ── Refonte v3 B3 — fiche projet : en-tête riche + estimation terrain ────────
+  await run('projects header columns', `ALTER TABLE projects
+      ADD COLUMN IF NOT EXISTS payment_terms       TEXT,
+      ADD COLUMN IF NOT EXISTS project_manager     TEXT,
+      ADD COLUMN IF NOT EXISTS approvers           JSONB DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS materials_buyer     TEXT,
+      ADD COLUMN IF NOT EXISTS permits_responsible TEXT,
+      ADD COLUMN IF NOT EXISTS permits_required    BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS machines            JSONB DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS field_assessment    JSONB DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS estimated_price     NUMERIC(12,2),
+      ADD COLUMN IF NOT EXISTS price_sent_at       TIMESTAMPTZ`);
 }
 
 export async function initializeDatabase() {
