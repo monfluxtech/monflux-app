@@ -179,7 +179,7 @@ async function applyMigrations() {
      RETURNS TRIGGER LANGUAGE plpgsql AS $$
      BEGIN
        INSERT INTO company_members (company_id, user_id, role, is_owner)
-       SELECT company_id, NEW.id, role, FALSE
+       SELECT company_id, NEW.id, role::user_role, FALSE
        FROM member_invites
        WHERE LOWER(email) = LOWER(NEW.email) AND accepted_at IS NULL
        ON CONFLICT DO NOTHING;
