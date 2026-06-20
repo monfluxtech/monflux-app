@@ -361,6 +361,12 @@ async function applyMigrations() {
     `CREATE INDEX IF NOT EXISTS projects_contact_idx ON projects(contact_id)`);
   await run('projects: created_from_project',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_from_project UUID REFERENCES projects(id) ON DELETE SET NULL`);
+
+  // ── v3 pipeline stages — add to project_status enum ─────────────────────────
+  for (const val of ['brouillon','estimation','prix_envoye','accepte','planifie','en_chantier','a_facturer','paye','clos']) {
+    await run(`project_status: ${val}`,
+      `ALTER TYPE project_status ADD VALUE IF NOT EXISTS '${val}'`);
+  }
 }
 
 export async function initializeDatabase() {
