@@ -239,6 +239,53 @@ Retourne UNIQUEMENT un JSON valide :
   }
 });
 
+// POST /api/ai/generate-phases — génère les phases de chantier à partir de la description
+router.post('/generate-phases', enforceAiQuota, async (req, res) => {
+  if (!aiReady()) return aiNotConfigured(res);
+  const { description, project_type, start_date } = req.body;
+  if (!description) return res.status(400).json({ error: 'Description requise' });
+  try {
+    const prompt = `Tu es un gestionnaire de projets de construction expert au Québec.
+Génère les phases d'exécution pour ce projet de construction.
+
+Description: ${description}
+Type: ${project_type || 'non spécifié'}
+${start_date ? `Début prévu: ${start_date}` : ''}
+
+Identifie les corps de métiers et phases selon l'ordre logique d'intervention sur le chantier (pratiques québécoises, CCQ, normes RBQ).
+
+Retourne UNIQUEMENT un JSON valide:
+{
+  "phases": [
+    {
+      "name": "Excavation et fondations",
+      "trade": "excavation",
+      "description": "Creusage, semelles, dalles",
+      "estimated_duration_days": 10,
+      "order": 1,
+      "color": "#3b82f6"
+    }
+  ],
+  "summary": "vue d'ensemble en 1-2 phrases"
+}
+
+Inclure seulement les phases pertinentes au type de projet. Corps de métiers courants: excavation, fondation, charpente, électricité, plomberie, isolation, gypse, peinture, céramique, finition, HVAC, toiture, externe/terrain.`;
+
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = msg.content[0]?.text || '{}';
+    const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur génération phases' });
+  }
+});
+
 // GET /api/ai/actions — pending AI actions sidebar
 router.get('/actions', async (req, res) => {
   const { rows } = await query(

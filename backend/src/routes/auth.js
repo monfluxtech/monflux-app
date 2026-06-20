@@ -87,9 +87,12 @@ router.get('/me', authenticateToken, resolveCompany, async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT u.id, u.email, u.name, u.avatar_url, u.phone, u.language,
-              u.landing_pref, u.is_verified, u.created_at
-       FROM users u WHERE u.id = $1`,
-      [req.user.userId]
+              u.landing_pref, u.is_verified, u.created_at,
+              COALESCE(c.onboarding_completed, false) AS onboarding_completed
+       FROM users u
+       LEFT JOIN companies c ON c.id = $2
+       WHERE u.id = $1`,
+      [req.user.userId, req.company_id || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Utilisateur non trouvé' });
     res.json({

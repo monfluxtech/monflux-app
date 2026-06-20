@@ -10,7 +10,26 @@ import {
   LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
   AlertCircle, Clock, FileQuestion, Search, Sparkles,
   FileSignature, ShoppingCart, FileStack, SlidersHorizontal, Check,
+  CircleDot,
 } from 'lucide-react';
+import { auth as authApi } from '../api';
+
+function OnboardingBanner({ onDismiss, onGo }) {
+  return (
+    <div className="bg-orange-50 border-b border-orange-100 px-4 py-2.5 flex items-center gap-3">
+      <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse flex-shrink-0" />
+      <p className="text-sm text-orange-800 flex-1">
+        Votre profil est incomplet — complétez l'onboarding pour que l'IA s'adapte à votre entreprise.
+      </p>
+      <button className="text-xs font-medium text-brand hover:underline flex-shrink-0" onClick={onGo}>
+        Compléter →
+      </button>
+      <button className="text-orange-400 hover:text-orange-600 flex-shrink-0" onClick={onDismiss} title="Fermer">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
 
 // Résolution des icônes par nom (le registre des modules stocke des chaînes).
 const ICONS = {
@@ -37,6 +56,8 @@ export default function Layout({ children }) {
   const [notifs, setNotifs] = useState([]);
   const [notifSeen, setNotifSeen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(null); // null = loading, true/false
+  const [onboardingTooltip, setOnboardingTooltip] = useState(false);
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
 
@@ -80,6 +101,14 @@ export default function Layout({ children }) {
     const t = setInterval(load, 300000); // every 5 min
     return () => clearInterval(t);
   }, []);
+
+  // Load onboarding status from server (more reliable than cached user object)
+  useEffect(() => {
+    if (!user) return;
+    authApi.me().then(({ data }) => {
+      setOnboardingDone(data?.user?.onboarding_completed ?? false);
+    }).catch(() => setOnboardingDone(user?.onboarding_completed ?? false));
+  }, [user?.id]);
 
   const handleLogout = () => { logout(); navigate('/'); };
   const initials = (user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase();
@@ -183,6 +212,26 @@ export default function Layout({ children }) {
           </button>
 
           <div className="flex-1" />
+
+          {/* Onboarding status dot */}
+          {onboardingDone !== null && (
+            <div className="relative" onMouseEnter={() => setOnboardingTooltip(true)} onMouseLeave={() => setOnboardingTooltip(false)}>
+              <button
+                onClick={() => navigate('/onboarding')}
+                className="flex items-center justify-center w-6 h-6 rounded-full"
+                title="Statut onboarding"
+              >
+                <span className={`w-2.5 h-2.5 rounded-full block ${onboardingDone ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`} />
+              </button>
+              {onboardingTooltip && (
+                <div className="absolute right-0 top-8 bg-gray-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-lg z-50 w-48 whitespace-normal">
+                  {onboardingDone
+                    ? 'Profil complet — cliquer pour revoir l\'onboarding'
+                    : 'Profil incomplet — cliquer pour compléter l\'onboarding'}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notification bell */}
           <div className="relative" ref={notifRef}>
@@ -316,6 +365,9 @@ export default function Layout({ children }) {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
+          {onboardingDone === false && (
+            <OnboardingBanner onDismiss={() => setOnboardingDone(true)} onGo={() => navigate('/onboarding')} />
+          )}
           {children}
         </main>
       </div>

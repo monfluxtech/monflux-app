@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import SlideOver from '../components/SlideOver';
-import { projects as projectsApi } from '../api';
+import { projects as projectsApi, ai as aiApi } from '../api';
 import { useConfigStore } from '../store';
 import { DEFAULT_PIPELINE } from '../config/modules';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
 
 const num = (v) => Number(v) || 0;
 const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
@@ -273,7 +273,7 @@ function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
   );
 }
 
-const EMPTY = { name:'', address:'', start_date:'', end_date:'', contract_value:'' };
+const EMPTY = { name:'', address:'', city:'', start_date:'', end_date:'', contract_value:'', description:'' };
 
 const slugify = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'etat';
@@ -345,20 +345,50 @@ function PipelineManager({ pipeline, onSave, onClose }) {
 
 function ProjectModal({ project, onClose, onSave }) {
   const [form, setForm] = useState(project ? {
-    name:project.name||'', address:project.address||'',
-    start_date:project.start_date?project.start_date.slice(0,10):'',
-    end_date:project.end_date?project.end_date.slice(0,10):'',
-    contract_value:project.contract_value||''
-  } : {...EMPTY});
+    name: project.name || '', address: project.address || '', city: project.city || '',
+    start_date: project.start_date ? project.start_date.slice(0, 10) : '',
+    end_date: project.end_date ? project.end_date.slice(0, 10) : '',
+    contract_value: project.contract_value || '', description: project.description || '',
+  } : { ...EMPTY });
   const [saving, setSaving] = useState(false);
-  const f = k => e => setForm(p=>({...p,[k]:e.target.value}));
+  const [generatingPhases, setGeneratingPhases] = useState(false);
+  const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
-      const payload = { name:form.name, address:form.address, start_date:form.start_date||null, end_date:form.end_date||null, contract_value:form.contract_value||null };
-      const {data} = project ? await projectsApi.update(project.id, payload) : await projectsApi.create(payload);
-      onSave(data, !!project);
+      const payload = {
+        name: form.name, address: form.address || null, city: form.city || null,
+        description: form.description || null,
+        start_date: form.start_date || null, end_date: form.end_date || null,
+        contract_value: form.contract_value || null,
+      };
+      const { data: proj } = project
+        ? await projectsApi.update(project.id, payload)
+        : await projectsApi.create(payload);
+
+      // On création avec description → générer phases IA en arrière-plan
+      if (!project && form.description) {
+        setGeneratingPhases(true);
+        try {
+          const { data: aiRes } = await aiApi.generatePhases({
+            description: form.description,
+            start_date: form.start_date || null,
+          });
+          if (aiRes?.phases?.length) {
+            for (const [i, ph] of aiRes.phases.entries()) {
+              await projectsApi.addPhase(proj.id, {
+                name: ph.name,
+                display_order: ph.order ?? i,
+                color: ph.color || null,
+                notes: ph.description || null,
+              });
+            }
+          }
+        } catch {} finally { setGeneratingPhases(false); }
+      }
+
+      onSave(proj, !!project);
     } catch {} finally { setSaving(false); }
   };
 
@@ -370,18 +400,29 @@ function ProjectModal({ project, onClose, onSave }) {
       footer={
         <div className="flex gap-2">
           <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
-          <button type="submit" form="project-form" className="btn-primary flex-1" disabled={saving}>{saving&&<Loader2 size={14} className="animate-spin"/>} {project?'Enregistrer':'Créer'}</button>
+          <button type="submit" form="project-form" className="btn-primary flex-1" disabled={saving || generatingPhases}>
+            {(saving || generatingPhases) && <Loader2 size={14} className="animate-spin"/>}
+            {generatingPhases ? 'Phases IA…' : saving ? 'Création…' : project ? 'Enregistrer' : 'Créer'}
+          </button>
         </div>
       }
     >
       <form id="project-form" onSubmit={submit} className="space-y-3">
-        <div><label className="label">Nom du projet *</label><input className="input" value={form.name} onChange={f('name')} required/></div>
-        <div><label className="label">Adresse du chantier</label><input className="input" placeholder="123 rue Principale, Montréal" value={form.address} onChange={f('address')}/></div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')}/></div>
-          <div><label className="label">Fin prévue</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')}/></div>
+        <div><label className="label">Nom du projet *</label><input className="input" value={form.name} onChange={f('name')} required /></div>
+        <div>
+          <label className="label flex items-center gap-1">
+            Description du projet
+            <span className="ml-1 text-[10px] text-brand font-medium flex items-center gap-0.5"><Sparkles size={9}/>IA prépare les phases</span>
+          </label>
+          <textarea className="input resize-none" rows={3} placeholder="Décrivez le projet : type de travaux, superficie, spécificités…" value={form.description} onChange={f('description')} />
         </div>
-        <div><label className="label">Valeur du contrat ($)</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')}/></div>
+        <div><label className="label">Adresse du chantier</label><input className="input" placeholder="123 rue Principale" value={form.address} onChange={f('address')} /></div>
+        <div><label className="label">Ville</label><input className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
+          <div><label className="label">Fin prévue</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
+        </div>
+        <div><label className="label">Valeur du contrat ($)</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')} /></div>
       </form>
     </SlideOver>
   );
@@ -395,6 +436,11 @@ export default function Projets() {
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [managerFilter, setManagerFilter] = useState('');
+  const [valueMin, setValueMin] = useState('');
+  const [valueMax, setValueMax] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [pipeOpen, setPipeOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -433,9 +479,13 @@ export default function Projets() {
 
   const filtered = items.filter(p => {
     const q = search.toLowerCase();
-    const matchSearch = !q || p.name?.toLowerCase().includes(q) || p.address?.toLowerCase().includes(q);
+    const matchSearch = !q || p.name?.toLowerCase().includes(q) || p.address?.toLowerCase().includes(q) || p.city?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q) || p.project_manager?.toLowerCase().includes(q);
     const matchStatus = !statusFilter || p.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchCity = !cityFilter || (p.city || p.address || '').toLowerCase().includes(cityFilter.toLowerCase());
+    const matchManager = !managerFilter || (p.project_manager || '').toLowerCase().includes(managerFilter.toLowerCase());
+    const matchValueMin = !valueMin || Number(p.contract_value) >= Number(valueMin);
+    const matchValueMax = !valueMax || Number(p.contract_value) <= Number(valueMax);
+    return matchSearch && matchStatus && matchCity && matchManager && matchValueMin && matchValueMax;
   });
   const active = filtered.filter(p => !isTerminal(p));
   const others = filtered.filter(p => isTerminal(p));
@@ -594,16 +644,44 @@ export default function Projets() {
         {pipeOpen && <PipelineManager pipeline={pipeline} onSave={setPipeline} onClose={()=>setPipeOpen(false)}/>}
 
         {/* Search + filter bar */}
-        <div className="flex gap-2 mb-4 flex-wrap">
+        <div className="flex gap-2 mb-2 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300"/>
-            <input className="input pl-8" placeholder="Rechercher par nom ou adresse…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <input className="input pl-8" placeholder="Rechercher…" value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <select className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
             <option value="">Tous les états</option>
             {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
+          <button className={`btn-secondary text-xs px-3 ${showFilters ? 'bg-orange-50 border-brand text-brand' : ''}`} onClick={()=>setShowFilters(o=>!o)}>
+            Filtres {(cityFilter||managerFilter||valueMin||valueMax) ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax].filter(Boolean).length}</span> : null}
+          </button>
         </div>
+        {showFilters && (
+          <div className="flex gap-2 mb-4 flex-wrap bg-gray-50 rounded-xl p-3">
+            <div className="flex-1 min-w-32">
+              <label className="label text-[11px]">Ville</label>
+              <input className="input text-xs" placeholder="Montréal…" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-32">
+              <label className="label text-[11px]">Responsable de projet</label>
+              <input className="input text-xs" placeholder="Nom…" value={managerFilter} onChange={e=>setManagerFilter(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-28">
+              <label className="label text-[11px]">Valeur min ($)</label>
+              <input className="input text-xs" type="number" placeholder="0" value={valueMin} onChange={e=>setValueMin(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-28">
+              <label className="label text-[11px]">Valeur max ($)</label>
+              <input className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
+            </div>
+            {(cityFilter||managerFilter||valueMin||valueMax) && (
+              <div className="flex items-end">
+                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');}}>Effacer</button>
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>

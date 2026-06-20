@@ -176,6 +176,7 @@ export const ai = {
   buyCredits:   (amount) => http.post('/ai/credits', { amount }),
   groupPurchases:    (project_id) => http.post('/ai/group-purchases', { project_id }),
   changeOrderImpact: (change_order_id) => http.post('/ai/change-order-impact', { change_order_id }),
+  generatePhases:    (data) => http.post('/ai/generate-phases', data),
 };
 
 export const dashboard = {

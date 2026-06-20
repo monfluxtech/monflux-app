@@ -423,7 +423,9 @@ export default function ProjectDetail() {
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   // B4 — Vente
-  const [activeTab, setActiveTab] = useState('apercu');
+  const scrollToSection = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const [quoteBuilderQuote, setQuoteBuilderQuote] = useState(null);
   const [quoteBuilderItems, setQuoteBuilderItems] = useState([]);
   const [quoteSaving, setQuoteSaving] = useState(false);
@@ -893,30 +895,26 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* Tab strip */}
-        <div className="flex gap-1 mb-4 bg-gray-100/70 rounded-2xl p-1">
+        {/* Section nav — sticky quick-jump */}
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-100 flex gap-1 -mx-6 px-6 py-1.5 mb-4 overflow-x-auto">
           {[
-            { key: 'apercu',   icon: <LayoutDashboard size={13}/>, label: 'Aperçu' },
-            { key: 'vente',    icon: <Briefcase size={13}/>,       label: 'Vente' },
-            { key: 'chantier', icon: <Wrench size={13}/>,          label: 'Chantier' },
-            { key: 'docs',     icon: <FolderClosed size={13}/>,    label: 'Docs' },
-          ].map(({ key, icon, label }) => (
+            { id: 'section-apercu',   icon: <LayoutDashboard size={12}/>, label: 'Aperçu' },
+            { id: 'section-vente',    icon: <Briefcase size={12}/>,       label: 'Vente' },
+            { id: 'section-chantier', icon: <Wrench size={12}/>,          label: 'Chantier' },
+            { id: 'section-docs',     icon: <FolderClosed size={12}/>,    label: 'Docs' },
+          ].map(({ id, icon, label }) => (
             <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 flex-1 justify-center px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === key
-                  ? 'bg-white text-brand shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              key={id}
+              onClick={() => scrollToSection(id)}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-gray-500 hover:text-brand hover:bg-orange-50 transition-all flex-shrink-0"
             >
               {icon}{label}
             </button>
           ))}
         </div>
 
-        {/* ── APERÇU TAB ─────────────────────────────────────────────────────── */}
-        {activeTab === 'apercu' && <>
+        {/* ── APERÇU ─────────────────────────────────────────────────────────── */}
+        <div id="section-apercu">
 
         {/* Infos du projet — termes de paiement en haut + en-tête riche */}
         <div className="card mb-4">
@@ -1085,10 +1083,10 @@ export default function ProjectDetail() {
           />
         </div>
 
-        </>}
+        </div>
 
-        {/* ── VENTE TAB ──────────────────────────────────────────────────────── */}
-        {activeTab === 'vente' && <>
+        {/* ── VENTE ──────────────────────────────────────────────────────────── */}
+        <div className="mt-6 pt-4 border-t border-gray-100" id="section-vente">
 
         {/* Quote Builder */}
         <div className="card mb-4">
@@ -1432,10 +1430,10 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        </>}
+        </div>
 
-        {/* ── CHANTIER TAB ───────────────────────────────────────────────────── */}
-        {activeTab === 'chantier' && <>
+        {/* ── CHANTIER ───────────────────────────────────────────────────────── */}
+        <div className="mt-6 pt-4 border-t border-gray-100" id="section-chantier">
 
         {aiNotice && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
@@ -1850,10 +1848,10 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        </>}
+        </div>
 
-        {/* ── DOCS TAB ───────────────────────────────────────────────────────── */}
-        {activeTab === 'docs' && <>
+        {/* ── DOCS ───────────────────────────────────────────────────────────── */}
+        <div className="mt-6 pt-4 border-t border-gray-100" id="section-docs">
 
         {/* Documents */}
         <div className="card mb-4">
@@ -2223,7 +2221,7 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        </>}
+        </div>
 
       </div>
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
