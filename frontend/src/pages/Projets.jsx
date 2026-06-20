@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import SlideOver from '../components/SlideOver';
 import { projects as projectsApi, ai as aiApi } from '../api';
 import { useConfigStore } from '../store';
+import { useT } from '../hooks/useT';
 import { DEFAULT_PIPELINE } from '../config/modules';
 import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
 
@@ -344,6 +345,7 @@ function PipelineManager({ pipeline, onSave, onClose }) {
 }
 
 function ProjectModal({ project, onClose, onSave }) {
+  const t = useT();
   const [form, setForm] = useState(project ? {
     name: project.name || '', address: project.address || '', city: project.city || '',
     start_date: project.start_date ? project.start_date.slice(0, 10) : '',
@@ -408,27 +410,28 @@ function ProjectModal({ project, onClose, onSave }) {
       }
     >
       <form id="project-form" onSubmit={submit} className="space-y-3">
-        <div><label className="label">Nom du projet *</label><input className="input" value={form.name} onChange={f('name')} required /></div>
+        <div><label className="label">{t('project_name')} *</label><input className="input" value={form.name} onChange={f('name')} required /></div>
         <div>
           <label className="label flex items-center gap-1">
-            Description du projet
-            <span className="ml-1 text-[10px] text-brand font-medium flex items-center gap-0.5"><Sparkles size={9}/>IA prépare les phases</span>
+            {t('project_desc')}
+            <span className="ml-1 text-[10px] text-brand font-medium flex items-center gap-0.5"><Sparkles size={9}/>{t('ai_phases')}</span>
           </label>
-          <textarea className="input resize-none" rows={3} placeholder="Décrivez le projet : type de travaux, superficie, spécificités…" value={form.description} onChange={f('description')} />
+          <textarea className="input resize-none" rows={3} placeholder={t('project_desc') + '…'} value={form.description} onChange={f('description')} />
         </div>
-        <div><label className="label">Adresse du chantier</label><input className="input" placeholder="123 rue Principale" value={form.address} onChange={f('address')} /></div>
-        <div><label className="label">Ville</label><input className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
+        <div><label className="label">{t('address')}</label><input className="input" placeholder="123 rue Principale" value={form.address} onChange={f('address')} /></div>
+        <div><label className="label">{t('city')}</label><input className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
-          <div><label className="label">Fin prévue</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
+          <div><label className="label">{t('start_date')}</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
+          <div><label className="label">{t('end_date')}</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
         </div>
-        <div><label className="label">Valeur du contrat ($)</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')} /></div>
+        <div><label className="label">{t('contract_value')}</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')} /></div>
       </form>
     </SlideOver>
   );
 }
 
 export default function Projets() {
+  const t = useT();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -650,34 +653,36 @@ export default function Projets() {
             <input className="input pl-8" placeholder="Rechercher…" value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <select className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-            <option value="">Tous les états</option>
+            <option value="">{t('all_statuses')}</option>
             {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <button className={`btn-secondary text-xs px-3 ${showFilters ? 'bg-orange-50 border-brand text-brand' : ''}`} onClick={()=>setShowFilters(o=>!o)}>
-            Filtres {(cityFilter||managerFilter||valueMin||valueMax) ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax].filter(Boolean).length}</span> : null}
+            {t('filters')} {(cityFilter||managerFilter||valueMin||valueMax) ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax].filter(Boolean).length}</span> : null}
           </button>
         </div>
         {showFilters && (
           <div className="flex gap-2 mb-4 flex-wrap bg-gray-50 rounded-xl p-3">
             <div className="flex-1 min-w-32">
-              <label className="label text-[11px]">Ville</label>
+              <label className="label text-[11px]">{t('filter_city')}</label>
               <input className="input text-xs" placeholder="Montréal…" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-32">
-              <label className="label text-[11px]">Responsable de projet</label>
+              <label className="label text-[11px]">{t('filter_manager')}</label>
               <input className="input text-xs" placeholder="Nom…" value={managerFilter} onChange={e=>setManagerFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">Valeur min ($)</label>
+              <label className="label text-[11px]">{t('filter_value_min')}</label>
               <input className="input text-xs" type="number" placeholder="0" value={valueMin} onChange={e=>setValueMin(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">Valeur max ($)</label>
+              <label className="label text-[11px]">{t('filter_value_max')}</label>
               <input className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
             </div>
             {(cityFilter||managerFilter||valueMin||valueMax) && (
               <div className="flex items-end">
-                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');}}>Effacer</button>
+                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');}}>
+                  {t('clear_filters')}
+                </button>
               </div>
             )}
           </div>

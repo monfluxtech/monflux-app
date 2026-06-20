@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf } from '../api';
@@ -385,6 +386,7 @@ function FieldEstimation({ project, onUpdated }) {
 }
 
 export default function ProjectDetail() {
+  const t = useT();
   const { id } = useParams();
   const navigate = useNavigate();
   const [project, setProject] = useState(null);
@@ -867,9 +869,9 @@ export default function ProjectDetail() {
           </button>
           <button
             className="btn-secondary text-xs"
-            onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent('Avenant — '+project.name)}`)}
+            onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
           >
-            <GitBranch size={13}/> Créer un avenant
+            <GitBranch size={13}/> {t('create_change_order')}
           </button>
         </div>
 
@@ -898,17 +900,17 @@ export default function ProjectDetail() {
         {/* Section nav — sticky quick-jump */}
         <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-100 flex gap-1 -mx-6 px-6 py-1.5 mb-4 overflow-x-auto">
           {[
-            { id: 'section-apercu',   icon: <LayoutDashboard size={12}/>, label: 'Aperçu' },
-            { id: 'section-vente',    icon: <Briefcase size={12}/>,       label: 'Vente' },
-            { id: 'section-chantier', icon: <Wrench size={12}/>,          label: 'Chantier' },
-            { id: 'section-docs',     icon: <FolderClosed size={12}/>,    label: 'Docs' },
-          ].map(({ id, icon, label }) => (
+            { id: 'section-apercu',   icon: <LayoutDashboard size={12}/>, key: 'section_overview' },
+            { id: 'section-vente',    icon: <Briefcase size={12}/>,       key: 'section_sales' },
+            { id: 'section-chantier', icon: <Wrench size={12}/>,          key: 'section_site' },
+            { id: 'section-docs',     icon: <FolderClosed size={12}/>,    key: 'section_docs' },
+          ].map(({ id, icon, key }) => (
             <button
               key={id}
               onClick={() => scrollToSection(id)}
               className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-gray-500 hover:text-brand hover:bg-orange-50 transition-all flex-shrink-0"
             >
-              {icon}{label}
+              {icon}{t(key)}
             </button>
           ))}
         </div>
@@ -1203,11 +1205,11 @@ export default function ProjectDetail() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Users size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Demandes de prix (sous-traitants)</h2>
+              <h2 className="font-semibold text-gray-900 text-sm">{t('rfqs')} ({t('subcontractors').toLowerCase()})</h2>
               {projectRfqs.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectRfqs.length}</span>}
             </div>
             <button className="btn-secondary text-xs py-1.5" onClick={() => setShowRfqForm(v => !v)}>
-              <Plus size={13}/> Créer un RFQ
+              <Plus size={13}/> {t('create_rfq')}
             </button>
           </div>
 
@@ -1405,9 +1407,9 @@ export default function ProjectDetail() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <FileText size={15} className="text-brand" />
-                <h2 className="font-semibold text-gray-900 text-sm">Soumissions & Avenants ({projectQuotes.length})</h2>
+                <h2 className="font-semibold text-gray-900 text-sm">{t('quotes')} & {t('change_orders')} ({projectQuotes.length})</h2>
               </div>
-              <button className="btn-secondary text-xs py-1 px-2" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent('Avenant — '+project.name)}`)}><Plus size={12}/> Avenant</button>
+              <button className="btn-secondary text-xs py-1 px-2" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
             </div>
             {(() => {
               const QSB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };

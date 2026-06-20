@@ -1,30 +1,29 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore, useUIStore, useConfigStore } from '../store';
-import { dashboard as dashApi } from '../api';
+import { dashboard as dashApi, auth as authApi } from '../api';
 import { CORE_MODULES, SECONDARY_MODULES, roleAllows } from '../config/modules';
 import SearchModal from './SearchModal';
+import { useT, useLang } from '../hooks/useT';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
   LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
   AlertCircle, Clock, FileQuestion, Search, Sparkles,
   FileSignature, ShoppingCart, FileStack, SlidersHorizontal, Check,
-  CircleDot,
+  Languages,
 } from 'lucide-react';
-import { auth as authApi } from '../api';
 
 function OnboardingBanner({ onDismiss, onGo }) {
+  const t = useT();
   return (
     <div className="bg-orange-50 border-b border-orange-100 px-4 py-2.5 flex items-center gap-3">
       <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse flex-shrink-0" />
-      <p className="text-sm text-orange-800 flex-1">
-        Votre profil est incomplet — complétez l'onboarding pour que l'IA s'adapte à votre entreprise.
-      </p>
+      <p className="text-sm text-orange-800 flex-1">{t('onboarding_banner')}</p>
       <button className="text-xs font-medium text-brand hover:underline flex-shrink-0" onClick={onGo}>
-        Compléter →
+        {t('complete')}
       </button>
-      <button className="text-orange-400 hover:text-orange-600 flex-shrink-0" onClick={onDismiss} title="Fermer">
+      <button className="text-orange-400 hover:text-orange-600 flex-shrink-0" onClick={onDismiss} title={t('close')}>
         <X size={14} />
       </button>
     </div>
@@ -37,14 +36,16 @@ const ICONS = {
   HardHat, QrCode, BarChart3, BookUser, FileSignature, ShoppingCart, FileStack,
 };
 
-const QUICK = [
-  { label: 'Nouveau lead',        path: '/leads?new=1' },
-  { label: 'Nouvelle soumission', path: '/soumissions?new=1' },
-  { label: 'Nouveau projet',      path: '/projets?new=1' },
-  { label: 'Pointer un chantier', path: '/punch' },
+const QUICK_KEYS = [
+  { key: 'new_lead',        path: '/leads?new=1' },
+  { key: 'new_quote',       path: '/soumissions?new=1' },
+  { key: 'new_project_quick', path: '/projets?new=1' },
+  { key: 'punch_site',      path: '/punch' },
 ];
 
 export default function Layout({ children }) {
+  const t = useT();
+  const { lang, setLanguage } = useLang();
   const { user, logout, company } = useAuthStore();
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
   const { modules, load, toggleModule } = useConfigStore();
@@ -129,20 +130,21 @@ export default function Layout({ children }) {
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {[...coreNav, ...secondaryNav].map((m) => {
             const Icon = ICONS[m.icon] || FolderKanban;
+            const label = t(`nav_${m.key}`, m.label);
             return (
               <NavLink
                 key={m.path}
                 to={m.path}
                 className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${m.highlight ? 'nav-item-ai' : ''}`}
-                title={!sidebarOpen ? m.label : undefined}
+                title={!sidebarOpen ? label : undefined}
               >
                 <Icon size={16} className="flex-shrink-0" />
-                {sidebarOpen && <span className="truncate">{m.label}</span>}
+                {sidebarOpen && <span className="truncate">{label}</span>}
                 {m.highlight && sidebarOpen && (
                   <span className="ml-auto text-[10px] font-semibold text-brand bg-brand/10 px-1.5 py-0.5 rounded-full">IA</span>
                 )}
                 {m.comingSoon && sidebarOpen && !m.highlight && (
-                  <span className="ml-auto text-[9px] text-gray-300 italic">bientôt</span>
+                  <span className="ml-auto text-[9px] text-gray-300 italic">{t('coming_soon')}</span>
                 )}
               </NavLink>
             );
@@ -186,9 +188,9 @@ export default function Layout({ children }) {
 
         {/* Sidebar footer */}
         <div className="px-2 py-3 border-t border-gray-100 space-y-0.5">
-          <button onClick={toggleDark} className="nav-item w-full" title="Mode sombre">
+          <button onClick={toggleDark} className="nav-item w-full" title={t(darkMode ? 'light_mode' : 'dark_mode')}>
             {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-            {sidebarOpen && <span>{darkMode ? 'Mode clair' : 'Mode sombre'}</span>}
+            {sidebarOpen && <span>{t(darkMode ? 'light_mode' : 'dark_mode')}</span>}
           </button>
         </div>
       </aside>
@@ -213,6 +215,16 @@ export default function Layout({ children }) {
 
           <div className="flex-1" />
 
+          {/* Language toggle FR / EN */}
+          <button
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-brand px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors"
+            onClick={() => setLanguage(lang === 'fr' ? 'en' : 'fr')}
+            title={lang === 'fr' ? 'Switch to English' : 'Passer en français'}
+          >
+            <Languages size={14} />
+            <span className="hidden sm:inline">{lang === 'fr' ? 'EN' : 'FR'}</span>
+          </button>
+
           {/* Onboarding status dot */}
           {onboardingDone !== null && (
             <div className="relative" onMouseEnter={() => setOnboardingTooltip(true)} onMouseLeave={() => setOnboardingTooltip(false)}>
@@ -225,9 +237,7 @@ export default function Layout({ children }) {
               </button>
               {onboardingTooltip && (
                 <div className="absolute right-0 top-8 bg-gray-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-lg z-50 w-48 whitespace-normal">
-                  {onboardingDone
-                    ? 'Profil complet — cliquer pour revoir l\'onboarding'
-                    : 'Profil incomplet — cliquer pour compléter l\'onboarding'}
+                  {onboardingDone ? t('onboarding_complete') : t('onboarding_incomplete')}
                 </div>
               )}
             </div>
@@ -296,13 +306,13 @@ export default function Layout({ children }) {
             </button>
             {quickOpen && (
               <div className="absolute right-0 top-9 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1 w-48">
-                {QUICK.map(q => (
+                {QUICK_KEYS.map(q => (
                   <button
                     key={q.path}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-orange-50 hover:text-brand transition-colors"
                     onClick={() => { navigate(q.path); setQuickOpen(false); }}
                   >
-                    {q.label}
+                    {t(q.key)}
                   </button>
                 ))}
               </div>
