@@ -13,6 +13,46 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/rfqs/project/:projectId — RFQs for a specific project with response counts
+router.get('/project/:projectId', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT r.*,
+         (SELECT COUNT(*) FROM rfq_responses rr WHERE rr.rfq_id = r.id) AS responses_count
+       FROM rfqs r
+       WHERE r.company_id = $1 AND r.project_id = $2
+       ORDER BY r.created_at DESC`,
+      [req.company_id, req.params.projectId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/rfqs/:id — single RFQ with subcontractor responses
+router.get('/:id', async (req, res) => {
+  try {
+    const { rows: [r] } = await query(
+      `SELECT * FROM rfqs WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!r) return res.status(404).json({ error: 'RFQ non trouvée' });
+    const { rows: responses } = await query(
+      `SELECT rr.*, s.name AS sub_name, s.company_name, s.email, s.phone
+       FROM rfq_responses rr
+       LEFT JOIN subcontractors s ON s.id = rr.subcontractor_id
+       WHERE rr.rfq_id = $1`,
+      [req.params.id]
+    );
+    res.json({ ...r, responses });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.post('/', async (req, res) => {
   const { project_id, phase_id, title, description, specialty, deadline } = req.body;
   const { rows: [r] } = await query(

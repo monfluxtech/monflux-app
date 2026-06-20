@@ -28,6 +28,7 @@ import searchRoutes      from './routes/search.js';
 import quittancesRoutes  from './routes/quittances.js';
 import changeOrdersRoutes from './routes/change-orders.js';
 import membersRoutes      from './routes/members.js';
+import contractsRoutes    from './routes/contracts.js';
 
 dotenv.config();
 
@@ -83,6 +84,7 @@ app.use('/api/email',       emailRoutes);
 app.use('/api/quittances',  quittancesRoutes);
 app.use('/api/change-orders', changeOrdersRoutes);
 app.use('/api/members',      membersRoutes);
+app.use('/api/contracts',   contractsRoutes);
 
 // ── DEV ONLY — plan switcher ────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {

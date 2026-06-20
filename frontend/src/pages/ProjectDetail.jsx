@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, pdf } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -422,11 +422,28 @@ export default function ProjectDetail() {
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  // B4 — Vente
+  const [activeTab, setActiveTab] = useState('apercu');
+  const [quoteBuilderQuote, setQuoteBuilderQuote] = useState(null);
+  const [quoteBuilderItems, setQuoteBuilderItems] = useState([]);
+  const [quoteSaving, setQuoteSaving] = useState(false);
+  const [quoteSending, setQuoteSending] = useState(false);
+  const [projectRfqs, setProjectRfqs] = useState([]);
+  const [showRfqForm, setShowRfqForm] = useState(false);
+  const [rfqForm, setRfqForm] = useState({ title: '', specialty: '', description: '', deadline: '' });
+  const [showInviteModal, setShowInviteModal] = useState(null);
+  const [selectedSubIds, setSelectedSubIds] = useState([]);
+  const [inviting, setInviting] = useState(false);
+  const [projectContracts, setProjectContracts] = useState([]);
+  const [generatingContract, setGeneratingContract] = useState(false);
+  const [contractSendingId, setContractSendingId] = useState(null);
+  const [showContractContent, setShowContractContent] = useState(null);
+  const quoteTimer = useRef(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -436,6 +453,9 @@ export default function ProjectDetail() {
         projectsApi.getPortalMessages(id).catch(() => ({ data: [] })),
         projectsApi.profitability(id).catch(() => ({ data: null })),
         subsApi.list().catch(() => ({ data: [] })),
+        quotesApi.byProject(id).catch(() => ({ data: [] })),
+        rfqsApi.byProject(id).catch(() => ({ data: [] })),
+        contractsApi.list({ project_id: id }).catch(() => ({ data: [] })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -448,6 +468,12 @@ export default function ProjectDetail() {
       setProfit(prof);
       setSubs(subList || []);
       setLaborRate(prof?.actual?.cost_breakdown?.labor_cost_rate ? String(prof.actual.cost_breakdown.labor_cost_rate) : '');
+      // B4 — quote builder, RFQs, contracts
+      const firstQuote = projQuotes?.[0] || null;
+      setQuoteBuilderQuote(firstQuote);
+      setQuoteBuilderItems(firstQuote?.items || []);
+      setProjectRfqs(rfqList || []);
+      setProjectContracts(contractList || []);
     } catch {} finally { setLoading(false); }
   };
 
@@ -614,6 +640,110 @@ export default function ProjectDetail() {
     } catch {} finally { setSavingRate(false); }
   };
 
+  // ── Handlers Vente (B4) ────────────────────────────────────────────────────
+  const ensureQuote = async () => {
+    if (quoteBuilderQuote) return quoteBuilderQuote;
+    setQuoteSaving(true);
+    try {
+      const { data } = await quotesApi.create({ project_id: id, title: `Soumission — ${project?.name || 'Projet'}` });
+      setQuoteBuilderQuote(data);
+      setQuoteBuilderItems([]);
+      return data;
+    } catch { return null; } finally { setQuoteSaving(false); }
+  };
+
+  const saveQuoteItems = async (items) => {
+    const q = quoteBuilderQuote;
+    if (!q) return;
+    setQuoteSaving(true);
+    try {
+      const { data } = await quotesApi.update(q.id, { items });
+      setQuoteBuilderQuote(data);
+      setQuoteBuilderItems(data.items || items);
+    } catch {} finally { setQuoteSaving(false); }
+  };
+
+  const scheduleQuoteSave = (items) => {
+    clearTimeout(quoteTimer.current);
+    quoteTimer.current = setTimeout(() => saveQuoteItems(items), 900);
+  };
+
+  const addQuoteItem = async (type) => {
+    const q = await ensureQuote();
+    if (!q) return;
+    const unitMap = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
+    const next = [...quoteBuilderItems, { type, name: '', qty: 1, unit: unitMap[type] || 'un.', unit_price: 0 }];
+    setQuoteBuilderItems(next);
+    scheduleQuoteSave(next);
+  };
+
+  const updateQuoteItem = (i, patch) => {
+    const next = quoteBuilderItems.map((it, idx) => idx === i ? { ...it, ...patch } : it);
+    setQuoteBuilderItems(next);
+    scheduleQuoteSave(next);
+  };
+
+  const removeQuoteItem = (i) => {
+    const next = quoteBuilderItems.filter((_, idx) => idx !== i);
+    setQuoteBuilderItems(next);
+    scheduleQuoteSave(next);
+  };
+
+  const sendQuoteToClient = async () => {
+    if (!quoteBuilderQuote) return;
+    setQuoteSending(true);
+    try {
+      const { data } = await quotesApi.send(quoteBuilderQuote.id);
+      setQuoteBuilderQuote(data);
+      setProject((p) => ({ ...p, status: 'prix_envoye', price_sent_at: data.updated_at }));
+    } catch {} finally { setQuoteSending(false); }
+  };
+
+  const createRfq = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await rfqsApi.create({ project_id: id, ...rfqForm });
+      setProjectRfqs((r) => [data, ...r]);
+      setShowRfqForm(false);
+      setRfqForm({ title: '', specialty: '', description: '', deadline: '' });
+    } catch {}
+  };
+
+  const inviteSubsToRfq = async (rfqId) => {
+    if (!selectedSubIds.length) return;
+    setInviting(true);
+    try {
+      await rfqsApi.invite(rfqId, selectedSubIds);
+      const { data: updated } = await rfqsApi.byProject(id);
+      setProjectRfqs(updated || []);
+      setShowInviteModal(null);
+      setSelectedSubIds([]);
+    } catch {} finally { setInviting(false); }
+  };
+
+  const generateContract = async () => {
+    if (!quoteBuilderQuote) return;
+    setGeneratingContract(true);
+    try {
+      const { data } = await quotesApi.generateContract(quoteBuilderQuote.id);
+      setProjectContracts((c) => [data, ...c]);
+    } catch {} finally { setGeneratingContract(false); }
+  };
+
+  const sendContract = async (contractId) => {
+    setContractSendingId(contractId);
+    try {
+      const { data } = await contractsApi.send(contractId);
+      setProjectContracts((cs) => cs.map((c) => c.id === contractId ? data : c));
+    } catch {} finally { setContractSendingId(null); }
+  };
+
+  const deleteContract = async (contractId) => {
+    if (!confirm('Supprimer ce contrat ?')) return;
+    await contractsApi.delete(contractId);
+    setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
+  };
+
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
   if (!project) return <Layout><div className="p-8 text-red-500">Projet non trouvé</div></Layout>;
 
@@ -656,6 +786,31 @@ export default function ProjectDetail() {
             <div className="h-full rounded-full bg-brand transition-all" style={{width:`${pct}%`}}/>
           </div>
         </div>
+
+        {/* Tab strip */}
+        <div className="flex gap-1 mb-4 bg-gray-100/70 rounded-2xl p-1">
+          {[
+            { key: 'apercu',   icon: <LayoutDashboard size={13}/>, label: 'Aperçu' },
+            { key: 'vente',    icon: <Briefcase size={13}/>,       label: 'Vente' },
+            { key: 'chantier', icon: <Wrench size={13}/>,          label: 'Chantier' },
+            { key: 'docs',     icon: <FolderClosed size={13}/>,    label: 'Docs' },
+          ].map(({ key, icon, label }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-1.5 flex-1 justify-center px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                activeTab === key
+                  ? 'bg-white text-brand shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {icon}{label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── APERÇU TAB ─────────────────────────────────────────────────────── */}
+        {activeTab === 'apercu' && <>
 
         {/* Infos du projet — termes de paiement en haut + en-tête riche */}
         <div className="card mb-4">
@@ -824,6 +979,292 @@ export default function ProjectDetail() {
           />
         </div>
 
+        </>}
+
+        {/* ── VENTE TAB ──────────────────────────────────────────────────────── */}
+        {activeTab === 'vente' && <>
+
+        {/* Quote Builder */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileText size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Soumission détaillée</h2>
+              {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
+              {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
+            </div>
+            {quoteSaving && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin"/> Enreg…</span>}
+          </div>
+
+          {/* Line items by type */}
+          {['material', 'labor', 'subcontractor', 'other'].map((type) => {
+            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
+            const typeItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
+            return (
+              <div key={type} className="mb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{typeLabels[type]}</p>
+                  <button className="btn-ghost text-xs py-0.5 px-2 text-brand" onClick={() => addQuoteItem(type)}>
+                    <Plus size={11}/> Ligne
+                  </button>
+                </div>
+                {typeItems.length === 0 ? (
+                  <p className="text-xs text-gray-300 italic py-1">Aucun poste</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {typeItems.map((it) => (
+                      <div key={it._i} className="flex items-center gap-1.5 py-1 border-b border-gray-50 last:border-0">
+                        <input
+                          className="input py-1 text-xs flex-1 min-w-0"
+                          placeholder="Description"
+                          value={it.name}
+                          onChange={(e) => updateQuoteItem(it._i, { name: e.target.value })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-14 text-right"
+                          type="number" min="0" step="0.01"
+                          placeholder="Qté"
+                          value={it.qty}
+                          onChange={(e) => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-14"
+                          placeholder="Unité"
+                          value={it.unit}
+                          onChange={(e) => updateQuoteItem(it._i, { unit: e.target.value })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-20 text-right"
+                          type="number" min="0" step="0.01"
+                          placeholder="Prix unit."
+                          value={it.unit_price}
+                          onChange={(e) => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
+                        />
+                        <span className="text-xs text-gray-600 font-medium w-20 text-right flex-shrink-0">
+                          {((Number(it.qty)||1)*(Number(it.unit_price)||0)).toLocaleString('fr-CA',{minimumFractionDigits:2})}$
+                        </span>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => removeQuoteItem(it._i)}>
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Totals */}
+          {quoteBuilderItems.length > 0 && (() => {
+            const subtotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty)||1)*(Number(it.unit_price)||0), 0);
+            const tps = subtotal * 0.05;
+            const tvq = subtotal * 0.09975;
+            const total = subtotal + tps + tvq;
+            const fmt = (v) => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
+            return (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-500"><span>Sous-total</span><span>{fmt(subtotal)}</span></div>
+                <div className="flex justify-between text-gray-400 text-xs"><span>TPS (5%)</span><span>{fmt(tps)}</span></div>
+                <div className="flex justify-between text-gray-400 text-xs"><span>TVQ (9,975%)</span><span>{fmt(tvq)}</span></div>
+                <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100"><span>Total</span><span className="text-brand">{fmt(total)}</span></div>
+              </div>
+            );
+          })()}
+
+          {/* Actions */}
+          <div className="mt-4 flex gap-2 flex-wrap">
+            {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
+              <button
+                className="btn-primary text-xs py-2"
+                onClick={sendQuoteToClient}
+                disabled={quoteSending || !quoteBuilderQuote}
+              >
+                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+                Envoyer au client
+              </button>
+            )}
+            {quoteBuilderQuote && (
+              <button className="btn-secondary text-xs py-2" onClick={() => setPreview({ url: pdf.quoteUrl(quoteBuilderQuote.id), title: 'Soumission' })}>
+                <Eye size={13}/> Aperçu PDF
+              </button>
+            )}
+            {quoteBuilderQuote?.status === 'sent' && (
+              <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
+            )}
+          </div>
+        </div>
+
+        {/* RFQs — demandes de prix aux sous-traitants */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Demandes de prix (sous-traitants)</h2>
+              {projectRfqs.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectRfqs.length}</span>}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowRfqForm(v => !v)}>
+              <Plus size={13}/> Créer un RFQ
+            </button>
+          </div>
+
+          {showRfqForm && (
+            <form onSubmit={createRfq} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Titre *</label><input className="input" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f,title:e.target.value}))} placeholder="Ex: Demande de prix — Électricité" required /></div>
+                <div><label className="label">Spécialité</label><input className="input" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f,specialty:e.target.value}))} placeholder="Électricité, Plomberie…" /></div>
+              </div>
+              <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={rfqForm.description} onChange={e => setRfqForm(f => ({...f,description:e.target.value}))} placeholder="Portée des travaux…"/></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Date limite</label><input className="input" type="date" value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f,deadline:e.target.value}))}/></div>
+                <div className="flex items-end gap-2">
+                  <button type="button" className="btn-secondary flex-1 text-xs" onClick={() => setShowRfqForm(false)}>Annuler</button>
+                  <button type="submit" className="btn-primary flex-1 text-xs">Créer</button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {projectRfqs.length === 0 && !showRfqForm ? (
+            <div className="text-center py-5">
+              <Users size={26} className="text-gray-200 mx-auto mb-2"/>
+              <p className="text-sm text-gray-400">Créez des demandes de prix aux sous-traitants directement depuis ce projet.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {projectRfqs.map(rfq => (
+                <div key={rfq.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{rfq.title}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {rfq.specialty && <span className="badge badge-gray text-xs">{rfq.specialty}</span>}
+                      {rfq.deadline && <span className="text-xs text-gray-400">Échéance: {new Date(rfq.deadline).toLocaleDateString('fr-CA')}</span>}
+                      <span className="text-xs text-gray-400">{rfq.responses_count || 0} invité(s)</span>
+                    </div>
+                  </div>
+                  <button
+                    className="btn-secondary text-xs py-1"
+                    onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
+                  >
+                    <UserPlus size={12}/> Inviter
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Invite modal */}
+        {showInviteModal && (
+          <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+            <div className="card w-full max-w-sm">
+              <h3 className="font-semibold text-gray-900 mb-3">Inviter des sous-traitants</h3>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto mb-4">
+                {subs.length === 0 && <p className="text-sm text-gray-400">Aucun sous-traitant enregistré. Allez dans Sous-traitants pour en ajouter.</p>}
+                {subs.map(s => (
+                  <label key={s.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-gray-50 rounded-lg px-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedSubIds.includes(s.id)}
+                      onChange={() => setSelectedSubIds(ids => ids.includes(s.id) ? ids.filter(x => x !== s.id) : [...ids, s.id])}
+                    />
+                    <span className="text-sm text-gray-700">{s.name}{s.company_name ? ` — ${s.company_name}` : ''}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button className="btn-secondary flex-1 text-xs" onClick={() => setShowInviteModal(null)}>Annuler</button>
+                <button
+                  className="btn-primary flex-1 text-xs"
+                  onClick={() => inviteSubsToRfq(showInviteModal)}
+                  disabled={inviting || !selectedSubIds.length}
+                >
+                  {inviting ? <Loader2 size={12} className="animate-spin"/> : <Send size={12}/>}
+                  Inviter ({selectedSubIds.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Contrats */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileSignature size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Contrat</h2>
+              {projectContracts.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectContracts.length}</span>}
+            </div>
+            {quoteBuilderQuote && projectContracts.length === 0 && (
+              <button className="btn-secondary text-xs py-1.5" onClick={generateContract} disabled={generatingContract}>
+                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
+                Générer depuis la soumission
+              </button>
+            )}
+          </div>
+
+          {projectContracts.length === 0 ? (
+            <div className="text-center py-6">
+              <FileSignature size={28} className="text-gray-200 mx-auto mb-2"/>
+              {quoteBuilderQuote ? (
+                <p className="text-sm text-gray-400">Génère un contrat depuis la soumission détaillée.</p>
+              ) : (
+                <p className="text-sm text-gray-400">Crée d'abord une soumission dans cet onglet pour générer un contrat.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {projectContracts.map(c => {
+                const isSending = contractSendingId === c.id;
+                const statusColor = { draft: 'badge-gray', sent: 'badge-blue', signed: 'badge-green', cancelled: 'badge-gray' };
+                const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé', cancelled: 'Annulé' };
+                return (
+                  <div key={c.id} className="rounded-xl border border-gray-100 p-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{c.title}</p>
+                        <p className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('fr-CA')}</p>
+                      </div>
+                      <span className={`badge ${statusColor[c.status] || 'badge-gray'} text-xs`}>{statusLabel[c.status] || c.status}</span>
+                    </div>
+
+                    {c.status === 'signed' && (
+                      <p className="text-xs text-green-600 mb-2 flex items-center gap-1"><CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}</p>
+                    )}
+
+                    <div className="flex gap-2 flex-wrap">
+                      <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(showContractContent === c.id ? null : c.id)}>
+                        <Eye size={11}/> {showContractContent === c.id ? 'Masquer' : 'Voir le contrat'}
+                      </button>
+                      {c.status === 'draft' && (
+                        <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
+                          {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer (stub)
+                        </button>
+                      )}
+                      <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
+                        <Trash2 size={11}/>
+                      </button>
+                    </div>
+
+                    {/* E-sign stub notice */}
+                    {c.status === 'draft' && (
+                      <div className="mt-2 flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
+                        <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+                        <p className="text-xs text-amber-700">Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign / Notarize.</p>
+                      </div>
+                    )}
+
+                    {showContractContent === c.id && (
+                      <pre className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-xl p-3 overflow-auto whitespace-pre-wrap font-mono" style={{ maxHeight: 320 }}>
+                        {c.content}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Factures liées */}
         {projectInvoices.length > 0 && (
           <div className="card mb-4">
@@ -884,6 +1325,11 @@ export default function ProjectDetail() {
             })()}
           </div>
         )}
+
+        </>}
+
+        {/* ── CHANTIER TAB ───────────────────────────────────────────────────── */}
+        {activeTab === 'chantier' && <>
 
         {/* Corps de métiers */}
         <div className="card mb-4">
@@ -981,6 +1427,11 @@ export default function ProjectDetail() {
             <p className="text-sm text-gray-400 text-center py-4">Aucune dépense. Ajoutez factures fournisseurs et dépenses pour calculer la rentabilité réelle.</p>
           )}
         </div>
+
+        </>}
+
+        {/* ── DOCS TAB ───────────────────────────────────────────────────────── */}
+        {activeTab === 'docs' && <>
 
         {/* Documents */}
         <div className="card mb-4">
@@ -1317,6 +1768,9 @@ export default function ProjectDetail() {
             </div>
           )}
         </div>
+
+        </>}
+
       </div>
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
       {showInfo && (

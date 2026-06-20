@@ -83,12 +83,23 @@ export const contacts = {
 };
 
 export const quotes = {
-  list:   ()            => http.get('/quotes'),
-  get:    (id)          => http.get(`/quotes/${id}`),
-  create: (data)        => http.post('/quotes', data),
-  update: (id, data)    => http.patch(`/quotes/${id}`, data),
-  delete: (id)          => http.delete(`/quotes/${id}`),
-  convert: (id)         => http.post(`/quotes/${id}/convert`),
+  list:             ()              => http.get('/quotes'),
+  byProject:        (projectId)     => http.get(`/quotes/project/${projectId}`),
+  get:              (id)            => http.get(`/quotes/${id}`),
+  create:           (data)          => http.post('/quotes', data),
+  update:           (id, data)      => http.patch(`/quotes/${id}`, data),
+  delete:           (id)            => http.delete(`/quotes/${id}`),
+  convert:          (id)            => http.post(`/quotes/${id}/convert`),
+  send:             (id)            => http.post(`/quotes/${id}/send`),
+  generateContract: (id, data)      => http.post(`/quotes/${id}/generate-contract`, data || {}),
+};
+
+export const contracts = {
+  list:    (params)     => http.get('/contracts', { params }),
+  get:     (id)         => http.get(`/contracts/${id}`),
+  update:  (id, data)   => http.patch(`/contracts/${id}`, data),
+  delete:  (id)         => http.delete(`/contracts/${id}`),
+  send:    (id)         => http.post(`/contracts/${id}/send`),
 };
 
 export const invoices = {
@@ -107,9 +118,11 @@ export const subcontractors = {
 };
 
 export const rfqs = {
-  list:   ()            => http.get('/rfqs'),
-  create: (data)        => http.post('/rfqs', data),
-  invite: (id, ids)     => http.post(`/rfqs/${id}/invite`, { subcontractor_ids: ids }),
+  list:        ()              => http.get('/rfqs'),
+  byProject:   (projectId)     => http.get(`/rfqs/project/${projectId}`),
+  get:         (id)            => http.get(`/rfqs/${id}`),
+  create:      (data)          => http.post('/rfqs', data),
+  invite:      (id, ids)       => http.post(`/rfqs/${id}/invite`, { subcontractor_ids: ids }),
 };
 
 export const punch = {

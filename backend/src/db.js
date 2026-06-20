@@ -258,6 +258,30 @@ async function applyMigrations() {
   await run('company_config field_checklists column',
     `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS field_checklists JSONB DEFAULT '{}'::jsonb`);
 
+  // ── Refonte v3 B4 — Vente : contrats liés aux soumissions ────────────────────
+  await run('contracts create',
+    `CREATE TABLE IF NOT EXISTS contracts (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id   UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id   UUID REFERENCES projects(id) ON DELETE SET NULL,
+      quote_id     UUID REFERENCES quotes(id) ON DELETE SET NULL,
+      title        TEXT NOT NULL DEFAULT 'Contrat de services',
+      content      TEXT,
+      status       TEXT NOT NULL DEFAULT 'draft'
+                     CHECK (status IN ('draft','sent','signed','cancelled')),
+      signer_name  TEXT,
+      signed_at    TIMESTAMPTZ,
+      signed_ip    TEXT,
+      public_token UUID NOT NULL DEFAULT gen_random_uuid(),
+      created_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('contracts token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS contracts_token_idx ON contracts(public_token)`);
+  await run('contracts project index',
+    `CREATE INDEX IF NOT EXISTS contracts_project_idx ON contracts(project_id)`);
+
   // ── Refonte v3 B3 — fiche projet : en-tête riche + estimation terrain ────────
   await run('projects header columns', `ALTER TABLE projects
       ADD COLUMN IF NOT EXISTS payment_terms       TEXT,
