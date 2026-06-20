@@ -359,6 +359,8 @@ async function applyMigrations() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL`);
   await run('projects: contact_id index',
     `CREATE INDEX IF NOT EXISTS projects_contact_idx ON projects(contact_id)`);
+  await run('projects: created_from_project',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_from_project UUID REFERENCES projects(id) ON DELETE SET NULL`);
 }
 
 export async function initializeDatabase() {
