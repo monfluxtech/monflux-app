@@ -294,6 +294,29 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS field_assessment    JSONB DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS estimated_price     NUMERIC(12,2),
       ADD COLUMN IF NOT EXISTS price_sent_at       TIMESTAMPTZ`);
+
+  // ── Refonte v3 B6 — Chantier : commandes matériaux ───────────────────────────
+  await run('material_orders table', `
+    CREATE TABLE IF NOT EXISTS material_orders (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      order_number    TEXT,
+      supplier        TEXT NOT NULL,
+      description     TEXT,
+      status          TEXT NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft','ordered','partial','received','cancelled')),
+      total_amount    NUMERIC(12,2),
+      order_date      DATE,
+      expected_date   DATE,
+      received_date   DATE,
+      notes           TEXT,
+      created_by      UUID REFERENCES users(id),
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await run('material_orders project index',
+    `CREATE INDEX IF NOT EXISTS mat_orders_project_idx ON material_orders(project_id)`);
 }
 
 export async function initializeDatabase() {

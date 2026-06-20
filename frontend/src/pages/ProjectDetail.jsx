@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, pdf } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -439,11 +439,15 @@ export default function ProjectDetail() {
   const [contractSendingId, setContractSendingId] = useState(null);
   const [showContractContent, setShowContractContent] = useState(null);
   const quoteTimer = useRef(null);
+  // B6 — Chantier
+  const [materialOrders, setMaterialOrders] = useState([]);
+  const [showOrderForm, setShowOrderForm] = useState(false);
+  const [orderForm, setOrderForm] = useState({ supplier: '', order_number: '', description: '', total_amount: '', order_date: '', expected_date: '' });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -456,6 +460,7 @@ export default function ProjectDetail() {
         quotesApi.byProject(id).catch(() => ({ data: [] })),
         rfqsApi.byProject(id).catch(() => ({ data: [] })),
         contractsApi.list({ project_id: id }).catch(() => ({ data: [] })),
+        materialOrdersApi.byProject(id).catch(() => ({ data: [] })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -474,6 +479,7 @@ export default function ProjectDetail() {
       setQuoteBuilderItems(firstQuote?.items || []);
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
+      setMaterialOrders(orderList || []);
     } catch {} finally { setLoading(false); }
   };
 
@@ -742,6 +748,39 @@ export default function ProjectDetail() {
     if (!confirm('Supprimer ce contrat ?')) return;
     await contractsApi.delete(contractId);
     setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
+  };
+
+  // B6 — handlers Chantier
+  const approveTs = async (tsId) => {
+    try {
+      await tsApi.approve(tsId);
+      setTimesheets(prev => prev.map(t => t.id === tsId ? { ...t, approved_at: new Date().toISOString() } : t));
+    } catch {}
+  };
+
+  const createOrder = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await materialOrdersApi.create({ ...orderForm, project_id: id });
+      setMaterialOrders(prev => [data, ...prev]);
+      setOrderForm({ supplier: '', order_number: '', description: '', total_amount: '', order_date: '', expected_date: '' });
+      setShowOrderForm(false);
+    } catch {}
+  };
+
+  const updateOrderStatus = async (orderId, status) => {
+    try {
+      await materialOrdersApi.update(orderId, { status });
+      setMaterialOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    } catch {}
+  };
+
+  const deleteOrder = async (orderId) => {
+    if (!confirm('Supprimer cette commande ?')) return;
+    try {
+      await materialOrdersApi.delete(orderId);
+      setMaterialOrders(prev => prev.filter(o => o.id !== orderId));
+    } catch {}
   };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
@@ -1425,6 +1464,161 @@ export default function ProjectDetail() {
             </div>
           ) : !showExpenseForm && (
             <p className="text-sm text-gray-400 text-center py-4">Aucune dépense. Ajoutez factures fournisseurs et dépenses pour calculer la rentabilité réelle.</p>
+          )}
+        </div>
+
+        {/* ── Feuilles de temps ─────────────────────────────────────────────── */}
+        <div className="card mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={15} className="text-brand"/>
+            <h2 className="font-semibold text-gray-900 text-sm">Feuilles de temps</h2>
+            {timesheets.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{timesheets.length}</span>}
+          </div>
+          {timesheets.length > 0 ? (
+            <>
+              {/* Totaux agrégés */}
+              {(() => {
+                const done = timesheets.filter(t => t.clock_out);
+                const byWorker = {};
+                let totalH = 0;
+                done.forEach(ts => {
+                  const h = (new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000;
+                  totalH += h;
+                  const key = ts.user_name || ts.sub_name || 'Inconnu';
+                  byWorker[key] = (byWorker[key] || 0) + h;
+                });
+                return (
+                  <div className="bg-gray-50 rounded-xl p-3 mb-3">
+                    <div className="flex items-center gap-6 mb-3 flex-wrap">
+                      <div className="text-center">
+                        <p className="text-xl font-bold text-gray-900">{totalH.toFixed(1)}h</p>
+                        <p className="text-xs text-gray-400">Total pointé</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xl font-bold text-brand">{timesheets.filter(t => !t.approved_at).length}</p>
+                        <p className="text-xs text-gray-400">En attente</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xl font-bold text-green-600">{timesheets.filter(t => t.approved_at).length}</p>
+                        <p className="text-xs text-gray-400">Approuvé</p>
+                      </div>
+                    </div>
+                    {Object.keys(byWorker).length > 0 && (
+                      <div className="space-y-1.5">
+                        {Object.entries(byWorker).sort((a, b) => b[1] - a[1]).map(([name, h]) => (
+                          <div key={name} className="flex items-center gap-2">
+                            <p className="text-xs text-gray-600 w-28 truncate">{name}</p>
+                            <div className="flex-1 h-1.5 bg-gray-200 rounded-full">
+                              <div className="h-full bg-brand rounded-full" style={{ width: `${Math.min(100, (h / (totalH || 1)) * 100)}%` }}/>
+                            </div>
+                            <p className="text-xs font-semibold text-gray-700 w-10 text-right">{h.toFixed(1)}h</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* Lignes détail */}
+              <div className="space-y-1">
+                {timesheets.map(ts => {
+                  const hours = ts.clock_out ? ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1) : null;
+                  return (
+                    <div key={ts.id} className={`flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 ${!ts.clock_out ? 'bg-green-50/50 rounded-lg px-2' : ''}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-800">{ts.user_name || ts.sub_name || 'Travailleur'}</p>
+                        <p className="text-[11px] text-gray-400">
+                          {new Date(ts.clock_in).toLocaleDateString('fr-CA')} · {new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                          {ts.clock_out && ` → ${new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}`}
+                        </p>
+                      </div>
+                      {hours
+                        ? <span className="text-xs font-semibold text-gray-700 w-12 text-right flex-shrink-0">{hours}h</span>
+                        : <span className="badge badge-green text-[10px] flex-shrink-0">En cours</span>}
+                      {ts.approved_at
+                        ? <CheckCircle size={13} className="text-green-400 flex-shrink-0" title="Approuvé"/>
+                        : <button className="text-[10px] text-gray-400 hover:text-brand border border-gray-200 rounded-md px-1.5 py-0.5 flex-shrink-0 transition-colors" onClick={() => approveTs(ts.id)}>Approuver</button>}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">Aucun punch enregistré. Générez un QR ci-dessous pour commencer.</p>
+          )}
+        </div>
+
+        {/* ── Commandes matériaux ───────────────────────────────────────────── */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Package size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Commandes matériaux</h2>
+              {materialOrders.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{materialOrders.length}</span>}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
+          </div>
+          {showOrderForm && (
+            <form onSubmit={createOrder} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
+              <div><label className="label">Fournisseur *</label><input className="input" value={orderForm.supplier} onChange={e => setOrderForm(f => ({ ...f, supplier: e.target.value }))} required/></div>
+              <div><label className="label">N° commande</label><input className="input" value={orderForm.order_number} onChange={e => setOrderForm(f => ({ ...f, order_number: e.target.value }))} placeholder="Ex: PO-2026-001"/></div>
+              <div><label className="label">Montant ($)</label><input className="input" type="number" step="0.01" value={orderForm.total_amount} onChange={e => setOrderForm(f => ({ ...f, total_amount: e.target.value }))}/></div>
+              <div><label className="label">Date commande</label><input className="input" type="date" value={orderForm.order_date} onChange={e => setOrderForm(f => ({ ...f, order_date: e.target.value }))}/></div>
+              <div><label className="label">Livraison prévue</label><input className="input" type="date" value={orderForm.expected_date} onChange={e => setOrderForm(f => ({ ...f, expected_date: e.target.value }))}/></div>
+              <div className="flex gap-2">
+                <input className="input flex-1" value={orderForm.description} onChange={e => setOrderForm(f => ({ ...f, description: e.target.value }))} placeholder="Description"/>
+                <button type="submit" className="btn-primary text-xs px-3">OK</button>
+              </div>
+            </form>
+          )}
+          {materialOrders.length > 0 ? (
+            <div className="space-y-2">
+              {materialOrders.map(o => {
+                const statusBadge = { draft: 'badge-gray', ordered: 'badge-blue', partial: 'badge-yellow', received: 'badge-green', cancelled: 'badge-gray' };
+                const statusLabel = { draft: 'Brouillon', ordered: 'Commandé', partial: 'Partiel', received: 'Reçu', cancelled: 'Annulé' };
+                return (
+                  <div key={o.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-[160px]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-gray-800">{o.supplier}</p>
+                        {o.order_number && <span className="text-xs text-gray-400">#{o.order_number}</span>}
+                      </div>
+                      {o.description && <p className="text-xs text-gray-400 truncate">{o.description}</p>}
+                      {o.expected_date && <p className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5"><Calendar size={9}/> Livraison {new Date(o.expected_date).toLocaleDateString('fr-CA')}</p>}
+                    </div>
+                    {o.total_amount && <span className="text-sm font-semibold text-gray-700">{money(o.total_amount)}</span>}
+                    <select className="input text-xs py-1 flex-shrink-0" style={{ width: 108 }} value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)}>
+                      {Object.entries(statusLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => deleteOrder(o.id)}><Trash2 size={13}/></button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : !showOrderForm && (
+            <p className="text-sm text-gray-400 text-center py-4">Aucune commande. Ajoutez des commandes pour suivre vos approvisionnements.</p>
+          )}
+        </div>
+
+        {/* ── QR Punch ─────────────────────────────────────────────────────── */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch QR</h2></div>
+            <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
+              {genQr ? <Loader2 size={13} className="animate-spin"/> : <QrCode size={13}/>} Générer QR
+            </button>
+          </div>
+          {qrData ? (
+            <div className="flex items-start gap-4">
+              <img src={qrData.qr_image} alt="QR" className="w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0"/>
+              <div>
+                <p className="text-sm font-medium text-gray-900 mb-1">Affichez ce QR à l'entrée du chantier</p>
+                <p className="text-xs text-gray-400 mb-2">Les travailleurs scannent avec leur téléphone pour pointer entrée/sortie.</p>
+                <button className="btn-primary text-xs py-1.5" onClick={printQR}><QrCode size={13}/> Imprimer le QR</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier.</p>
           )}
         </div>
 

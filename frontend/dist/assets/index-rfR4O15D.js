@@ -12392,6 +12392,12 @@ const timesheets = {
   list: (params) => http.get("/timesheets", { params }),
   approve: (id2) => http.patch(`/timesheets/${id2}/approve`)
 };
+const materialOrders = {
+  byProject: (projectId) => http.get(`/material-orders/project/${projectId}`),
+  create: (data) => http.post("/material-orders", data),
+  update: (id2, data) => http.patch(`/material-orders/${id2}`, data),
+  delete: (id2) => http.delete(`/material-orders/${id2}`)
+};
 const documents = {
   list: (projectId) => http.get(`/documents/project/${projectId}`),
   upload: (data) => http.post("/documents", data)
@@ -12459,6 +12465,7 @@ const api$3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePropert
   email,
   invoices,
   leads,
+  materialOrders,
   members,
   onboarding,
   pdf,
@@ -13326,6 +13333,24 @@ const Mic = createLucideIcon("Mic", [
  */
 const Moon = createLucideIcon("Moon", [
   ["path", { d: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z", key: "a7tn18" }]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const Package = createLucideIcon("Package", [
+  ["path", { d: "m7.5 4.27 9 5.15", key: "1c824w" }],
+  [
+    "path",
+    {
+      d: "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z",
+      key: "hh9hay"
+    }
+  ],
+  ["path", { d: "m3.3 7 8.7 5 8.7-5", key: "g66t2b" }],
+  ["path", { d: "M12 22V12", key: "d0xqtd" }]
 ]);
 /**
  * @license lucide-react v0.294.0 - ISC
@@ -16223,11 +16248,14 @@ function ProjectDetail() {
   const [contractSendingId, setContractSendingId] = reactExports.useState(null);
   const [showContractContent, setShowContractContent] = reactExports.useState(null);
   const quoteTimer = reactExports.useRef(null);
+  const [materialOrders$1, setMaterialOrders] = reactExports.useState([]);
+  const [showOrderForm, setShowOrderForm] = reactExports.useState(false);
+  const [orderForm, setOrderForm] = reactExports.useState({ supplier: "", order_number: "", description: "", total_amount: "", order_date: "", expected_date: "" });
   const load = async () => {
     var _a2, _b2;
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }] = await Promise.all([
         projects.get(id2),
         timesheets.list({ project_id: id2 }),
         invoices.list({ project_id: id2 }),
@@ -16239,7 +16267,8 @@ function ProjectDetail() {
         subcontractors.list().catch(() => ({ data: [] })),
         quotes.byProject(id2).catch(() => ({ data: [] })),
         rfqs.byProject(id2).catch(() => ({ data: [] })),
-        contracts.list({ project_id: id2 }).catch(() => ({ data: [] }))
+        contracts.list({ project_id: id2 }).catch(() => ({ data: [] })),
+        materialOrders.byProject(id2).catch(() => ({ data: [] }))
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -16257,6 +16286,7 @@ function ProjectDetail() {
       setQuoteBuilderItems((firstQuote == null ? void 0 : firstQuote.items) || []);
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
+      setMaterialOrders(orderList || []);
     } catch {
     } finally {
       setLoading(false);
@@ -16551,6 +16581,38 @@ function ProjectDetail() {
     if (!confirm("Supprimer ce contrat ?")) return;
     await contracts.delete(contractId);
     setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
+  };
+  const approveTs = async (tsId) => {
+    try {
+      await timesheets.approve(tsId);
+      setTimesheets((prev) => prev.map((t2) => t2.id === tsId ? { ...t2, approved_at: (/* @__PURE__ */ new Date()).toISOString() } : t2));
+    } catch {
+    }
+  };
+  const createOrder = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await materialOrders.create({ ...orderForm, project_id: id2 });
+      setMaterialOrders((prev) => [data, ...prev]);
+      setOrderForm({ supplier: "", order_number: "", description: "", total_amount: "", order_date: "", expected_date: "" });
+      setShowOrderForm(false);
+    } catch {
+    }
+  };
+  const updateOrderStatus = async (orderId, status) => {
+    try {
+      await materialOrders.update(orderId, { status });
+      setMaterialOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status } : o));
+    } catch {
+    }
+  };
+  const deleteOrder = async (orderId) => {
+    if (!confirm("Supprimer cette commande ?")) return;
+    try {
+      await materialOrders.delete(orderId);
+      setMaterialOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch {
+    }
   };
   if (loading) return /* @__PURE__ */ jsxRuntimeExports.jsx(Layout, { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-gray-400 p-8", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 16, className: "animate-spin" }),
@@ -17250,6 +17312,157 @@ function ProjectDetail() {
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-gray-700", children: money(x2.amount) }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-ghost p-1 text-gray-300 hover:text-red-500", onClick: () => removeExpense(x2.id), children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 }) })
           ] }, x2.id)) }) : !showExpenseForm && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400 text-center py-4", children: "Aucune dépense. Ajoutez factures fournisseurs et dépenses pour calculer la rentabilité réelle." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card mb-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 15, className: "text-brand" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Feuilles de temps" }),
+            timesheets$1.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: timesheets$1.length })
+          ] }),
+          timesheets$1.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            (() => {
+              const done = timesheets$1.filter((t2) => t2.clock_out);
+              const byWorker = {};
+              let totalH = 0;
+              done.forEach((ts) => {
+                const h = (new Date(ts.clock_out) - new Date(ts.clock_in)) / 36e5;
+                totalH += h;
+                const key = ts.user_name || ts.sub_name || "Inconnu";
+                byWorker[key] = (byWorker[key] || 0) + h;
+              });
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-gray-50 rounded-xl p-3 mb-3", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-6 mb-3 flex-wrap", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xl font-bold text-gray-900", children: [
+                      totalH.toFixed(1),
+                      "h"
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: "Total pointé" })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xl font-bold text-brand", children: timesheets$1.filter((t2) => !t2.approved_at).length }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: "En attente" })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xl font-bold text-green-600", children: timesheets$1.filter((t2) => t2.approved_at).length }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400", children: "Approuvé" })
+                  ] })
+                ] }),
+                Object.keys(byWorker).length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-1.5", children: Object.entries(byWorker).sort((a, b) => b[1] - a[1]).map(([name, h]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 w-28 truncate", children: name }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 h-1.5 bg-gray-200 rounded-full", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full bg-brand rounded-full", style: { width: `${Math.min(100, h / (totalH || 1) * 100)}%` } }) }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs font-semibold text-gray-700 w-10 text-right", children: [
+                    h.toFixed(1),
+                    "h"
+                  ] })
+                ] }, name)) })
+              ] });
+            })(),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-1", children: timesheets$1.map((ts) => {
+              const hours = ts.clock_out ? ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 36e5).toFixed(1) : null;
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 ${!ts.clock_out ? "bg-green-50/50 rounded-lg px-2" : ""}`, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-medium text-gray-800", children: ts.user_name || ts.sub_name || "Travailleur" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-400", children: [
+                    new Date(ts.clock_in).toLocaleDateString("fr-CA"),
+                    " · ",
+                    new Date(ts.clock_in).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" }),
+                    ts.clock_out && ` → ${new Date(ts.clock_out).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`
+                  ] })
+                ] }),
+                hours ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs font-semibold text-gray-700 w-12 text-right flex-shrink-0", children: [
+                  hours,
+                  "h"
+                ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "badge badge-green text-[10px] flex-shrink-0", children: "En cours" }),
+                ts.approved_at ? /* @__PURE__ */ jsxRuntimeExports.jsx(CheckCircle, { size: 13, className: "text-green-400 flex-shrink-0", title: "Approuvé" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "text-[10px] text-gray-400 hover:text-brand border border-gray-200 rounded-md px-1.5 py-0.5 flex-shrink-0 transition-colors", onClick: () => approveTs(ts.id), children: "Approuver" })
+              ] }, ts.id);
+            }) })
+          ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400 text-center py-4", children: "Aucun punch enregistré. Générez un QR ci-dessous pour commencer." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card mb-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Package, { size: 15, className: "text-brand" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Commandes matériaux" }),
+              materialOrders$1.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: materialOrders$1.length })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary text-xs py-1.5", onClick: () => setShowOrderForm((v2) => !v2), children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 13 }),
+              " Commande"
+            ] })
+          ] }),
+          showOrderForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: createOrder, className: "bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 items-end", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Fournisseur *" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", value: orderForm.supplier, onChange: (e) => setOrderForm((f2) => ({ ...f2, supplier: e.target.value })), required: true })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "N° commande" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", value: orderForm.order_number, onChange: (e) => setOrderForm((f2) => ({ ...f2, order_number: e.target.value })), placeholder: "Ex: PO-2026-001" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Montant ($)" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", type: "number", step: "0.01", value: orderForm.total_amount, onChange: (e) => setOrderForm((f2) => ({ ...f2, total_amount: e.target.value })) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Date commande" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", type: "date", value: orderForm.order_date, onChange: (e) => setOrderForm((f2) => ({ ...f2, order_date: e.target.value })) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Livraison prévue" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", type: "date", value: orderForm.expected_date, onChange: (e) => setOrderForm((f2) => ({ ...f2, expected_date: e.target.value })) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input flex-1", value: orderForm.description, onChange: (e) => setOrderForm((f2) => ({ ...f2, description: e.target.value })), placeholder: "Description" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", className: "btn-primary text-xs px-3", children: "OK" })
+            ] })
+          ] }),
+          materialOrders$1.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: materialOrders$1.map((o) => {
+            const statusLabel = { draft: "Brouillon", ordered: "Commandé", partial: "Partiel", received: "Reçu", cancelled: "Annulé" };
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[160px]", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-800", children: o.supplier }),
+                  o.order_number && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-gray-400", children: [
+                    "#",
+                    o.order_number
+                  ] })
+                ] }),
+                o.description && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 truncate", children: o.description }),
+                o.expected_date && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-400 flex items-center gap-1 mt-0.5", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Calendar, { size: 9 }),
+                  " Livraison ",
+                  new Date(o.expected_date).toLocaleDateString("fr-CA")
+                ] })
+              ] }),
+              o.total_amount && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-gray-700", children: money(o.total_amount) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("select", { className: "input text-xs py-1 flex-shrink-0", style: { width: 108 }, value: o.status, onChange: (e) => updateOrderStatus(o.id, e.target.value), children: Object.entries(statusLabel).map(([k2, v2]) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: k2, children: v2 }, k2)) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0", onClick: () => deleteOrder(o.id), children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 }) })
+            ] }, o.id);
+          }) }) : !showOrderForm && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400 text-center py-4", children: "Aucune commande. Ajoutez des commandes pour suivre vos approvisionnements." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card mb-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { size: 15, className: "text-brand" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Punch QR" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary text-xs py-1.5", onClick: generateQR, disabled: genQr, children: [
+              genQr ? /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 13, className: "animate-spin" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { size: 13 }),
+              " Générer QR"
+            ] })
+          ] }),
+          qrData ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-4", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: qrData.qr_image, alt: "QR", className: "w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-900 mb-1", children: "Affichez ce QR à l'entrée du chantier" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mb-2", children: "Les travailleurs scannent avec leur téléphone pour pointer entrée/sortie." }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-primary text-xs py-1.5", onClick: printQR, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { size: 13 }),
+                " Imprimer le QR"
+              ] })
+            ] })
+          ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400 text-center py-4", children: "Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier." })
         ] })
       ] }),
       activeTab === "docs" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [

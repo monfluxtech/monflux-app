@@ -137,6 +137,13 @@ export const timesheets = {
   approve: (id)         => http.patch(`/timesheets/${id}/approve`),
 };
 
+export const materialOrders = {
+  byProject: (projectId)     => http.get(`/material-orders/project/${projectId}`),
+  create:    (data)          => http.post('/material-orders', data),
+  update:    (id, data)      => http.patch(`/material-orders/${id}`, data),
+  delete:    (id)            => http.delete(`/material-orders/${id}`),
+};
+
 export const documents = {
   list:    (projectId)  => http.get(`/documents/project/${projectId}`),
   upload:  (data)       => http.post('/documents', data),
