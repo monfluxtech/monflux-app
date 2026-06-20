@@ -897,27 +897,6 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* Section nav — sticky quick-jump */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-100 flex gap-1 -mx-6 px-6 py-1.5 mb-4 overflow-x-auto">
-          {[
-            { id: 'section-apercu',   icon: <LayoutDashboard size={12}/>, key: 'section_overview' },
-            { id: 'section-chantier', icon: <Wrench size={12}/>,          key: 'section_site' },
-            { id: 'section-finances', icon: <Briefcase size={12}/>,       key: 'section_finances' },
-            { id: 'section-docs',     icon: <FolderClosed size={12}/>,    key: 'section_docs' },
-          ].map(({ id, icon, key }) => (
-            <button
-              key={id}
-              onClick={() => scrollToSection(id)}
-              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-gray-500 hover:text-brand hover:bg-orange-50 transition-all flex-shrink-0"
-            >
-              {icon}{t(key)}
-            </button>
-          ))}
-        </div>
-
-        {/* ── APERÇU ─────────────────────────────────────────────────────────── */}
-        <div id="section-apercu">
-
         {/* Infos du projet — termes de paiement en haut + en-tête riche */}
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -1084,13 +1063,6 @@ export default function ProjectDetail() {
             onChange={e => handleNotesChange(e.target.value)}
           />
         </div>
-
-        </div>
-
-
-
-        {/* ── CHANTIER ───────────────────────────────────────────────────────── */}
-        <div className="mt-6 pt-4 border-t border-gray-100" id="section-chantier">
 
         {aiNotice && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
@@ -1505,11 +1477,6 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        </div>
-
-                {/* ── FINANCES ─────────────────────────────────────────────────────────── */}
-        <div className="mt-6 pt-4 border-t border-gray-100" id="section-finances">
-
         {/* Quote Builder */}
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -1851,11 +1818,6 @@ export default function ProjectDetail() {
             })()}
           </div>
         )}
-
-        </div>
-
-        {/* ── DOCS ───────────────────────────────────────────────────────────── */}
-        <div className="mt-6 pt-4 border-t border-gray-100" id="section-docs">
 
         {/* Documents */}
         <div className="card mb-4">
@@ -2223,8 +2185,6 @@ export default function ProjectDetail() {
               </div>
             </div>
           )}
-        </div>
-
         </div>
 
       </div>
