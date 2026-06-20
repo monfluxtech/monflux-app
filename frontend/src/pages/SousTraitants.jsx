@@ -1,7 +1,172 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { subcontractors as subsApi, rfqs as rfqsApi, projects as projectsApi } from '../api';
-import { Plus, Loader2, HardHat, Star, Phone, Mail, Pencil, Trash2, MessageCircle, Send } from 'lucide-react';
+import { useToast } from '../components/Toast';
+import { Plus, Loader2, HardHat, Star, Phone, Mail, Pencil, Trash2, MessageCircle, Send, Link2, DollarSign, CheckCircle, Clock, X } from 'lucide-react';
+
+const PAY_STATUS = {
+  pending: 'En attente',
+  paid: 'Payé',
+  cancelled: 'Annulé',
+};
+const PAY_BADGE = {
+  pending: 'badge-yellow',
+  paid: 'badge-green',
+  cancelled: 'badge-gray',
+};
+
+function PaymentsPanel({ sub, projects, onClose }) {
+  const toast = useToast();
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ project_id: '', amount: '', description: '', payment_date: '', payment_method: 'virement', status: 'pending', invoice_ref: '' });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await subsApi.payments(sub.id);
+      setPayments(data);
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [sub.id]);
+
+  const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.amount || Number(form.amount) <= 0) return;
+    setSaving(true);
+    try {
+      const { data } = await subsApi.addPayment(sub.id, { ...form, amount: Number(form.amount), project_id: form.project_id || null });
+      setPayments(p => [data, ...p]);
+      setForm({ project_id: '', amount: '', description: '', payment_date: '', payment_method: 'virement', status: 'pending', invoice_ref: '' });
+      setShowForm(false);
+      toast('Paiement enregistré', 'success');
+    } catch {} finally { setSaving(false); }
+  };
+
+  const markPaid = async (p) => {
+    try {
+      const { data } = await subsApi.updatePayment(sub.id, p.id, { status: 'paid', payment_date: p.payment_date || new Date().toISOString().slice(0,10) });
+      setPayments(ps => ps.map(x => x.id === data.id ? data : x));
+      toast('Marqué comme payé', 'success');
+    } catch {}
+  };
+
+  const del = async (pid) => {
+    if (!confirm('Supprimer ce paiement ?')) return;
+    await subsApi.deletePayment(sub.id, pid);
+    setPayments(ps => ps.filter(p => p.id !== pid));
+  };
+
+  const totalPending = payments.filter(p => p.status === 'pending').reduce((s, p) => s + Number(p.amount || 0), 0);
+  const totalPaid = payments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div>
+            <h2 className="font-semibold text-gray-900 text-sm">Paiements — {sub.name}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {totalPending > 0 && <span className="text-orange-500 mr-2">À payer : {totalPending.toLocaleString('fr-CA')}$</span>}
+              Payé total : {totalPaid.toLocaleString('fr-CA')}$
+            </p>
+          </div>
+          <button className="btn-ghost p-1.5 text-gray-400 hover:text-gray-600" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {loading ? (
+            <div className="flex items-center gap-2 text-gray-400 py-4"><Loader2 size={14} className="animate-spin" /> Chargement…</div>
+          ) : (
+            <>
+              {payments.map(p => (
+                <div key={p.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="text-sm font-semibold text-gray-900">{Number(p.amount).toLocaleString('fr-CA')}$</p>
+                      <span className={`badge ${PAY_BADGE[p.status]}`}>{PAY_STATUS[p.status]}</span>
+                    </div>
+                    {p.description && <p className="text-xs text-gray-500 truncate">{p.description}</p>}
+                    <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                      {p.project_name && <span>{p.project_name}</span>}
+                      {p.payment_date && <span className="ml-auto">{new Date(p.payment_date).toLocaleDateString('fr-CA')}</span>}
+                    </div>
+                  </div>
+                  {p.status === 'pending' && (
+                    <button className="btn-ghost p-1 text-gray-400 hover:text-green-600" title="Marquer payé" onClick={() => markPaid(p)}>
+                      <CheckCircle size={14} />
+                    </button>
+                  )}
+                  <button className="btn-ghost p-1 text-gray-400 hover:text-red-500" onClick={() => del(p.id)}><Trash2 size={13} /></button>
+                </div>
+              ))}
+              {payments.length === 0 && (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  <DollarSign size={28} className="text-gray-200 mx-auto mb-2" />
+                  Aucun paiement enregistré
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-100">
+          {showForm ? (
+            <form onSubmit={submit} className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Montant ($) *</label>
+                  <input className="input" type="number" step="0.01" min="0.01" value={form.amount} onChange={f('amount')} required autoFocus />
+                </div>
+                <div>
+                  <label className="label">Statut</label>
+                  <select className="input" value={form.status} onChange={f('status')}>
+                    <option value="pending">En attente</option>
+                    <option value="paid">Payé</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <input className="input" value={form.description} onChange={f('description')} placeholder="Ex: Électricité phase 1" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Projet</label>
+                  <select className="input" value={form.project_id} onChange={f('project_id')}>
+                    <option value="">— Aucun —</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Date</label>
+                  <input className="input" type="date" value={form.payment_date} onChange={f('payment_date')} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Réf. facture</label>
+                <input className="input" value={form.invoice_ref} onChange={f('invoice_ref')} placeholder="FAC-001" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button type="button" className="btn-secondary flex-1" onClick={() => setShowForm(false)}>Annuler</button>
+                <button type="submit" className="btn-primary flex-1" disabled={saving}>
+                  {saving && <Loader2 size={13} className="animate-spin" />} Enregistrer
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button className="btn-primary w-full" onClick={() => setShowForm(true)}>
+              <Plus size={14} /> Nouveau paiement
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const EMPTY = { name:'', company_name:'', email:'', phone:'', whatsapp:'', specialties:'', hourly_rate:'', rbq_number:'' };
 
@@ -124,20 +289,33 @@ function RFQModal({ sub, projects, onClose }) {
 }
 
 export default function SousTraitants() {
+  const toast = useToast();
   const [items, setItems] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [rfqSub, setRfqSub] = useState(null);
+  const [paymentsSub, setPaymentsSub] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
       const [{ data: subs }, { data: projs }] = await Promise.all([subsApi.list(), projectsApi.list()]);
       setItems(subs);
-      setProjects(projs.filter(p=>p.status==='active'));
+      setProjects(projs);
     } catch {} finally { setLoading(false); }
+  };
+
+  const copyPortalLink = async (s) => {
+    try {
+      const { data } = await subsApi.portal(s.id);
+      const url = `${window.location.origin}/sous-traitant/${data.portal_token}`;
+      await navigator.clipboard.writeText(url);
+      toast('Lien portail copié !', 'success');
+    } catch {
+      toast('Erreur lors de la génération du lien', 'error');
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -166,6 +344,7 @@ export default function SousTraitants() {
         {showNew && <SubModal onClose={()=>setShowNew(false)} onSave={handleSave} />}
         {editItem && <SubModal sub={editItem} onClose={()=>setEditItem(null)} onSave={handleSave} />}
         {rfqSub && <RFQModal sub={rfqSub} projects={projects} onClose={()=>setRfqSub(null)} />}
+        {paymentsSub && <PaymentsPanel sub={paymentsSub} projects={projects} onClose={()=>setPaymentsSub(null)} />}
 
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
@@ -199,7 +378,7 @@ export default function SousTraitants() {
                   {s.hourly_rate && <span className="ml-auto font-medium text-gray-700">{s.hourly_rate}$/h</span>}
                 </div>
                 {s.rbq_number && <p className="text-xs text-gray-300 mb-2">RBQ : {s.rbq_number}</p>}
-                <div className="flex gap-2 pt-1 border-t border-gray-50">
+                <div className="flex gap-1.5 pt-1 border-t border-gray-50 flex-wrap">
                   {s.whatsapp && (
                     <a
                       href={`https://wa.me/${s.whatsapp.replace(/\D/g,'')}`}
@@ -209,6 +388,20 @@ export default function SousTraitants() {
                       <MessageCircle size={12}/> WhatsApp
                     </a>
                   )}
+                  <button
+                    className="btn-ghost text-xs py-1 px-2 flex items-center gap-1 text-gray-500"
+                    onClick={() => setPaymentsSub(s)}
+                    title="Gérer les paiements"
+                  >
+                    <DollarSign size={12}/> Paiements
+                  </button>
+                  <button
+                    className="btn-ghost text-xs py-1 px-2 flex items-center gap-1 text-purple-500 hover:bg-purple-50"
+                    onClick={() => copyPortalLink(s)}
+                    title="Copier le lien du portail fournisseur"
+                  >
+                    <Link2 size={12}/> Portail
+                  </button>
                   <button
                     className="btn-ghost text-xs py-1 px-2 flex items-center gap-1 ml-auto"
                     onClick={()=>setRfqSub(s)}

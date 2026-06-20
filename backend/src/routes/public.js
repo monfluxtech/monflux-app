@@ -219,7 +219,7 @@ router.post('/change-order/:token/reject', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// GET /api/public/portal/:token — client project progress portal
+// GET /api/public/portal/:token — client project progress portal (B15 enhanced)
 router.get('/portal/:token', async (req, res) => {
   try {
     const { rows: [project] } = await query(
@@ -234,16 +234,29 @@ router.get('/portal/:token', async (req, res) => {
     );
     if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
 
-    const { rows: phases } = await query(
-      `SELECT name, status, progress_pct, display_order
-       FROM project_phases
-       WHERE project_id = $1
-       ORDER BY display_order`,
-      [project.id]
-    );
+    const [{ rows: phases }, { rows: invoices }, { rows: photos }] = await Promise.all([
+      query(
+        `SELECT name, status, progress_pct, display_order FROM project_phases
+         WHERE project_id = $1 ORDER BY display_order`,
+        [project.id]
+      ),
+      query(
+        `SELECT number, total, amount_due, status, public_token, due_date
+         FROM invoices
+         WHERE project_id = $1 AND status NOT IN ('cancelled','draft')
+         ORDER BY created_at DESC`,
+        [project.id]
+      ),
+      query(
+        `SELECT url, caption, created_at FROM site_media
+         WHERE project_id = $1 AND type = 'photo' AND url IS NOT NULL
+         ORDER BY created_at DESC LIMIT 8`,
+        [project.id]
+      ),
+    ]);
 
     const { id, ...safeProject } = project;
-    res.json({ ...safeProject, phases });
+    res.json({ ...safeProject, phases, invoices, photos });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -267,6 +280,51 @@ router.post('/portal/:token/feedback', async (req, res) => {
       [project.id, message.trim(), author_name?.trim() || 'Client']
     );
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/public/sub-portal/:token — portail fournisseur/sous-traitant (B14)
+router.get('/sub-portal/:token', async (req, res) => {
+  try {
+    const { rows: [sub] } = await query(
+      `SELECT s.id, s.name, s.company_name, s.email, s.phone, s.specialties, s.rbq_number,
+              co.name AS contractor_name, co.phone AS contractor_phone,
+              co.email AS contractor_email, co.logo_url AS contractor_logo
+       FROM subcontractors s
+       JOIN companies co ON co.id = s.company_id
+       WHERE s.portal_token = $1`,
+      [req.params.token]
+    );
+    if (!sub) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const [{ rows: trades }, { rows: payments }] = await Promise.all([
+      query(
+        `SELECT pt.trade, pt.status, pt.estimated_cost, pt.notes,
+                p.name AS project_name, p.address AS project_address, p.city AS project_city,
+                p.status AS project_status, p.start_date, p.end_date
+         FROM project_trades pt
+         JOIN projects p ON p.id = pt.project_id
+         WHERE pt.chosen_subcontractor_id = $1
+         ORDER BY p.start_date DESC NULLS LAST`,
+        [sub.id]
+      ),
+      query(
+        `SELECT sp.amount, sp.description, sp.payment_date, sp.payment_method,
+                sp.status, sp.invoice_ref, sp.created_at,
+                p.name AS project_name
+         FROM subcontractor_payments sp
+         LEFT JOIN projects p ON p.id = sp.project_id
+         WHERE sp.subcontractor_id = $1
+         ORDER BY sp.created_at DESC`,
+        [sub.id]
+      ),
+    ]);
+
+    const { id, ...safeSub } = sub;
+    res.json({ sub: safeSub, trades, payments });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

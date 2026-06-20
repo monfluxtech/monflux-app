@@ -81,4 +81,39 @@ router.delete('/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+// POST /:id/send — mark as sent, ensure public_token, return share URL
+router.post('/:id/send', async (req, res) => {
+  let { rows: [inv] } = await query(
+    `SELECT id, status, public_token FROM invoices WHERE id = $1 AND company_id = $2`,
+    [req.params.id, req.company_id]
+  );
+  if (!inv) return res.status(404).json({ error: 'Facture introuvable' });
+  if (!inv.public_token) {
+    ({ rows: [inv] } = await query(
+      `UPDATE invoices SET public_token = gen_random_uuid() WHERE id = $1 RETURNING id, public_token`,
+      [req.params.id]
+    ));
+  }
+  if (!['paid', 'cancelled'].includes(inv.status)) {
+    await query(`UPDATE invoices SET status = 'sent', updated_at = NOW() WHERE id = $1`, [req.params.id]);
+  }
+  res.json({ public_token: inv.public_token });
+});
+
+// POST /:id/auto-quittance — créer une quittance depuis une facture payée
+router.post('/:id/auto-quittance', async (req, res) => {
+  const { rows: [inv] } = await query(
+    `SELECT * FROM invoices WHERE id = $1 AND company_id = $2`,
+    [req.params.id, req.company_id]
+  );
+  if (!inv) return res.status(404).json({ error: 'Facture introuvable' });
+  const { rows: [q] } = await query(
+    `INSERT INTO quittances (company_id, project_id, client_name, client_email, amount_paid, project_description, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'draft') RETURNING *`,
+    [req.company_id, inv.project_id || null, inv.client_name, inv.client_email || null,
+     inv.amount_paid || inv.total, `Facture ${inv.number}`]
+  );
+  res.status(201).json(q);
+});
+
 export default router;

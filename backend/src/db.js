@@ -367,6 +367,39 @@ async function applyMigrations() {
     await run(`project_status: ${val}`,
       `ALTER TYPE project_status ADD VALUE IF NOT EXISTS '${val}'`);
   }
+
+  // ── B13 — Facturation complète ───────────────────────────────────────────────
+  await run('invoices: public_token column',
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token UUID DEFAULT gen_random_uuid()`);
+  await run('invoices: public_token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS invoices_public_token_idx ON invoices(public_token) WHERE public_token IS NOT NULL`);
+  await run('invoices: backfill public_token',
+    `UPDATE invoices SET public_token = gen_random_uuid() WHERE public_token IS NULL`);
+
+  // ── B14 — Portail fournisseur / sous-traitant ────────────────────────────────
+  await run('subcontractors: portal_token',
+    `ALTER TABLE subcontractors ADD COLUMN IF NOT EXISTS portal_token UUID DEFAULT gen_random_uuid()`);
+  await run('subcontractors: portal_token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS subcontractors_portal_token_idx ON subcontractors(portal_token) WHERE portal_token IS NOT NULL`);
+  await run('subcontractors: backfill portal_token',
+    `UPDATE subcontractors SET portal_token = gen_random_uuid() WHERE portal_token IS NULL`);
+  await run('subcontractor_payments create',
+    `CREATE TABLE IF NOT EXISTS subcontractor_payments (
+      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id        UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      subcontractor_id  UUID NOT NULL REFERENCES subcontractors(id) ON DELETE CASCADE,
+      project_id        UUID REFERENCES projects(id) ON DELETE SET NULL,
+      amount            NUMERIC(12,2) NOT NULL DEFAULT 0,
+      description       TEXT,
+      payment_date      DATE,
+      payment_method    TEXT DEFAULT 'virement',
+      status            TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','paid','cancelled')),
+      invoice_ref       TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await run('sub_payments index',
+    `CREATE INDEX IF NOT EXISTS sub_payments_sub_idx ON subcontractor_payments(subcontractor_id)`);
 }
 
 export async function initializeDatabase() {

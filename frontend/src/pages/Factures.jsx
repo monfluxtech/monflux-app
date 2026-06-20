@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import SlideOver from '../components/SlideOver';
 import { useToast } from '../components/Toast';
 import { invoices as invoicesApi, projects as projectsApi, pdf as pdfApi, email as emailApi } from '../api';
-import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2, MessageCircle, Bell } from 'lucide-react';
+import { Plus, Loader2, Receipt, Pencil, Trash2, Download, Mail, CheckCircle, Link2, MessageCircle, Bell, FileCheck, Send } from 'lucide-react';
 
 const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
 const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
@@ -221,6 +221,27 @@ export default function Factures() {
     setItems(i=>i.filter(inv=>inv.id!==id));
   };
 
+  const sendInvoice = async (inv) => {
+    try {
+      const { data: updated } = await invoicesApi.send(inv.id);
+      setItems(i => i.map(x => x.id === inv.id ? { ...x, status: x.status === 'draft' ? 'sent' : x.status, public_token: updated.public_token } : x));
+      const url = `${window.location.origin}/facture/${updated.public_token}`;
+      await navigator.clipboard.writeText(url);
+      toast('Facture marquée comme envoyée — lien copié !', 'success');
+    } catch {
+      toast('Erreur lors de l\'envoi', 'error');
+    }
+  };
+
+  const createQuittance = async (inv) => {
+    try {
+      await invoicesApi.autoQuittance(inv.id);
+      toast('Quittance créée — disponible dans Quittances', 'success');
+    } catch {
+      toast('Erreur lors de la création de la quittance', 'error');
+    }
+  };
+
   const sendReminder = async (inv) => {
     const to = inv.client_email || prompt(`Courriel de ${inv.client_name || 'ce client'} :`);
     if (!to) return;
@@ -312,6 +333,13 @@ export default function Factures() {
                       ><MessageCircle size={13}/></a>
                     </>
                   )}
+                  {inv.status === 'draft' && (
+                    <button
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-blue-600"
+                      title="Envoyer au client (marquer comme envoyée + copier lien)"
+                      onClick={() => sendInvoice(inv)}
+                    ><Send size={13}/></button>
+                  )}
                   {!['paid','cancelled'].includes(inv.status) && (
                     <>
                       <button
@@ -327,6 +355,13 @@ export default function Factures() {
                         onClick={() => markPaid(inv)}
                       ><CheckCircle size={13}/></button>
                     </>
+                  )}
+                  {inv.status === 'paid' && (
+                    <button
+                      className="btn-ghost p-1.5 text-gray-400 hover:text-teal-600"
+                      title="Créer une quittance de satisfaction"
+                      onClick={() => createQuittance(inv)}
+                    ><FileCheck size={13}/></button>
                   )}
                   {inv.status === 'overdue' && (
                     <button

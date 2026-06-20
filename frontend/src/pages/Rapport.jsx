@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
-import { projects as projectsApi, invoices as invoicesApi, leads as leadsApi, quotes as quotesApi, timesheets as tsApi } from '../api';
-import { BarChart3, TrendingUp, Clock, DollarSign, Users, Loader2, Download } from 'lucide-react';
+import { projects as projectsApi, invoices as invoicesApi, leads as leadsApi, quotes as quotesApi, timesheets as tsApi, rapport as rapportApi } from '../api';
+import { BarChart3, TrendingUp, Clock, DollarSign, Users, Loader2, Download, HardHat, AlertTriangle } from 'lucide-react';
 
 function StatCard({ label, value, sub, color = '#F26522' }) {
   return (
@@ -16,18 +16,27 @@ function StatCard({ label, value, sub, color = '#F26522' }) {
 export default function Rapport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profitability, setProfitability] = useState([]);
+  const [memberHours, setMemberHours] = useState([]);
+  const [subPayments, setSubPayments] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [p, i, l, q, ts] = await Promise.all([
+      const [p, i, l, q, ts, prof, mh, sp] = await Promise.all([
         projectsApi.list(),
         invoicesApi.list(),
         leadsApi.list(),
         quotesApi.list(),
         tsApi.list({}),
+        rapportApi.profitability(),
+        rapportApi.memberHours(),
+        rapportApi.subPayments(),
       ]);
       setData({ projects: p.data, invoices: i.data, leads: l.data, quotes: q.data, timesheets: ts.data });
+      setProfitability(prof.data || []);
+      setMemberHours(mh.data || []);
+      setSubPayments(sp.data || []);
     } catch {} finally { setLoading(false); }
   };
 
@@ -37,7 +46,7 @@ export default function Rapport() {
     if (!data) return;
     const rows = [
       ['Métrique', 'Valeur'],
-      ['Projets actifs', data.projects.filter(p=>p.status==='active').length],
+      ['Projets actifs', data.projects.filter(p=>p.status==='en_chantier').length],
       ['Total projets', data.projects.length],
       ['Revenus facturés', data.invoices.filter(i=>i.status!=='cancelled').reduce((s,i)=>s+Number(i.total||0),0).toFixed(2)],
       ['Revenus encaissés', data.invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+Number(i.total||0),0).toFixed(2)],
@@ -46,18 +55,33 @@ export default function Rapport() {
       ['Leads gagnés', data.leads.filter(l=>l.status==='won').length],
       ['Pipeline soumissions', data.quotes.filter(q=>['draft','sent','viewed','signed'].includes(q.status)).reduce((s,q)=>s+Number(q.total||0),0).toFixed(2)],
       ['Total heures pointées', data.timesheets.reduce((s,t)=>s+Number(t.hours_total||0),0).toFixed(1)],
+      [],
+      ['--- Rentabilité par projet ---'],
+      ['Projet', 'Valeur contrat', 'Facturé', 'Dépenses', 'Marge ($)', 'Marge (%)'],
+      ...profitability.map(p => [
+        p.name,
+        Number(p.contract_value).toFixed(2),
+        Number(p.total_invoiced).toFixed(2),
+        Number(p.total_expenses).toFixed(2),
+        (Number(p.contract_value) - Number(p.total_expenses)).toFixed(2),
+        p.contract_value > 0 ? Math.round((Number(p.contract_value) - Number(p.total_expenses)) / Number(p.contract_value) * 100) + '%' : '—',
+      ]),
+      [],
+      ['--- Heures par membre ---'],
+      ['Membre', 'Heures totales'],
+      ...memberHours.map(m => [m.member, Number(m.total_hours).toFixed(1)]),
     ];
-    const csv = rows.map(r=>r.join(',')).join('\n');
+    const csv = rows.map(r => r.join(',')).join('\n');
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'}));
-    a.download = `rapport-monflux-${new Date().toISOString().slice(0,10)}.csv`;
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `rapport-monflux-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
   };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
   if (!data) return null;
 
-  const activeProjects = data.projects.filter(p=>p.status==='active');
+  const activeProjects = data.projects.filter(p => ['en_chantier', 'active'].includes(p.status));
   const totalRevenue = data.invoices.filter(i=>i.status!=='cancelled').reduce((s,i)=>s+Number(i.total||0),0);
   const collected = data.invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+Number(i.total||0),0);
   const outstanding = data.invoices.filter(i=>['sent','viewed','partial','overdue'].includes(i.status)).reduce((s,i)=>s+Number(i.amount_due||0),0);
@@ -193,6 +217,113 @@ export default function Rapport() {
           </div>
         )}
 
+        {/* Rentabilité par projet — B16 */}
+        {profitability.filter(p => Number(p.contract_value) > 0).length > 0 && (
+          <div className="card mb-6">
+            <h2 className="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">
+              <TrendingUp size={14} className="text-brand" /> Rentabilité par projet
+            </h2>
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-100">
+                    <th className="text-left py-2 px-1 font-medium">Projet</th>
+                    <th className="text-right py-2 px-1 font-medium">Contrat</th>
+                    <th className="text-right py-2 px-1 font-medium">Dépenses</th>
+                    <th className="text-right py-2 px-1 font-medium">Marge</th>
+                    <th className="text-right py-2 px-1 font-medium w-16">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profitability.filter(p => Number(p.contract_value) > 0).slice(0, 10).map(p => {
+                    const contract = Number(p.contract_value);
+                    const expenses = Number(p.total_expenses);
+                    const margin = contract - expenses;
+                    const marginPct = contract > 0 ? Math.round(margin / contract * 100) : 0;
+                    const isLow = marginPct < 15;
+                    return (
+                      <tr key={p.id} className="border-b border-gray-50 last:border-0">
+                        <td className="py-2 px-1 text-gray-800 truncate max-w-[140px]">{p.name}</td>
+                        <td className="py-2 px-1 text-right text-gray-600 font-medium">{Math.round(contract / 1000)}k$</td>
+                        <td className="py-2 px-1 text-right text-gray-500">{Math.round(expenses / 1000)}k$</td>
+                        <td className={`py-2 px-1 text-right font-bold ${margin >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {margin >= 0 ? '+' : ''}{Math.round(margin / 1000)}k$
+                        </td>
+                        <td className="py-2 px-1 text-right">
+                          <span
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              marginPct >= 20 ? 'bg-green-50 text-green-700' :
+                              marginPct >= 10 ? 'bg-yellow-50 text-yellow-700' :
+                              'bg-red-50 text-red-600'
+                            }`}
+                          >
+                            {isLow && <AlertTriangle size={9} />}
+                            {marginPct}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Heures par membre — B16 */}
+        {memberHours.length > 0 && (
+          <div className="card mb-6">
+            <h2 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-2">
+              <Clock size={14} className="text-brand" /> Heures par membre
+            </h2>
+            <div className="space-y-2">
+              {memberHours.slice(0, 8).map((m, i) => {
+                const maxH = Math.max(...memberHours.map(x => Number(x.total_hours)), 1);
+                const pct = Math.round(Number(m.total_hours) / maxH * 100);
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-700 font-medium">{m.member}</span>
+                      <span className="text-xs font-bold text-gray-900">{Number(m.total_hours).toFixed(1)}h</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Sous-traitants — soldes en attente — B16 */}
+        {subPayments.length > 0 && (
+          <div className="card mb-6">
+            <h2 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-2">
+              <HardHat size={14} className="text-brand" /> Sous-traitants — soldes
+            </h2>
+            <div className="space-y-2">
+              {subPayments.map((s, i) => {
+                const pending = Number(s.total_pending);
+                return (
+                  <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 font-medium truncate">{s.name}</p>
+                      {s.company_name && <p className="text-xs text-gray-400">{s.company_name}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {pending > 0 && (
+                        <p className="text-sm font-bold text-orange-500">{Number(pending).toLocaleString('fr-CA')}$ dû</p>
+                      )}
+                      <p className="text-xs text-gray-400">{Number(s.total_paid).toLocaleString('fr-CA')}$ payé</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Top projects by value */}
         <div className="card">
           <h2 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-2">
@@ -204,15 +335,14 @@ export default function Rapport() {
               .sort((a,b) => Number(b.contract_value) - Number(a.contract_value))
               .slice(0,8)
               .map(p => {
-                const SL = { active:'badge-green', lead:'badge-gray', quote:'badge-yellow', on_hold:'badge-blue', completed:'badge-gray', cancelled:'badge-red' };
-                const SN = { active:'Actif', lead:'Lead', quote:'Soumission', on_hold:'En pause', completed:'Terminé', cancelled:'Annulé' };
+                const SL = { en_chantier:'badge-green', active:'badge-green', brouillon:'badge-gray', paye:'badge-gray', prix_envoye:'badge-yellow', planifie:'badge-blue', clos:'badge-gray', a_facturer:'badge-orange' };
                 const maxVal = data.projects.reduce((s,p)=>Math.max(s,Number(p.contract_value||0)),0) || 1;
                 const pct = Math.round(Number(p.contract_value)/maxVal*100);
                 return (
                   <div key={p.id} className="py-1.5">
                     <div className="flex items-center gap-2 mb-1">
                       <p className="text-sm text-gray-800 flex-1 truncate">{p.name}</p>
-                      <span className={`badge ${SL[p.status]||'badge-gray'} text-xs`}>{SN[p.status]||p.status}</span>
+                      <span className={`badge ${SL[p.status]||'badge-gray'} text-xs`}>{p.status}</span>
                       <p className="text-sm font-bold text-gray-700 flex-shrink-0">{Number(p.contract_value).toLocaleString('fr-CA')}$</p>
                     </div>
                     <div className="w-full h-1 bg-gray-100 rounded-full">

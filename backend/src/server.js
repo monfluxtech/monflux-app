@@ -31,6 +31,7 @@ import membersRoutes      from './routes/members.js';
 import contractsRoutes    from './routes/contracts.js';
 import materialOrdersRoutes from './routes/material-orders.js';
 import siteMediaRoutes      from './routes/site-media.js';
+import rapportRoutes        from './routes/rapport.js';
 
 dotenv.config();
 
@@ -89,6 +90,7 @@ app.use('/api/members',      membersRoutes);
 app.use('/api/contracts',        contractsRoutes);
 app.use('/api/material-orders',  materialOrdersRoutes);
 app.use('/api/site-media',        siteMediaRoutes);
+app.use('/api/rapport',           rapportRoutes);
 
 // ── DEV ONLY — plan switcher ────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {

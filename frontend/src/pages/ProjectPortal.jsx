@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { MapPin, Phone, Mail, Globe, Calendar, CheckCircle2, Clock, Loader2, AlertCircle, Send, ChevronRight } from 'lucide-react';
+import { MapPin, Phone, Mail, Globe, Calendar, CheckCircle2, Clock, Loader2, AlertCircle, Send, ChevronRight, Receipt, Image, CreditCard, ExternalLink } from 'lucide-react';
 
 const api = axios.create({ baseURL: (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api' });
 
 const STATUS_LABEL = {
   active: 'En cours', completed: 'Terminé', on_hold: 'En pause',
   cancelled: 'Annulé', pending: 'À démarrer', planning: 'En planification',
+  brouillon: 'Brouillon', estimation: 'Estimation', prix_envoye: 'Prix envoyé',
+  accepte: 'Accepté', planifie: 'Planifié', en_chantier: 'En chantier',
+  a_facturer: 'À facturer', paye: 'Payé', clos: 'Clos',
+};
+
+const INV_STATUS = {
+  sent: { label: 'Envoyée', color: '#3b82f6' },
+  viewed: { label: 'Vue', color: '#f59e0b' },
+  partial: { label: 'Partielle', color: '#f97316' },
+  paid: { label: 'Payée', color: '#22c55e' },
+  overdue: { label: 'En retard', color: '#ef4444' },
 };
 const STATUS_COLOR = {
   active: '#22c55e', completed: '#3b82f6', on_hold: '#f59e0b',
@@ -256,6 +267,94 @@ export default function ProjectPortal() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Invoices — B15 */}
+        {data.invoices?.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Receipt size={14} className="text-brand" />
+              Vos factures ({data.invoices.length})
+            </h2>
+            <div className="space-y-2">
+              {data.invoices.map((inv, i) => {
+                const is = INV_STATUS[inv.status] || { label: inv.status, color: '#9ca3af' };
+                return (
+                  <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-sm font-semibold text-gray-900">{inv.number}</p>
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: `${is.color}18`, color: is.color }}
+                        >
+                          {is.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <span className="font-medium text-gray-700">
+                          {Number(inv.amount_due > 0 ? inv.amount_due : inv.total).toLocaleString('fr-CA')}$
+                          {inv.amount_due > 0 && inv.amount_due < inv.total && ' restant'}
+                        </span>
+                        {inv.due_date && (
+                          <span className="flex items-center gap-1">
+                            <Clock size={10} />
+                            {new Date(inv.due_date).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {inv.public_token && inv.status !== 'paid' && (
+                      <a
+                        href={`/facture/${inv.public_token}`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white flex-shrink-0"
+                        style={{ background: '#F26522' }}
+                        target="_blank" rel="noreferrer"
+                      >
+                        <ExternalLink size={11} />
+                        Voir
+                      </a>
+                    )}
+                    {inv.status === 'paid' && (
+                      <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Photos du chantier — B15 */}
+        {data.photos?.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Image size={14} className="text-brand" />
+              Photos du chantier
+            </h2>
+            <div className="grid grid-cols-3 gap-2">
+              {data.photos.map((photo, i) => (
+                <a
+                  key={i}
+                  href={photo.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="aspect-square rounded-xl overflow-hidden bg-gray-100 block hover:opacity-90 transition-opacity"
+                  title={photo.caption || ''}
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.caption || `Photo ${i + 1}`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </a>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              {data.photos.length} photo{data.photos.length > 1 ? 's' : ''} récente{data.photos.length > 1 ? 's' : ''}
+            </p>
           </div>
         )}
 

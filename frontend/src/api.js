@@ -104,18 +104,25 @@ export const contracts = {
 };
 
 export const invoices = {
-  list:   (params)      => http.get('/invoices', { params }),
-  get:    (id)          => http.get(`/invoices/${id}`),
-  create: (data)        => http.post('/invoices', data),
-  update: (id, data)    => http.patch(`/invoices/${id}`, data),
-  delete: (id)          => http.delete(`/invoices/${id}`),
+  list:          (params)      => http.get('/invoices', { params }),
+  get:           (id)          => http.get(`/invoices/${id}`),
+  create:        (data)        => http.post('/invoices', data),
+  update:        (id, data)    => http.patch(`/invoices/${id}`, data),
+  delete:        (id)          => http.delete(`/invoices/${id}`),
+  send:          (id)          => http.post(`/invoices/${id}/send`),
+  autoQuittance: (id)          => http.post(`/invoices/${id}/auto-quittance`),
 };
 
 export const subcontractors = {
-  list:   ()            => http.get('/subcontractors'),
-  create: (data)        => http.post('/subcontractors', data),
-  update: (id, data)    => http.patch(`/subcontractors/${id}`, data),
-  delete: (id)          => http.delete(`/subcontractors/${id}`),
+  list:          ()              => http.get('/subcontractors'),
+  create:        (data)          => http.post('/subcontractors', data),
+  update:        (id, data)      => http.patch(`/subcontractors/${id}`, data),
+  delete:        (id)            => http.delete(`/subcontractors/${id}`),
+  portal:        (id)            => http.get(`/subcontractors/${id}/portal`),
+  payments:      (id)            => http.get(`/subcontractors/${id}/payments`),
+  addPayment:    (id, data)      => http.post(`/subcontractors/${id}/payments`, data),
+  updatePayment: (id, pid, data) => http.patch(`/subcontractors/${id}/payments/${pid}`, data),
+  deletePayment: (id, pid)       => http.delete(`/subcontractors/${id}/payments/${pid}`),
 };
 
 export const rfqs = {
@@ -214,6 +221,12 @@ export const dev = {
   current: ()            => http.get('/dev/current'),
   switch:  (data)        => http.post('/dev/switch', data),
   clear:   ()            => http.delete('/dev/switch'),
+};
+
+export const rapport = {
+  profitability: () => http.get('/rapport/profitability'),
+  memberHours:   () => http.get('/rapport/member-hours'),
+  subPayments:   () => http.get('/rapport/sub-payments'),
 };
 
 export default http;
