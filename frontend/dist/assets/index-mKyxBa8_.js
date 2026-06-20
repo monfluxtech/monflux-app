@@ -12923,6 +12923,16 @@ const Clock = createLucideIcon("Clock", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Columns = createLucideIcon("Columns", [
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2", key: "1m3agn" }],
+  ["line", { x1: "12", x2: "12", y1: "3", y2: "21", key: "1efggb" }]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Copy = createLucideIcon("Copy", [
   ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
   ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
@@ -13112,6 +13122,17 @@ const FolderOpen = createLucideIcon("FolderOpen", [
       key: "usdka0"
     }
   ]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const GanttChart$1 = createLucideIcon("GanttChart", [
+  ["path", { d: "M8 6h10", key: "9lnwnk" }],
+  ["path", { d: "M6 12h9", key: "1g9pqf" }],
+  ["path", { d: "M11 18h7", key: "c8dzvl" }]
 ]);
 /**
  * @license lucide-react v0.294.0 - ISC
@@ -15138,6 +15159,167 @@ function MapView({ projects: projects2, onGeocodeAll, geocoding, stageMap }) {
     located === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-center text-sm text-gray-400 mt-3", children: "Aucun chantier localisé. Ajoutez une adresse aux projets puis cliquez « Localiser »." })
   ] });
 }
+function GanttPortfolio({ projects: projects2, stageMap }) {
+  const navigate = useNavigate();
+  const withDates = projects2.filter((p2) => p2.start_date || p2.end_date).sort((a, b) => new Date(a.start_date || a.end_date) - new Date(b.start_date || b.end_date));
+  if (!withDates.length) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card text-center py-14", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(GanttChart$1, { size: 32, className: "text-gray-200 mx-auto mb-3" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: "Aucun projet avec des dates de début/fin définies." }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-300 mt-1", children: "Ajoutez des dates aux projets pour les voir ici." })
+    ] });
+  }
+  const allDates = withDates.flatMap((p2) => [p2.start_date, p2.end_date].filter(Boolean)).map((d) => new Date(d));
+  const refStart = new Date(Math.min(...allDates));
+  refStart.setDate(refStart.getDate() - 7);
+  const refEnd = new Date(Math.max(...allDates));
+  refEnd.setDate(refEnd.getDate() + 14);
+  const totalMs = refEnd - refStart || 1;
+  const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
+  const barWidth = (s, e) => Math.max(1, pct(e) - pct(s));
+  const todayPct = pct(/* @__PURE__ */ new Date());
+  const months = [];
+  const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
+  while (cur <= refEnd) {
+    months.push(new Date(cur));
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "card overflow-x-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { minWidth: 560 }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex mb-2 ml-52", children: months.map((m2, i) => {
+      const left = pct(m2);
+      const nextM = new Date(m2.getFullYear(), m2.getMonth() + 1, 1);
+      const w2 = Math.min(pct(nextM), 100) - left;
+      return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-[11px] text-gray-300 border-l border-gray-100 pl-1 flex-shrink-0", style: { width: `${Math.max(w2, 0)}%`, minWidth: 28 }, children: m2.toLocaleDateString("fr-CA", { month: "short", year: "2-digit" }) }, i);
+    }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative ml-52", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute top-0 bottom-0 w-px bg-brand/60 z-10", style: { left: `${todayPct}%` }, title: "Aujourd'hui" }),
+      withDates.map((p2) => {
+        var _a, _b, _c;
+        const start = p2.start_date ? new Date(p2.start_date) : /* @__PURE__ */ new Date();
+        const end = p2.end_date ? new Date(p2.end_date) : new Date(start.getTime() + 30 * 864e5);
+        const color = ((_a = stageMap[p2.status]) == null ? void 0 : _a.color) || "#94a3b8";
+        const pLeft = pct(start);
+        const pW = barWidth(start, end);
+        const prog = p2.progress_pct || 0;
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center mb-2 gap-2 -ml-52 group cursor-pointer", onClick: () => navigate(`/projets/${p2.id}`), children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-52 text-xs font-medium text-gray-700 truncate pr-3 text-right flex-shrink-0 group-hover:text-brand transition-colors", children: p2.name }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 relative h-7", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              className: "absolute h-full rounded-full overflow-hidden flex items-center",
+              style: { left: `${pLeft}%`, width: `${pW}%`, minWidth: 4, background: color + "22", border: `1.5px solid ${color}` },
+              title: `${p2.name} · ${((_b = stageMap[p2.status]) == null ? void 0 : _b.label) || p2.status}${p2.contract_value ? " · " + Number(p2.contract_value).toLocaleString("fr-CA") + "$" : ""}`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full rounded-full absolute left-0 top-0", style: { width: `${prog}%`, background: color + "55" } }),
+                pW > 6 && prog > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "relative text-xs font-semibold z-10 px-2 truncate", style: { color }, children: [
+                  prog,
+                  "%"
+                ] })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] text-gray-400 flex-shrink-0 w-16 text-right truncate", children: ((_c = stageMap[p2.status]) == null ? void 0 : _c.label) || "" })
+        ] }, p2.id);
+      })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-300 text-right mt-2", children: [
+      withDates.length,
+      "/",
+      projects2.length,
+      " projets avec dates"
+    ] })
+  ] }) });
+}
+function KanbanView({ projects: projects2, pipeline, stageMap, onChangeStage, onNew }) {
+  const navigate = useNavigate();
+  const [draggedId, setDraggedId] = reactExports.useState(null);
+  const [overStage, setOverStage] = reactExports.useState(null);
+  const onDragStart = (id2) => (e) => {
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedId(id2);
+  };
+  const onDragEnd = () => {
+    setDraggedId(null);
+    setOverStage(null);
+  };
+  const onDragOver = (key) => (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOverStage(key);
+  };
+  const onDrop = (key) => (e) => {
+    e.preventDefault();
+    if (draggedId) onChangeStage(draggedId, key);
+    setDraggedId(null);
+    setOverStage(null);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-3 overflow-x-auto pb-4", style: { minHeight: 440 }, children: pipeline.map((stage) => {
+    const stageProjects = projects2.filter((p2) => p2.status === stage.key);
+    const isOver = overStage === stage.key;
+    return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      "div",
+      {
+        className: `flex-shrink-0 w-60 rounded-2xl p-2 transition-colors border ${isOver ? "border-brand/40 bg-orange-50/40" : "border-transparent bg-gray-100/60"}`,
+        onDragOver: onDragOver(stage.key),
+        onDrop: onDrop(stage.key),
+        onDragLeave: () => setOverStage(null),
+        children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 px-2 py-1.5 mb-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-2.5 h-2.5 rounded-full flex-shrink-0", style: { background: stage.color } }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-bold text-gray-700 truncate flex-1", children: stage.label }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[11px] text-gray-400 bg-white rounded-full px-1.5 py-0.5 font-medium", children: stageProjects.length })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-2", children: [
+            stageProjects.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                draggable: true,
+                onDragStart: onDragStart(p2.id),
+                onDragEnd,
+                className: `bg-white rounded-xl p-3 shadow-sm cursor-grab active:cursor-grabbing border border-gray-100 hover:border-brand/30 transition-all ${draggedId === p2.id ? "opacity-40 scale-95" : ""}`,
+                onClick: () => navigate(`/projets/${p2.id}`),
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-gray-900 mb-1 truncate", children: p2.name }),
+                  p2.address && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-400 truncate mb-1.5 flex items-center gap-1", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(MapPin, { size: 9 }),
+                    p2.address
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [
+                    p2.contract_value ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs font-bold text-brand", children: [
+                      Number(p2.contract_value).toLocaleString("fr-CA"),
+                      "$"
+                    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", {}),
+                    p2.end_date && !stage.terminal && (() => {
+                      const days = Math.ceil((new Date(p2.end_date) - Date.now()) / 864e5);
+                      return /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `text-[10px] font-medium flex items-center gap-0.5 flex-shrink-0 ${days < 0 ? "text-red-400" : days <= 7 ? "text-orange-400" : "text-gray-300"}`, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 9 }),
+                        days < 0 ? `${Math.abs(days)}j` : `${days}j`
+                      ] });
+                    })()
+                  ] }),
+                  !stage.terminal && p2.progress_pct > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-2 h-1 bg-gray-100 rounded-full", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-full rounded-full", style: { width: `${p2.progress_pct}%`, background: stage.color } }) })
+                ]
+              },
+              p2.id
+            )),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                className: "w-full text-xs text-gray-300 py-2 rounded-xl border border-dashed border-gray-200 hover:border-brand/40 hover:text-brand transition-colors",
+                onClick: onNew,
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 11, className: "inline mr-0.5" }),
+                  " Nouveau"
+                ]
+              }
+            )
+          ] })
+        ]
+      },
+      stage.key
+    );
+  }) });
+}
 const EMPTY$2 = { name: "", address: "", start_date: "", end_date: "", contract_value: "" };
 const slugify = (str) => (str || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "etat";
 function PipelineManager({ pipeline, onSave, onClose }) {
@@ -15489,30 +15671,24 @@ function Projets() {
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-6 gap-3 flex-wrap", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-xl font-bold text-gray-900", children: "Projets" }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex bg-gray-100 rounded-lg p-0.5", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              className: `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view === "list" ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-400"}`,
-              onClick: () => setView("list"),
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 13 }),
-                " Liste"
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              className: `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view === "map" ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-400"}`,
-              onClick: () => setView("map"),
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Map$1, { size: 13 }),
-                " Carte"
-              ]
-            }
-          )
-        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex bg-gray-100 rounded-lg p-0.5", children: [
+          { key: "list", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 13 }), label: "Liste" },
+          { key: "kanban", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(Columns, { size: 13 }), label: "Kanban" },
+          { key: "gantt", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(GanttChart$1, { size: 13 }), label: "Gantt" },
+          { key: "map", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(Map$1, { size: 13 }), label: "Carte" }
+        ].map(({ key, icon, label }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            className: `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view === key ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-400"}`,
+            onClick: () => setView(key),
+            children: [
+              icon,
+              " ",
+              label
+            ]
+          },
+          key
+        )) }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary", onClick: () => setPipeOpen(true), title: "Personnaliser le pipeline", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Settings2, { size: 15 }),
           " Pipeline"
@@ -15539,7 +15715,16 @@ function Projets() {
     loading ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-gray-400 py-8", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 16, className: "animate-spin" }),
       " Chargement…"
-    ] }) : view === "map" ? /* @__PURE__ */ jsxRuntimeExports.jsx(MapView, { projects: filtered, onGeocodeAll: geocodeAll, geocoding, stageMap }) : filtered.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center py-12 text-gray-400 text-sm", children: items.length === 0 ? "Aucun projet. Créez-en un!" : "Aucun projet ne correspond à votre recherche." }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    ] }) : view === "map" ? /* @__PURE__ */ jsxRuntimeExports.jsx(MapView, { projects: filtered, onGeocodeAll: geocodeAll, geocoding, stageMap }) : view === "kanban" ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+      KanbanView,
+      {
+        projects: filtered,
+        pipeline,
+        stageMap,
+        onChangeStage: changeStage,
+        onNew: () => setShowNew(true)
+      }
+    ) : view === "gantt" ? /* @__PURE__ */ jsxRuntimeExports.jsx(GanttPortfolio, { projects: filtered, stageMap }) : filtered.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center py-12 text-gray-400 text-sm", children: items.length === 0 ? "Aucun projet. Créez-en un!" : "Aucun projet ne correspond à votre recherche." }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
       filtered.length > 0 && (() => {
         const totContract = filtered.reduce((s, p2) => s + num(p2.contract_value), 0);
         const totInvoiced = filtered.reduce((s, p2) => s + num(p2.invoiced_real), 0);

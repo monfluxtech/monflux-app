@@ -5,7 +5,7 @@ import SlideOver from '../components/SlideOver';
 import { projects as projectsApi } from '../api';
 import { useConfigStore } from '../store';
 import { DEFAULT_PIPELINE } from '../config/modules';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns } from 'lucide-react';
 
 const num = (v) => Number(v) || 0;
 const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
@@ -96,6 +96,179 @@ function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
           Aucun chantier localisé. Ajoutez une adresse aux projets puis cliquez « Localiser ».
         </p>
       )}
+    </div>
+  );
+}
+
+// ── Gantt portefeuille — toutes les durées de projets sur une ligne de temps ───
+function GanttPortfolio({ projects, stageMap }) {
+  const navigate = useNavigate();
+  const withDates = projects
+    .filter(p => p.start_date || p.end_date)
+    .sort((a, b) => new Date(a.start_date || a.end_date) - new Date(b.start_date || b.end_date));
+
+  if (!withDates.length) {
+    return (
+      <div className="card text-center py-14">
+        <GanttChart size={32} className="text-gray-200 mx-auto mb-3"/>
+        <p className="text-sm text-gray-400">Aucun projet avec des dates de début/fin définies.</p>
+        <p className="text-xs text-gray-300 mt-1">Ajoutez des dates aux projets pour les voir ici.</p>
+      </div>
+    );
+  }
+
+  const allDates = withDates.flatMap(p => [p.start_date, p.end_date].filter(Boolean)).map(d => new Date(d));
+  const refStart = new Date(Math.min(...allDates)); refStart.setDate(refStart.getDate() - 7);
+  const refEnd = new Date(Math.max(...allDates)); refEnd.setDate(refEnd.getDate() + 14);
+  const totalMs = refEnd - refStart || 1;
+  const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
+  const barWidth = (s, e) => Math.max(1, pct(e) - pct(s));
+  const todayPct = pct(new Date());
+
+  const months = [];
+  const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
+  while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
+
+  return (
+    <div className="card overflow-x-auto">
+      <div style={{ minWidth: 560 }}>
+        {/* Month headers */}
+        <div className="flex mb-2 ml-52">
+          {months.map((m, i) => {
+            const left = pct(m);
+            const nextM = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+            const w = Math.min(pct(nextM), 100) - left;
+            return (
+              <div key={i} className="text-[11px] text-gray-300 border-l border-gray-100 pl-1 flex-shrink-0" style={{ width: `${Math.max(w, 0)}%`, minWidth: 28 }}>
+                {m.toLocaleDateString('fr-CA', { month: 'short', year: '2-digit' })}
+              </div>
+            );
+          })}
+        </div>
+        {/* Project rows */}
+        <div className="relative ml-52">
+          <div className="absolute top-0 bottom-0 w-px bg-brand/60 z-10" style={{ left: `${todayPct}%` }} title="Aujourd'hui"/>
+          {withDates.map(p => {
+            const start = p.start_date ? new Date(p.start_date) : new Date();
+            const end = p.end_date ? new Date(p.end_date) : new Date(start.getTime() + 30 * 86400000);
+            const color = stageMap[p.status]?.color || '#94a3b8';
+            const pLeft = pct(start);
+            const pW = barWidth(start, end);
+            const prog = p.progress_pct || 0;
+            return (
+              <div key={p.id} className="flex items-center mb-2 gap-2 -ml-52 group cursor-pointer" onClick={() => navigate(`/projets/${p.id}`)}>
+                <div className="w-52 text-xs font-medium text-gray-700 truncate pr-3 text-right flex-shrink-0 group-hover:text-brand transition-colors">{p.name}</div>
+                <div className="flex-1 relative h-7">
+                  <div
+                    className="absolute h-full rounded-full overflow-hidden flex items-center"
+                    style={{ left: `${pLeft}%`, width: `${pW}%`, minWidth: 4, background: color + '22', border: `1.5px solid ${color}` }}
+                    title={`${p.name} · ${stageMap[p.status]?.label || p.status}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + '$' : ''}`}
+                  >
+                    <div className="h-full rounded-full absolute left-0 top-0" style={{ width: `${prog}%`, background: color + '55' }}/>
+                    {pW > 6 && prog > 0 && (
+                      <span className="relative text-xs font-semibold z-10 px-2 truncate" style={{ color }}>{prog}%</span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-[11px] text-gray-400 flex-shrink-0 w-16 text-right truncate">{stageMap[p.status]?.label || ''}</span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-gray-300 text-right mt-2">
+          {withDates.length}/{projects.length} projets avec dates
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Vue Kanban — colonnes par état du pipeline, drag-and-drop ─────────────────
+function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
+  const navigate = useNavigate();
+  const [draggedId, setDraggedId] = useState(null);
+  const [overStage, setOverStage] = useState(null);
+
+  const onDragStart = (id) => (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedId(id);
+  };
+  const onDragEnd = () => { setDraggedId(null); setOverStage(null); };
+  const onDragOver = (key) => (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverStage(key); };
+  const onDrop = (key) => (e) => {
+    e.preventDefault();
+    if (draggedId) onChangeStage(draggedId, key);
+    setDraggedId(null); setOverStage(null);
+  };
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 440 }}>
+      {pipeline.map(stage => {
+        const stageProjects = projects.filter(p => p.status === stage.key);
+        const isOver = overStage === stage.key;
+        return (
+          <div
+            key={stage.key}
+            className={`flex-shrink-0 w-60 rounded-2xl p-2 transition-colors border ${
+              isOver ? 'border-brand/40 bg-orange-50/40' : 'border-transparent bg-gray-100/60'
+            }`}
+            onDragOver={onDragOver(stage.key)}
+            onDrop={onDrop(stage.key)}
+            onDragLeave={() => setOverStage(null)}
+          >
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-2">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: stage.color }}/>
+              <p className="text-xs font-bold text-gray-700 truncate flex-1">{stage.label}</p>
+              <span className="text-[11px] text-gray-400 bg-white rounded-full px-1.5 py-0.5 font-medium">{stageProjects.length}</span>
+            </div>
+            <div className="space-y-2">
+              {stageProjects.map(p => (
+                <div
+                  key={p.id}
+                  draggable
+                  onDragStart={onDragStart(p.id)}
+                  onDragEnd={onDragEnd}
+                  className={`bg-white rounded-xl p-3 shadow-sm cursor-grab active:cursor-grabbing border border-gray-100 hover:border-brand/30 transition-all ${
+                    draggedId === p.id ? 'opacity-40 scale-95' : ''
+                  }`}
+                  onClick={() => navigate(`/projets/${p.id}`)}
+                >
+                  <p className="text-sm font-semibold text-gray-900 mb-1 truncate">{p.name}</p>
+                  {p.address && (
+                    <p className="text-[11px] text-gray-400 truncate mb-1.5 flex items-center gap-1">
+                      <MapPin size={9}/>{p.address}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    {p.contract_value
+                      ? <span className="text-xs font-bold text-brand">{Number(p.contract_value).toLocaleString('fr-CA')}$</span>
+                      : <span/>}
+                    {p.end_date && !stage.terminal && (() => {
+                      const days = Math.ceil((new Date(p.end_date) - Date.now()) / 86400000);
+                      return (
+                        <span className={`text-[10px] font-medium flex items-center gap-0.5 flex-shrink-0 ${days < 0 ? 'text-red-400' : days <= 7 ? 'text-orange-400' : 'text-gray-300'}`}>
+                          <Clock size={9}/>{days < 0 ? `${Math.abs(days)}j` : `${days}j`}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  {!stage.terminal && (p.progress_pct > 0) && (
+                    <div className="mt-2 h-1 bg-gray-100 rounded-full">
+                      <div className="h-full rounded-full" style={{ width: `${p.progress_pct}%`, background: stage.color }}/>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button
+                className="w-full text-xs text-gray-300 py-2 rounded-xl border border-dashed border-gray-200 hover:border-brand/40 hover:text-brand transition-colors"
+                onClick={onNew}
+              >
+                <Plus size={11} className="inline mr-0.5"/> Nouveau
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -396,16 +569,20 @@ export default function Projets() {
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-gray-900">Projets</h1>
           <div className="flex items-center gap-2">
-            {/* List / Map toggle */}
+            {/* List / Kanban / Gantt / Map toggle */}
             <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button
-                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view==='list'?'bg-white shadow-sm text-gray-900 font-medium':'text-gray-400'}`}
-                onClick={()=>setView('list')}
-              ><List size={13}/> Liste</button>
-              <button
-                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view==='map'?'bg-white shadow-sm text-gray-900 font-medium':'text-gray-400'}`}
-                onClick={()=>setView('map')}
-              ><MapIcon size={13}/> Carte</button>
+              {[
+                { key: 'list',   icon: <List size={13}/>,       label: 'Liste' },
+                { key: 'kanban', icon: <Columns size={13}/>,    label: 'Kanban' },
+                { key: 'gantt',  icon: <GanttChart size={13}/>, label: 'Gantt' },
+                { key: 'map',    icon: <MapIcon size={13}/>,    label: 'Carte' },
+              ].map(({ key, icon, label }) => (
+                <button
+                  key={key}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors ${view===key?'bg-white shadow-sm text-gray-900 font-medium':'text-gray-400'}`}
+                  onClick={() => setView(key)}
+                >{icon} {label}</button>
+              ))}
             </div>
             <button className="btn-secondary" onClick={()=>setPipeOpen(true)} title="Personnaliser le pipeline"><Settings2 size={15}/> Pipeline</button>
             <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={15}/> Nouveau projet</button>
@@ -432,6 +609,16 @@ export default function Projets() {
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
         ) : view === 'map' ? (
           <MapView projects={filtered} onGeocodeAll={geocodeAll} geocoding={geocoding} stageMap={stageMap} />
+        ) : view === 'kanban' ? (
+          <KanbanView
+            projects={filtered}
+            pipeline={pipeline}
+            stageMap={stageMap}
+            onChangeStage={changeStage}
+            onNew={() => setShowNew(true)}
+          />
+        ) : view === 'gantt' ? (
+          <GanttPortfolio projects={filtered} stageMap={stageMap} />
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (
