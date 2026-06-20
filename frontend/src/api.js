@@ -144,6 +144,13 @@ export const materialOrders = {
   delete:    (id)            => http.delete(`/material-orders/${id}`),
 };
 
+export const siteMedia = {
+  byProject: (projectId)     => http.get(`/site-media/project/${projectId}`),
+  create:    (data)          => http.post('/site-media', data),
+  delete:    (id)            => http.delete(`/site-media/${id}`),
+  analyze:   (id)            => http.post(`/site-media/${id}/analyze`),
+};
+
 export const documents = {
   list:    (projectId)  => http.get(`/documents/project/${projectId}`),
   upload:  (data)       => http.post('/documents', data),
@@ -167,6 +174,8 @@ export const ai = {
   newConversation: (data)  => http.post('/chat/conversations', data),
   usage:        ()       => http.get('/ai/usage'),
   buyCredits:   (amount) => http.post('/ai/credits', { amount }),
+  groupPurchases:    (project_id) => http.post('/ai/group-purchases', { project_id }),
+  changeOrderImpact: (change_order_id) => http.post('/ai/change-order-impact', { change_order_id }),
 };
 
 export const dashboard = {

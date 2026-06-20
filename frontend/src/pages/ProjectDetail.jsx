@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -443,11 +443,21 @@ export default function ProjectDetail() {
   const [materialOrders, setMaterialOrders] = useState([]);
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [orderForm, setOrderForm] = useState({ supplier: '', order_number: '', description: '', total_amount: '', order_date: '', expected_date: '' });
+  // B7 — IA chantier
+  const [media, setMedia] = useState([]);
+  const [showMediaForm, setShowMediaForm] = useState(false);
+  const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
+  const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
+  const [purchasePlan, setPurchasePlan] = useState(null);
+  const [groupingPurchases, setGroupingPurchases] = useState(false);
+  const [coImpact, setCoImpact] = useState({});   // { [coId]: impactObj }
+  const [analyzingCoId, setAnalyzingCoId] = useState(null);
+  const [aiNotice, setAiNotice] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -461,6 +471,7 @@ export default function ProjectDetail() {
         rfqsApi.byProject(id).catch(() => ({ data: [] })),
         contractsApi.list({ project_id: id }).catch(() => ({ data: [] })),
         materialOrdersApi.byProject(id).catch(() => ({ data: [] })),
+        siteMediaApi.byProject(id).catch(() => ({ data: [] })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -480,6 +491,11 @@ export default function ProjectDetail() {
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
       setMaterialOrders(orderList || []);
+      setMedia(mediaList || []);
+      // pré-charge les impacts d'avenants déjà calculés
+      const impacts = {};
+      (cos || []).forEach(co => { if (co.ai_impact) impacts[co.id] = co.ai_impact; });
+      setCoImpact(impacts);
     } catch {} finally { setLoading(false); }
   };
 
@@ -782,6 +798,57 @@ export default function ProjectDetail() {
       setMaterialOrders(prev => prev.filter(o => o.id !== orderId));
     } catch {}
   };
+
+  // B7 — handlers IA chantier
+  const addMedia = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await siteMediaApi.create({ ...mediaForm, project_id: id });
+      setMedia(prev => [data, ...prev]);
+      setMediaForm({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
+      setShowMediaForm(false);
+    } catch {}
+  };
+
+  const deleteMedia = async (mediaId) => {
+    if (!confirm('Supprimer ce média ?')) return;
+    try {
+      await siteMediaApi.delete(mediaId);
+      setMedia(prev => prev.filter(m => m.id !== mediaId));
+    } catch {}
+  };
+
+  const analyzeMedia = async (mediaId) => {
+    setAnalyzingMediaId(mediaId); setAiNotice('');
+    try {
+      const { data } = await siteMediaApi.analyze(mediaId);
+      setMedia(prev => prev.map(m => m.id === mediaId ? data : m));
+    } catch (err) {
+      if (err.response?.data?.code === 'ai_not_configured') setAiNotice(err.response.data.hint);
+    } finally { setAnalyzingMediaId(null); }
+  };
+
+  const groupPurchases = async () => {
+    setGroupingPurchases(true); setAiNotice('');
+    try {
+      const { data } = await aiApi.groupPurchases(id);
+      setPurchasePlan(data);
+    } catch (err) {
+      if (err.response?.data?.code === 'ai_not_configured') setAiNotice(err.response.data.hint);
+    } finally { setGroupingPurchases(false); }
+  };
+
+  const analyzeChangeOrder = async (coId) => {
+    setAnalyzingCoId(coId); setAiNotice('');
+    try {
+      const { data } = await aiApi.changeOrderImpact(coId);
+      setCoImpact(prev => ({ ...prev, [coId]: data }));
+    } catch (err) {
+      if (err.response?.data?.code === 'ai_not_configured') setAiNotice(err.response.data.hint);
+    } finally { setAnalyzingCoId(null); }
+  };
+
+  const SEV = { low: { c: 'badge-green', l: 'Faible' }, medium: { c: 'badge-yellow', l: 'Moyen' }, high: { c: 'badge-red', l: 'Élevé' } };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
   if (!project) return <Layout><div className="p-8 text-red-500">Projet non trouvé</div></Layout>;
@@ -1370,6 +1437,126 @@ export default function ProjectDetail() {
         {/* ── CHANTIER TAB ───────────────────────────────────────────────────── */}
         {activeTab === 'chantier' && <>
 
+        {aiNotice && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
+            <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
+            <p className="text-xs text-amber-700">{aiNotice}</p>
+            <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
+          </div>
+        )}
+
+        {/* ── Médias chantier (IA) ──────────────────────────────────────────── */}
+        <div className="card mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Camera size={15} className="text-brand"/>
+              <h2 className="font-semibold text-gray-900 text-sm">Médias chantier</h2>
+              {media.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{media.length}</span>}
+            </div>
+            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">Photos, notes et mémos vocaux. L'IA détecte les non-conformités (RBQ) et risques de sécurité (CNESST).</p>
+
+          {showMediaForm && (
+            <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
+              <div className="flex gap-2">
+                {[
+                  { k: 'photo', icon: <Image size={13}/>, l: 'Photo' },
+                  { k: 'note',  icon: <StickyNote size={13}/>, l: 'Note' },
+                  { k: 'voice', icon: <Mic size={13}/>, l: 'Vocal' },
+                ].map(({ k, icon, l }) => (
+                  <button key={k} type="button"
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${mediaForm.type === k ? 'border-brand bg-orange-50 text-brand' : 'border-gray-200 text-gray-400'}`}
+                    onClick={() => setMediaForm(f => ({ ...f, type: k }))}>{icon} {l}</button>
+                ))}
+              </div>
+              {mediaForm.type === 'photo' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div><label className="label">URL de la photo *</label><input className="input" value={mediaForm.url} onChange={e => setMediaForm(f => ({ ...f, url: e.target.value, mime_type: 'image/jpeg' }))} placeholder="https://…" required/></div>
+                  <div><label className="label">Légende</label><input className="input" value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Fondation côté nord"/></div>
+                </div>
+              ) : mediaForm.type === 'voice' ? (
+                <div>
+                  <label className="label">Transcription du mémo vocal *</label>
+                  <textarea className="input" rows={2} value={mediaForm.transcript} onChange={e => setMediaForm(f => ({ ...f, transcript: e.target.value }))} placeholder="Transcrivez ou collez le contenu du mémo… (enregistrement audio à venir)" required/>
+                </div>
+              ) : (
+                <div>
+                  <label className="label">Note de chantier *</label>
+                  <textarea className="input" rows={2} value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Coffrage mal aligné au coin sud-est…" required/>
+                </div>
+              )}
+              <div className="flex justify-end"><button type="submit" className="btn-primary text-xs px-4">Ajouter</button></div>
+            </form>
+          )}
+
+          {media.length > 0 ? (
+            <div className="space-y-2">
+              {media.map(m => {
+                const a = m.ai_analysis;
+                const issues = (a?.non_conformities?.length || 0) + (a?.safety_risks?.length || 0);
+                return (
+                  <div key={m.id} className="border border-gray-100 rounded-xl p-3">
+                    <div className="flex items-start gap-3">
+                      {m.type === 'photo' && m.url
+                        ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>
+                        : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="badge badge-gray text-[10px] capitalize">{m.type}</span>
+                          {m.ai_status === 'done' && a?.overall_severity && <span className={`badge ${SEV[a.overall_severity]?.c || 'badge-gray'} text-[10px]`}>{issues > 0 ? `${issues} point(s)` : 'Conforme'}</span>}
+                          <span className="text-[11px] text-gray-300 ml-auto">{m.author_name || ''} · {new Date(m.created_at).toLocaleDateString('fr-CA')}</span>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1 truncate">{m.caption || m.transcript || '—'}</p>
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <button className="btn-ghost text-[11px] py-1 px-2 text-brand" onClick={() => analyzeMedia(m.id)} disabled={analyzingMediaId === m.id}>
+                          {analyzingMediaId === m.id ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Analyser
+                        </button>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 self-end" onClick={() => deleteMedia(m.id)}><Trash2 size={12}/></button>
+                      </div>
+                    </div>
+                    {/* Résultat analyse IA */}
+                    {m.ai_status === 'done' && a && (
+                      <div className="mt-2 pt-2 border-t border-gray-50 space-y-2">
+                        {a.summary && <p className="text-xs text-gray-500 italic">{a.summary}</p>}
+                        {a.non_conformities?.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1"><AlertCircle size={11} className="text-orange-400"/> Non-conformités</p>
+                            {a.non_conformities.map((nc, i) => (
+                              <div key={i} className="flex items-start gap-2 mb-1">
+                                <span className={`badge ${SEV[nc.severity]?.c || 'badge-gray'} text-[9px] mt-0.5 flex-shrink-0`}>{SEV[nc.severity]?.l || nc.severity}</span>
+                                <p className="text-xs text-gray-600"><span className="font-medium">{nc.issue}</span>{nc.recommendation ? ` — ${nc.recommendation}` : ''}{nc.reference ? ` (${nc.reference})` : ''}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {a.safety_risks?.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1"><ShieldAlert size={11} className="text-red-400"/> Sécurité (CNESST)</p>
+                            {a.safety_risks.map((sr, i) => (
+                              <div key={i} className="flex items-start gap-2 mb-1">
+                                <span className={`badge ${SEV[sr.severity]?.c || 'badge-gray'} text-[9px] mt-0.5 flex-shrink-0`}>{SEV[sr.severity]?.l || sr.severity}</span>
+                                <p className="text-xs text-gray-600"><span className="font-medium">{sr.risk}</span>{sr.action ? ` — ${sr.action}` : ''}{sr.cnesst_reference ? ` (${sr.cnesst_reference})` : ''}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {m.ai_status === 'error' && <p className="text-[11px] text-red-400 mt-2">Échec de l'analyse. Réessayez.</p>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : !showMediaForm && (
+            <div className="text-center py-5">
+              <Camera size={26} className="text-gray-200 mx-auto mb-2"/>
+              <p className="text-sm text-gray-400">Aucun média. Ajoutez photos et notes de chantier pour l'analyse IA.</p>
+            </div>
+          )}
+        </div>
+
         {/* Corps de métiers */}
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -1556,8 +1743,49 @@ export default function ProjectDetail() {
               <h2 className="font-semibold text-gray-900 text-sm">Commandes matériaux</h2>
               {materialOrders.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{materialOrders.length}</span>}
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
+            <div className="flex gap-2">
+              {materialOrders.length > 0 && (
+                <button className="btn-ghost text-xs py-1.5 text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
+                  {groupingPurchases ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>} Regrouper (IA)
+                </button>
+              )}
+              <button className="btn-secondary text-xs py-1.5" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
+            </div>
           </div>
+
+          {/* Plan de regroupement IA */}
+          {purchasePlan && (
+            <div className="bg-orange-50/60 border border-orange-100 rounded-xl p-3 mb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Wand2 size={13} className="text-brand"/>
+                <p className="text-xs font-semibold text-gray-700">Plan d'achat optimisé</p>
+                <button className="ml-auto text-gray-300 hover:text-gray-500" onClick={() => setPurchasePlan(null)}><X size={13}/></button>
+              </div>
+              {purchasePlan.summary && <p className="text-xs text-gray-600 mb-2">{purchasePlan.summary}</p>}
+              {purchasePlan.groups?.length > 0 && (
+                <div className="space-y-1 mb-2">
+                  {purchasePlan.groups.map((g, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <Package size={11} className="text-gray-300"/>
+                      <span className="font-medium text-gray-700">{g.supplier}</span>
+                      <span className="text-gray-400">{g.order_count} cmd{g.total_estimate ? ` · ${money(g.total_estimate)}` : ''}</span>
+                      {g.consolidation_note && <span className="text-gray-500 truncate">— {g.consolidation_note}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {purchasePlan.opportunities?.length > 0 && (
+                <div className="space-y-1">
+                  {purchasePlan.opportunities.map((o, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <Sparkles size={11} className="text-brand mt-0.5 flex-shrink-0"/>
+                      <p className="text-gray-600"><span className="font-medium">{o.supplier}</span> — {o.description}{o.potential_saving ? ` (≈ ${o.potential_saving})` : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {showOrderForm && (
             <form onSubmit={createOrder} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
               <div><label className="label">Fournisseur *</label><input className="input" value={orderForm.supplier} onChange={e => setOrderForm(f => ({ ...f, supplier: e.target.value }))} required/></div>
@@ -1843,8 +2071,10 @@ export default function ProjectDetail() {
               {changeOrdersList.map(co => {
                 const statusColor = co.status==='approved'?'text-green-600':co.status==='rejected'?'text-red-500':co.status==='pending_approval'?'text-blue-500':'text-gray-400';
                 const statusLabel = co.status==='approved'?'Approuvée':co.status==='rejected'?'Refusée':co.status==='pending_approval'?'Envoyée':'Brouillon';
+                const impact = coImpact[co.id];
                 return (
-                  <div key={co.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div key={co.id} className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status==='approved'?'bg-green-500':co.status==='rejected'?'bg-red-400':co.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{co.title}</p>
@@ -1854,6 +2084,14 @@ export default function ProjectDetail() {
                       </div>
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
+                      <button
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors"
+                        title="Analyser l'impact (IA)"
+                        onClick={() => analyzeChangeOrder(co.id)}
+                        disabled={analyzingCoId === co.id}
+                      >
+                        {analyzingCoId === co.id ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
+                      </button>
                       <button
                         className="p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors"
                         title={copiedCO===co.id?'Copié!':'Copier le lien client'}
@@ -1886,6 +2124,28 @@ export default function ProjectDetail() {
                         <Trash2 size={13}/>
                       </button>
                     </div>
+                  </div>
+                  {/* Impact IA de l'avenant */}
+                  {impact && (
+                    <div className="mt-2 pt-2 border-t border-gray-200/70 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Wand2 size={11} className="text-brand"/>
+                        <p className="text-[11px] font-semibold text-gray-600">Impact estimé</p>
+                        {impact.overall_impact && <span className={`badge ${SEV[impact.overall_impact]?.c || 'badge-gray'} text-[9px]`}>{SEV[impact.overall_impact]?.l || impact.overall_impact}</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-600">
+                        {impact.budget_impact && <span><span className="text-gray-400">Budget :</span> {impact.budget_impact.amount != null ? money(impact.budget_impact.amount) : '—'}{impact.budget_impact.percent_of_contract ? ` (${impact.budget_impact.percent_of_contract}%)` : ''}</span>}
+                        {impact.schedule_impact && <span><span className="text-gray-400">Échéancier :</span> +{impact.schedule_impact.estimated_days || 0} j</span>}
+                        {impact.affected_trades?.length > 0 && <span><span className="text-gray-400">Métiers :</span> {impact.affected_trades.join(', ')}</span>}
+                      </div>
+                      {impact.recommendation && <p className="text-[11px] text-gray-600 italic">💡 {impact.recommendation}</p>}
+                      {impact.risks?.length > 0 && (
+                        <ul className="text-[11px] text-gray-500 list-disc list-inside">
+                          {impact.risks.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   </div>
                 );
               })}

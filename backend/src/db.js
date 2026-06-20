@@ -317,6 +317,33 @@ async function applyMigrations() {
   `);
   await run('material_orders project index',
     `CREATE INDEX IF NOT EXISTS mat_orders_project_idx ON material_orders(project_id)`);
+
+  // ── Refonte v3 B7 — IA chantier : médias + analyse ───────────────────────────
+  await run('site_media table', `
+    CREATE TABLE IF NOT EXISTS site_media (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      type            TEXT NOT NULL DEFAULT 'photo'
+                        CHECK (type IN ('photo','note','voice','video')),
+      url             TEXT,
+      mime_type       TEXT,
+      caption         TEXT,
+      transcript      TEXT,
+      ai_analysis     JSONB,
+      ai_status       TEXT NOT NULL DEFAULT 'none'
+                        CHECK (ai_status IN ('none','pending','done','error')),
+      ai_error        TEXT,
+      created_by      UUID REFERENCES users(id),
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await run('site_media project index',
+    `CREATE INDEX IF NOT EXISTS site_media_project_idx ON site_media(project_id)`);
+
+  // Impact IA d'un avenant — stocké sur change_orders
+  await run('change_orders: add ai_impact',
+    `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS ai_impact JSONB`);
 }
 
 export async function initializeDatabase() {

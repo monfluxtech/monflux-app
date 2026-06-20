@@ -8,6 +8,16 @@ router.use(authenticateToken, resolveCompany);
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Le client fournit ANTHROPIC_API_KEY ; on dégrade gracieusement si absent.
+const aiReady = () => !!process.env.ANTHROPIC_API_KEY;
+function aiNotConfigured(res) {
+  return res.status(503).json({
+    error: 'IA non configurée',
+    code: 'ai_not_configured',
+    hint: "Cette fonctionnalité sera active dès qu'une clé API sera configurée.",
+  });
+}
+
 // POST /api/ai/health-check — AI dashboard health summary
 router.get('/health-check', requireFeature('ai_health_check'), async (req, res) => {
   try {
@@ -99,6 +109,111 @@ Retourne UNIQUEMENT un JSON valide avec ce format:
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur génération estimation' });
+  }
+});
+
+// POST /api/ai/group-purchases — regroupe les commandes matériaux par fournisseur,
+// détecte les opportunités de regroupement et de promos. (B7)
+router.post('/group-purchases', enforceAiQuota, async (req, res) => {
+  const { project_id } = req.body;
+  if (!aiReady()) return aiNotConfigured(res);
+  try {
+    const { rows: orders } = await query(
+      `SELECT supplier, order_number, description, total_amount, status, expected_date
+       FROM material_orders WHERE company_id = $1 ${project_id ? 'AND project_id = $2' : ''}
+       ORDER BY supplier`,
+      project_id ? [req.company_id, project_id] : [req.company_id]
+    );
+    if (!orders.length) {
+      return res.json({ groups: [], opportunities: [], summary: 'Aucune commande matériaux à analyser.' });
+    }
+
+    const prompt = `Tu es un acheteur stratégique en construction au Québec.
+Voici les commandes de matériaux ${project_id ? 'de ce projet' : 'de l\'entreprise'} :
+${JSON.stringify(orders, null, 2)}
+
+Analyse-les et propose des regroupements d'achats par fournisseur pour réduire les coûts et la logistique.
+Connais les grands fournisseurs québécois (Rona, Home Depot, BMR, Patrick Morin, Canac, Réno-Dépôt) et leurs programmes (rabais volume, comptes pro, livraison gratuite au-delà d'un seuil).
+
+Retourne UNIQUEMENT un JSON valide :
+{
+  "groups": [
+    { "supplier": "...", "order_count": 0, "total_estimate": 0, "consolidation_note": "..." }
+  ],
+  "opportunities": [
+    { "type": "volume|delivery|promo|account", "supplier": "...", "description": "...", "potential_saving": "estimation en $ ou %" }
+  ],
+  "summary": "résumé actionnable en 2-3 phrases en français québécois"
+}`;
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = msg.content[0]?.text || '{}';
+    const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur regroupement achats' });
+  }
+});
+
+// POST /api/ai/change-order-impact — analyse l'impact d'un avenant (échéancier, budget, dépendances). (B7)
+router.post('/change-order-impact', enforceAiQuota, async (req, res) => {
+  const { change_order_id } = req.body;
+  if (!aiReady()) return aiNotConfigured(res);
+  try {
+    const { rows: [co] } = await query(
+      `SELECT co.*, p.name AS project_name, p.contract_value, p.start_date, p.end_date,
+              p.progress_pct, p.status AS project_status
+       FROM change_orders co LEFT JOIN projects p ON p.id = co.project_id
+       WHERE co.id = $1 AND co.company_id = $2`,
+      [change_order_id, req.company_id]
+    );
+    if (!co) return res.status(404).json({ error: 'Avenant non trouvé' });
+
+    const prompt = `Tu es un gestionnaire de projet de construction expérimenté au Québec.
+Analyse l'impact de cet avenant (change order) sur le projet.
+
+AVENANT :
+- Titre : ${co.title}
+- Description : ${co.description || '(aucune)'}
+- Montant : ${co.amount || 0} $
+
+PROJET :
+- Nom : ${co.project_name}
+- Valeur contrat : ${co.contract_value || 0} $
+- Avancement : ${co.progress_pct || 0}%
+- Début : ${co.start_date || 'n/d'} · Fin prévue : ${co.end_date || 'n/d'}
+
+Évalue l'impact sur : le budget (% de variation), l'échéancier (jours additionnels estimés), les corps de métier touchés, et les risques.
+
+Retourne UNIQUEMENT un JSON valide :
+{
+  "budget_impact": { "amount": 0, "percent_of_contract": 0, "note": "..." },
+  "schedule_impact": { "estimated_days": 0, "note": "..." },
+  "affected_trades": ["..."],
+  "risks": ["..."],
+  "recommendation": "recommandation claire en français québécois (approuver tel quel, négocier, etc.)",
+  "overall_impact": "low|medium|high"
+}`;
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = msg.content[0]?.text || '{}';
+    const impact = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+
+    await query(`UPDATE change_orders SET ai_impact = $1 WHERE id = $2`,
+      [JSON.stringify(impact), change_order_id]);
+    res.json(impact);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur analyse avenant' });
   }
 });
 

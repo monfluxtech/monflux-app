@@ -12398,6 +12398,12 @@ const materialOrders = {
   update: (id2, data) => http.patch(`/material-orders/${id2}`, data),
   delete: (id2) => http.delete(`/material-orders/${id2}`)
 };
+const siteMedia = {
+  byProject: (projectId) => http.get(`/site-media/project/${projectId}`),
+  create: (data) => http.post("/site-media", data),
+  delete: (id2) => http.delete(`/site-media/${id2}`),
+  analyze: (id2) => http.post(`/site-media/${id2}/analyze`)
+};
 const documents = {
   list: (projectId) => http.get(`/documents/project/${projectId}`),
   upload: (data) => http.post("/documents", data)
@@ -12417,7 +12423,9 @@ const ai = {
   updateAction: (id2, data) => http.patch(`/ai/actions/${id2}`, data),
   newConversation: (data) => http.post("/chat/conversations", data),
   usage: () => http.get("/ai/usage"),
-  buyCredits: (amount) => http.post("/ai/credits", { amount })
+  buyCredits: (amount) => http.post("/ai/credits", { amount }),
+  groupPurchases: (project_id) => http.post("/ai/group-purchases", { project_id }),
+  changeOrderImpact: (change_order_id) => http.post("/ai/change-order-impact", { change_order_id })
 };
 const dashboard = {
   summary: () => http.get("/dashboard/summary"),
@@ -12474,6 +12482,7 @@ const api$3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePropert
   quittances,
   quotes,
   rfqs,
+  siteMedia,
   subcontractors,
   timesheets
 }, Symbol.toStringTag, { value: "Module" }));
@@ -13201,6 +13210,17 @@ const ImagePlus = createLucideIcon("ImagePlus", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Image = createLucideIcon("Image", [
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2", key: "1m3agn" }],
+  ["circle", { cx: "9", cy: "9", r: "2", key: "af1f0g" }],
+  ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21", key: "1xmnt7" }]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Info = createLucideIcon("Info", [
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
   ["path", { d: "M12 16v-4", key: "1dtifu" }],
@@ -13511,6 +13531,17 @@ const Settings = createLucideIcon("Settings", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const ShieldAlert = createLucideIcon("ShieldAlert", [
+  ["path", { d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10", key: "1irkt0" }],
+  ["path", { d: "M12 8v4", key: "1got3b" }],
+  ["path", { d: "M12 16h.01", key: "1drbdi" }]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Shield = createLucideIcon("Shield", [
   ["path", { d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10", key: "1irkt0" }]
 ]);
@@ -13688,6 +13719,28 @@ const Users = createLucideIcon("Users", [
   ["circle", { cx: "9", cy: "7", r: "4", key: "nufk8" }],
   ["path", { d: "M22 21v-2a4 4 0 0 0-3-3.87", key: "kshegd" }],
   ["path", { d: "M16 3.13a4 4 0 0 1 0 7.75", key: "1da9ce" }]
+]);
+/**
+ * @license lucide-react v0.294.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const Wand2 = createLucideIcon("Wand2", [
+  [
+    "path",
+    {
+      d: "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z",
+      key: "1bcowg"
+    }
+  ],
+  ["path", { d: "m14 7 3 3", key: "1r5n42" }],
+  ["path", { d: "M5 6v4", key: "ilb8ba" }],
+  ["path", { d: "M19 14v4", key: "blhpug" }],
+  ["path", { d: "M10 2v2", key: "7u0qdc" }],
+  ["path", { d: "M7 8H3", key: "zfb6yr" }],
+  ["path", { d: "M21 16h-4", key: "1cnmox" }],
+  ["path", { d: "M11 3H9", key: "1obp7u" }]
 ]);
 /**
  * @license lucide-react v0.294.0 - ISC
@@ -16195,7 +16248,7 @@ function FieldEstimation({ project, onUpdated }) {
   ] });
 }
 function ProjectDetail() {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   const { id: id2 } = useParams();
   const navigate = useNavigate();
   const [project, setProject] = reactExports.useState(null);
@@ -16251,11 +16304,20 @@ function ProjectDetail() {
   const [materialOrders$1, setMaterialOrders] = reactExports.useState([]);
   const [showOrderForm, setShowOrderForm] = reactExports.useState(false);
   const [orderForm, setOrderForm] = reactExports.useState({ supplier: "", order_number: "", description: "", total_amount: "", order_date: "", expected_date: "" });
+  const [media, setMedia] = reactExports.useState([]);
+  const [showMediaForm, setShowMediaForm] = reactExports.useState(false);
+  const [mediaForm, setMediaForm] = reactExports.useState({ type: "photo", url: "", mime_type: "", caption: "", transcript: "" });
+  const [analyzingMediaId, setAnalyzingMediaId] = reactExports.useState(null);
+  const [purchasePlan, setPurchasePlan] = reactExports.useState(null);
+  const [groupingPurchases, setGroupingPurchases] = reactExports.useState(false);
+  const [coImpact, setCoImpact] = reactExports.useState({});
+  const [analyzingCoId, setAnalyzingCoId] = reactExports.useState(null);
+  const [aiNotice, setAiNotice] = reactExports.useState("");
   const load = async () => {
     var _a2, _b2;
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }] = await Promise.all([
         projects.get(id2),
         timesheets.list({ project_id: id2 }),
         invoices.list({ project_id: id2 }),
@@ -16268,7 +16330,8 @@ function ProjectDetail() {
         quotes.byProject(id2).catch(() => ({ data: [] })),
         rfqs.byProject(id2).catch(() => ({ data: [] })),
         contracts.list({ project_id: id2 }).catch(() => ({ data: [] })),
-        materialOrders.byProject(id2).catch(() => ({ data: [] }))
+        materialOrders.byProject(id2).catch(() => ({ data: [] })),
+        siteMedia.byProject(id2).catch(() => ({ data: [] }))
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -16287,6 +16350,12 @@ function ProjectDetail() {
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
       setMaterialOrders(orderList || []);
+      setMedia(mediaList || []);
+      const impacts = {};
+      (cos || []).forEach((co) => {
+        if (co.ai_impact) impacts[co.id] = co.ai_impact;
+      });
+      setCoImpact(impacts);
     } catch {
     } finally {
       setLoading(false);
@@ -16614,6 +16683,64 @@ function ProjectDetail() {
     } catch {
     }
   };
+  const addMedia = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await siteMedia.create({ ...mediaForm, project_id: id2 });
+      setMedia((prev) => [data, ...prev]);
+      setMediaForm({ type: "photo", url: "", mime_type: "", caption: "", transcript: "" });
+      setShowMediaForm(false);
+    } catch {
+    }
+  };
+  const deleteMedia = async (mediaId) => {
+    if (!confirm("Supprimer ce média ?")) return;
+    try {
+      await siteMedia.delete(mediaId);
+      setMedia((prev) => prev.filter((m2) => m2.id !== mediaId));
+    } catch {
+    }
+  };
+  const analyzeMedia = async (mediaId) => {
+    var _a2, _b2;
+    setAnalyzingMediaId(mediaId);
+    setAiNotice("");
+    try {
+      const { data } = await siteMedia.analyze(mediaId);
+      setMedia((prev) => prev.map((m2) => m2.id === mediaId ? data : m2));
+    } catch (err) {
+      if (((_b2 = (_a2 = err.response) == null ? void 0 : _a2.data) == null ? void 0 : _b2.code) === "ai_not_configured") setAiNotice(err.response.data.hint);
+    } finally {
+      setAnalyzingMediaId(null);
+    }
+  };
+  const groupPurchases = async () => {
+    var _a2, _b2;
+    setGroupingPurchases(true);
+    setAiNotice("");
+    try {
+      const { data } = await ai.groupPurchases(id2);
+      setPurchasePlan(data);
+    } catch (err) {
+      if (((_b2 = (_a2 = err.response) == null ? void 0 : _a2.data) == null ? void 0 : _b2.code) === "ai_not_configured") setAiNotice(err.response.data.hint);
+    } finally {
+      setGroupingPurchases(false);
+    }
+  };
+  const analyzeChangeOrder = async (coId) => {
+    var _a2, _b2;
+    setAnalyzingCoId(coId);
+    setAiNotice("");
+    try {
+      const { data } = await ai.changeOrderImpact(coId);
+      setCoImpact((prev) => ({ ...prev, [coId]: data }));
+    } catch (err) {
+      if (((_b2 = (_a2 = err.response) == null ? void 0 : _a2.data) == null ? void 0 : _b2.code) === "ai_not_configured") setAiNotice(err.response.data.hint);
+    } finally {
+      setAnalyzingCoId(null);
+    }
+  };
+  const SEV = { low: { c: "badge-green", l: "Faible" }, medium: { c: "badge-yellow", l: "Moyen" }, high: { c: "badge-red", l: "Élevé" } };
   if (loading) return /* @__PURE__ */ jsxRuntimeExports.jsx(Layout, { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-gray-400 p-8", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 16, className: "animate-spin" }),
     " Chargement…"
@@ -17208,6 +17335,132 @@ function ProjectDetail() {
         ] })
       ] }),
       activeTab === "chantier" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        aiNotice && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(AlertTriangle, { size: 14, className: "text-amber-500 flex-shrink-0" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-amber-700", children: aiNotice }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ml-auto text-amber-400 hover:text-amber-600", onClick: () => setAiNotice(""), children: /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 13 }) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card mb-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Camera, { size: 15, className: "text-brand" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Médias chantier" }),
+              media.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: media.length })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary text-xs py-1.5", onClick: () => setShowMediaForm((v2) => !v2), children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 13 }),
+              " Ajouter"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-400 mb-3", children: "Photos, notes et mémos vocaux. L'IA détecte les non-conformités (RBQ) et risques de sécurité (CNESST)." }),
+          showMediaForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: addMedia, className: "bg-gray-50 rounded-xl p-3 mb-3 space-y-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-2", children: [
+              { k: "photo", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(Image, { size: 13 }), l: "Photo" },
+              { k: "note", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(StickyNote, { size: 13 }), l: "Note" },
+              { k: "voice", icon: /* @__PURE__ */ jsxRuntimeExports.jsx(Mic, { size: 13 }), l: "Vocal" }
+            ].map(({ k: k2, icon, l: l2 }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                className: `flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${mediaForm.type === k2 ? "border-brand bg-orange-50 text-brand" : "border-gray-200 text-gray-400"}`,
+                onClick: () => setMediaForm((f2) => ({ ...f2, type: k2 })),
+                children: [
+                  icon,
+                  " ",
+                  l2
+                ]
+              },
+              k2
+            )) }),
+            mediaForm.type === "photo" ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "URL de la photo *" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", value: mediaForm.url, onChange: (e) => setMediaForm((f2) => ({ ...f2, url: e.target.value, mime_type: "image/jpeg" })), placeholder: "https://…", required: true })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Légende" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", value: mediaForm.caption, onChange: (e) => setMediaForm((f2) => ({ ...f2, caption: e.target.value })), placeholder: "Ex: Fondation côté nord" })
+              ] })
+            ] }) : mediaForm.type === "voice" ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Transcription du mémo vocal *" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { className: "input", rows: 2, value: mediaForm.transcript, onChange: (e) => setMediaForm((f2) => ({ ...f2, transcript: e.target.value })), placeholder: "Transcrivez ou collez le contenu du mémo… (enregistrement audio à venir)", required: true })
+            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label", children: "Note de chantier *" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { className: "input", rows: 2, value: mediaForm.caption, onChange: (e) => setMediaForm((f2) => ({ ...f2, caption: e.target.value })), placeholder: "Ex: Coffrage mal aligné au coin sud-est…", required: true })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", className: "btn-primary text-xs px-4", children: "Ajouter" }) })
+          ] }),
+          media.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: media.map((m2) => {
+            var _a2, _b2, _c2, _d2, _e2;
+            const a = m2.ai_analysis;
+            const issues = (((_a2 = a == null ? void 0 : a.non_conformities) == null ? void 0 : _a2.length) || 0) + (((_b2 = a == null ? void 0 : a.safety_risks) == null ? void 0 : _b2.length) || 0);
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "border border-gray-100 rounded-xl p-3", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+                m2.type === "photo" && m2.url ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: m2.url, alt: m2.caption || "", className: "w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0", children: m2.type === "voice" ? /* @__PURE__ */ jsxRuntimeExports.jsx(Mic, { size: 18, className: "text-gray-300" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(StickyNote, { size: 18, className: "text-gray-300" }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "badge badge-gray text-[10px] capitalize", children: m2.type }),
+                    m2.ai_status === "done" && (a == null ? void 0 : a.overall_severity) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `badge ${((_c2 = SEV[a.overall_severity]) == null ? void 0 : _c2.c) || "badge-gray"} text-[10px]`, children: issues > 0 ? `${issues} point(s)` : "Conforme" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[11px] text-gray-300 ml-auto", children: [
+                      m2.author_name || "",
+                      " · ",
+                      new Date(m2.created_at).toLocaleDateString("fr-CA")
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-700 mt-1 truncate", children: m2.caption || m2.transcript || "—" })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1 flex-shrink-0", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-ghost text-[11px] py-1 px-2 text-brand", onClick: () => analyzeMedia(m2.id), disabled: analyzingMediaId === m2.id, children: [
+                    analyzingMediaId === m2.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 12, className: "animate-spin" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 12 }),
+                    " Analyser"
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-ghost p-1 text-gray-300 hover:text-red-500 self-end", onClick: () => deleteMedia(m2.id), children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 12 }) })
+                ] })
+              ] }),
+              m2.ai_status === "done" && a && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-2 pt-2 border-t border-gray-50 space-y-2", children: [
+                a.summary && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-500 italic", children: a.summary }),
+                ((_d2 = a.non_conformities) == null ? void 0 : _d2.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(AlertCircle, { size: 11, className: "text-orange-400" }),
+                    " Non-conformités"
+                  ] }),
+                  a.non_conformities.map((nc2, i) => {
+                    var _a3, _b3;
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-2 mb-1", children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `badge ${((_a3 = SEV[nc2.severity]) == null ? void 0 : _a3.c) || "badge-gray"} text-[9px] mt-0.5 flex-shrink-0`, children: ((_b3 = SEV[nc2.severity]) == null ? void 0 : _b3.l) || nc2.severity }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-gray-600", children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium", children: nc2.issue }),
+                        nc2.recommendation ? ` — ${nc2.recommendation}` : "",
+                        nc2.reference ? ` (${nc2.reference})` : ""
+                      ] })
+                    ] }, i);
+                  })
+                ] }),
+                ((_e2 = a.safety_risks) == null ? void 0 : _e2.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(ShieldAlert, { size: 11, className: "text-red-400" }),
+                    " Sécurité (CNESST)"
+                  ] }),
+                  a.safety_risks.map((sr, i) => {
+                    var _a3, _b3;
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-2 mb-1", children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `badge ${((_a3 = SEV[sr.severity]) == null ? void 0 : _a3.c) || "badge-gray"} text-[9px] mt-0.5 flex-shrink-0`, children: ((_b3 = SEV[sr.severity]) == null ? void 0 : _b3.l) || sr.severity }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-gray-600", children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium", children: sr.risk }),
+                        sr.action ? ` — ${sr.action}` : "",
+                        sr.cnesst_reference ? ` (${sr.cnesst_reference})` : ""
+                      ] })
+                    ] }, i);
+                  })
+                ] })
+              ] }),
+              m2.ai_status === "error" && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-red-400 mt-2", children: "Échec de l'analyse. Réessayez." })
+            ] }, m2.id);
+          }) }) : !showMediaForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center py-5", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera, { size: 26, className: "text-gray-200 mx-auto mb-2" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: "Aucun média. Ajoutez photos et notes de chantier pour l'analyse IA." })
+          ] })
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card mb-4", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mb-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
@@ -17386,10 +17639,46 @@ function ProjectDetail() {
               /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Commandes matériaux" }),
               materialOrders$1.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: materialOrders$1.length })
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary text-xs py-1.5", onClick: () => setShowOrderForm((v2) => !v2), children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 13 }),
-              " Commande"
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+              materialOrders$1.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-ghost text-xs py-1.5 text-brand", onClick: groupPurchases, disabled: groupingPurchases, children: [
+                groupingPurchases ? /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 13, className: "animate-spin" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Wand2, { size: 13 }),
+                " Regrouper (IA)"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-secondary text-xs py-1.5", onClick: () => setShowOrderForm((v2) => !v2), children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 13 }),
+                " Commande"
+              ] })
             ] })
+          ] }),
+          purchasePlan && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-orange-50/60 border border-orange-100 rounded-xl p-3 mb-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Wand2, { size: 13, className: "text-brand" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold text-gray-700", children: "Plan d'achat optimisé" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "ml-auto text-gray-300 hover:text-gray-500", onClick: () => setPurchasePlan(null), children: /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 13 }) })
+            ] }),
+            purchasePlan.summary && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-gray-600 mb-2", children: purchasePlan.summary }),
+            ((_g = purchasePlan.groups) == null ? void 0 : _g.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-1 mb-2", children: purchasePlan.groups.map((g, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-xs", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Package, { size: 11, className: "text-gray-300" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium text-gray-700", children: g.supplier }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-400", children: [
+                g.order_count,
+                " cmd",
+                g.total_estimate ? ` · ${money(g.total_estimate)}` : ""
+              ] }),
+              g.consolidation_note && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-gray-500 truncate", children: [
+                "— ",
+                g.consolidation_note
+              ] })
+            ] }, i)) }),
+            ((_h = purchasePlan.opportunities) == null ? void 0 : _h.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-1", children: purchasePlan.opportunities.map((o, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-2 text-xs", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 11, className: "text-brand mt-0.5 flex-shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-600", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium", children: o.supplier }),
+                " — ",
+                o.description,
+                o.potential_saving ? ` (≈ ${o.potential_saving})` : ""
+              ] })
+            ] }, i)) })
           ] }),
           showOrderForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: createOrder, className: "bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 items-end", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -17470,9 +17759,9 @@ function ProjectDetail() {
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mb-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(FolderOpen, { size: 15, className: "text-brand" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "font-semibold text-gray-900 text-sm", children: "Documents" }),
-            ((_g = project.documents) == null ? void 0 : _g.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: project.documents.length })
+            ((_i = project.documents) == null ? void 0 : _i.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5", children: project.documents.length })
           ] }),
-          ((_h = project.documents) == null ? void 0 : _h.length) > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: project.documents.map((d) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0", children: [
+          ((_j = project.documents) == null ? void 0 : _j.length) > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: project.documents.map((d) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 14, className: "text-gray-300 flex-shrink-0" }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-800 truncate", children: d.name }),
@@ -17710,65 +17999,110 @@ function ProjectDetail() {
             /* @__PURE__ */ jsxRuntimeExports.jsx(FileEdit, { size: 28, className: "text-gray-200 mx-auto mb-2" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-400", children: "Aucune demande de modification. Créez-en une pour tout changement de portée de projet." })
           ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-2", children: changeOrdersList.map((co) => {
+            var _a2, _b2, _c2, _d2;
             const statusColor = co.status === "approved" ? "text-green-600" : co.status === "rejected" ? "text-red-500" : co.status === "pending_approval" ? "text-blue-500" : "text-gray-400";
             const statusLabel = co.status === "approved" ? "Approuvée" : co.status === "rejected" ? "Refusée" : co.status === "pending_approval" ? "Envoyée" : "Brouillon";
-            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status === "approved" ? "bg-green-500" : co.status === "rejected" ? "bg-red-400" : co.status === "sent" ? "bg-blue-400" : "bg-gray-300"}` }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-800 truncate", children: co.title }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mt-0.5", children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-medium ${statusColor}`, children: statusLabel }),
-                  co.amount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-gray-400", children: [
-                    "+",
-                    Number(co.amount).toLocaleString("fr-CA"),
-                    "$"
+            const impact = coImpact[co.id];
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status === "approved" ? "bg-green-500" : co.status === "rejected" ? "bg-red-400" : co.status === "sent" ? "bg-blue-400" : "bg-gray-300"}` }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-gray-800 truncate", children: co.title }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mt-0.5", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-medium ${statusColor}`, children: statusLabel }),
+                    co.amount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-gray-400", children: [
+                      "+",
+                      Number(co.amount).toLocaleString("fr-CA"),
+                      "$"
+                    ] })
                   ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 flex-shrink-0", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "button",
+                    {
+                      className: "p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors",
+                      title: "Analyser l'impact (IA)",
+                      onClick: () => analyzeChangeOrder(co.id),
+                      disabled: analyzingCoId === co.id,
+                      children: analyzingCoId === co.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(Loader2, { size: 13, className: "animate-spin" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Wand2, { size: 13 })
+                    }
+                  ),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "button",
+                    {
+                      className: "p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors",
+                      title: copiedCO === co.id ? "Copié!" : "Copier le lien client",
+                      onClick: () => copyCOLink(co),
+                      children: copiedCO === co.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(CheckCheck, { size: 13, className: "text-green-500" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 })
+                    }
+                  ),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "a",
+                    {
+                      href: `https://wa.me/?text=${encodeURIComponent(`Bonjour, voici une demande de modification à approuver : ${FRONTEND_URL}/modification/${co.public_token}`)}`,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      className: "p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-white transition-colors",
+                      title: "Envoyer par WhatsApp",
+                      onClick: async () => {
+                        if (co.status === "draft") await changeOrders.update(co.id, { status: "pending_approval" }).then(() => setChangeOrdersList((l2) => l2.map((c) => c.id === co.id ? { ...c, status: "pending_approval" } : c)));
+                      },
+                      children: /* @__PURE__ */ jsxRuntimeExports.jsx(MessageCircle, { size: 13 })
+                    }
+                  ),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "a",
+                    {
+                      href: `${FRONTEND_URL}/modification/${co.public_token}`,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      className: "p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors",
+                      title: "Aperçu",
+                      children: /* @__PURE__ */ jsxRuntimeExports.jsx(ExternalLink, { size: 13 })
+                    }
+                  ),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "button",
+                    {
+                      className: "p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-white transition-colors",
+                      onClick: () => deleteCO(co.id),
+                      title: "Supprimer",
+                      children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
+                    }
+                  )
                 ] })
               ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 flex-shrink-0", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "button",
-                  {
-                    className: "p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors",
-                    title: copiedCO === co.id ? "Copié!" : "Copier le lien client",
-                    onClick: () => copyCOLink(co),
-                    children: copiedCO === co.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(CheckCheck, { size: 13, className: "text-green-500" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 })
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "a",
-                  {
-                    href: `https://wa.me/?text=${encodeURIComponent(`Bonjour, voici une demande de modification à approuver : ${FRONTEND_URL}/modification/${co.public_token}`)}`,
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    className: "p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-white transition-colors",
-                    title: "Envoyer par WhatsApp",
-                    onClick: async () => {
-                      if (co.status === "draft") await changeOrders.update(co.id, { status: "pending_approval" }).then(() => setChangeOrdersList((l2) => l2.map((c) => c.id === co.id ? { ...c, status: "pending_approval" } : c)));
-                    },
-                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(MessageCircle, { size: 13 })
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "a",
-                  {
-                    href: `${FRONTEND_URL}/modification/${co.public_token}`,
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    className: "p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors",
-                    title: "Aperçu",
-                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(ExternalLink, { size: 13 })
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "button",
-                  {
-                    className: "p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-white transition-colors",
-                    onClick: () => deleteCO(co.id),
-                    title: "Supprimer",
-                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
-                  }
-                )
+              impact && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-2 pt-2 border-t border-gray-200/70 space-y-1.5", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Wand2, { size: 11, className: "text-brand" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] font-semibold text-gray-600", children: "Impact estimé" }),
+                  impact.overall_impact && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `badge ${((_a2 = SEV[impact.overall_impact]) == null ? void 0 : _a2.c) || "badge-gray"} text-[9px]`, children: ((_b2 = SEV[impact.overall_impact]) == null ? void 0 : _b2.l) || impact.overall_impact })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-600", children: [
+                  impact.budget_impact && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-400", children: "Budget :" }),
+                    " ",
+                    impact.budget_impact.amount != null ? money(impact.budget_impact.amount) : "—",
+                    impact.budget_impact.percent_of_contract ? ` (${impact.budget_impact.percent_of_contract}%)` : ""
+                  ] }),
+                  impact.schedule_impact && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-400", children: "Échéancier :" }),
+                    " +",
+                    impact.schedule_impact.estimated_days || 0,
+                    " j"
+                  ] }),
+                  ((_c2 = impact.affected_trades) == null ? void 0 : _c2.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-gray-400", children: "Métiers :" }),
+                    " ",
+                    impact.affected_trades.join(", ")
+                  ] })
+                ] }),
+                impact.recommendation && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[11px] text-gray-600 italic", children: [
+                  "💡 ",
+                  impact.recommendation
+                ] }),
+                ((_d2 = impact.risks) == null ? void 0 : _d2.length) > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "text-[11px] text-gray-500 list-disc list-inside", children: impact.risks.map((r2, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: r2 }, i)) })
               ] })
             ] }, co.id);
           }) })
