@@ -33,7 +33,7 @@ function OnboardingBanner({ onDismiss, onGo }) {
 // Résolution des icônes par nom (le registre des modules stocke des chaînes).
 const ICONS = {
   LayoutDashboard, Sparkles, FolderKanban, Users, FileText, Receipt,
-  HardHat, QrCode, BarChart3, BookUser, FileSignature, ShoppingCart, FileStack,
+  HardHat, QrCode, BarChart3, BookUser, FileSignature, ShoppingCart, FileStack, Settings,
 };
 
 const QUICK_KEYS = [
@@ -48,7 +48,7 @@ export default function Layout({ children }) {
   const { lang, setLanguage } = useLang();
   const { user, logout, company } = useAuthStore();
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
-  const { modules, load, toggleModule } = useConfigStore();
+  const { modules, load } = useConfigStore();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -56,17 +56,14 @@ export default function Layout({ children }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [notifSeen, setNotifSeen] = useState(false);
-  const [manageOpen, setManageOpen] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(null); // null = loading, true/false
   const [onboardingTooltip, setOnboardingTooltip] = useState(false);
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
 
   const role = company?.role;
-  // 3 onglets cœur + modules secondaires activés, filtrés par rôle.
   const coreNav = CORE_MODULES.filter((m) => roleAllows(role, m.key));
   const secondaryNav = SECONDARY_MODULES.filter((m) => roleAllows(role, m.key) && modules?.[m.key]);
-  const manageable = SECONDARY_MODULES.filter((m) => roleAllows(role, m.key));
 
   useEffect(() => { load(); }, []);
 
@@ -150,40 +147,11 @@ export default function Layout({ children }) {
             );
           })}
 
-          {/* Gérer les vues — affiche/masque les onglets disponibles pour le profil */}
-          {sidebarOpen && manageable.length > 0 && (
-            <div className="pt-2">
-              <button
-                onClick={() => setManageOpen((o) => !o)}
-                className="nav-item w-full text-gray-400 hover:text-gray-700"
-              >
-                <SlidersHorizontal size={16} className="flex-shrink-0" />
-                <span className="truncate">Gérer les vues</span>
-                <ChevronRight size={14} className={`ml-auto transition-transform ${manageOpen ? 'rotate-90' : ''}`} />
-              </button>
-              {manageOpen && (
-                <div className="mt-1 ml-1 pl-2 border-l border-gray-100 space-y-0.5">
-                  {manageable.map((m) => {
-                    const on = !!modules?.[m.key];
-                    return (
-                      <button
-                        key={m.key}
-                        onClick={() => toggleModule(m.key)}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
-                        title={on ? 'Masquer' : 'Afficher'}
-                      >
-                        <span className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 ${on ? 'bg-brand text-white' : 'border border-gray-300'}`}>
-                          {on && <Check size={10} />}
-                        </span>
-                        <span className="truncate">{m.label}</span>
-                        {m.comingSoon && <span className="ml-auto text-[9px] text-gray-300 italic">bientôt</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Paramètres — lien discret en bas du nav */}
+          <NavLink to="/parametres" className={({ isActive }) => `nav-item mt-2 text-gray-400 ${isActive ? 'active' : ''}`} title={!sidebarOpen ? t('settings') : undefined}>
+            <Settings size={16} className="flex-shrink-0" />
+            {sidebarOpen && <span className="truncate">{t('settings')}</span>}
+          </NavLink>
         </nav>
 
         {/* Sidebar footer */}

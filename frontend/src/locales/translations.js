@@ -68,7 +68,7 @@ export const translations = {
     receipt: 'Quittance',
     // Sections projet (feed)
     section_overview: 'Aperçu',
-    section_sales: 'Vente',
+    section_finances: 'Finances',
     section_site: 'Chantier',
     section_docs: 'Documents',
     // Onboarding
@@ -178,7 +178,7 @@ export const translations = {
     receipt: 'Release',
     // Project feed sections
     section_overview: 'Overview',
-    section_sales: 'Sales',
+    section_finances: 'Finances',
     section_site: 'Site',
     section_docs: 'Documents',
     // Onboarding

@@ -15,25 +15,23 @@ export const DEFAULT_PIPELINE = [
 ];
 
 // Onglets CŒUR — toujours visibles (filtrés par rôle), non désactivables.
+// Ordre : aperçu global → travaux actifs → assistant.
 export const CORE_MODULES = [
   { key: 'dashboard', label: 'Tableau de bord', path: '/dashboard', icon: 'LayoutDashboard' },
-  { key: 'chat',      label: 'Assistant IA',    path: '/chat',      icon: 'Sparkles', highlight: true },
   { key: 'projets',   label: 'Projets',         path: '/projets',   icon: 'FolderKanban' },
+  { key: 'chat',      label: 'Assistant IA',    path: '/chat',      icon: 'Sparkles', highlight: true },
 ];
 
-// Onglets SECONDAIRES — activables par compagnie via modules_enabled.
-// comingSoon = page stub livrée dans un batch ultérieur.
+// Onglets SECONDAIRES — activables par compagnie, dans l'ordre du cycle d'affaires.
+// Les features "à venir" sont retirées du nav jusqu'à leur livraison.
 export const SECONDARY_MODULES = [
-  { key: 'leads',          label: 'Leads',            path: '/leads',          icon: 'Users' },
-  { key: 'soumissions',    label: 'Soumissions',      path: '/soumissions',    icon: 'FileText' },
-  { key: 'contrats',       label: 'Contrats',         path: '/contrats',       icon: 'FileSignature', comingSoon: true },
-  { key: 'commandes',      label: 'Commandes',        path: '/commandes',      icon: 'ShoppingCart',  comingSoon: true },
-  { key: 'factures',       label: 'Factures',         path: '/factures',       icon: 'Receipt' },
-  { key: 'factures_achat', label: "Factures d'achat", path: '/factures-achat', icon: 'FileStack',     comingSoon: true },
-  { key: 'sous_traitants', label: 'Sous-traitants',   path: '/sous-traitants', icon: 'HardHat' },
-  { key: 'punch',          label: 'Punch',            path: '/punch',          icon: 'QrCode' },
-  { key: 'rapport',        label: 'Rapport',          path: '/rapport',        icon: 'BarChart3' },
-  { key: 'contacts',       label: 'Contacts',         path: '/contacts',       icon: 'BookUser' },
+  { key: 'leads',          label: 'Leads',          path: '/leads',          icon: 'Users' },
+  { key: 'soumissions',    label: 'Soumissions',    path: '/soumissions',    icon: 'FileText' },
+  { key: 'factures',       label: 'Factures',       path: '/factures',       icon: 'Receipt' },
+  { key: 'sous_traitants', label: 'Sous-traitants', path: '/sous-traitants', icon: 'HardHat' },
+  { key: 'contacts',       label: 'Contacts',       path: '/contacts',       icon: 'BookUser' },
+  { key: 'punch',          label: 'Punch',          path: '/punch',          icon: 'QrCode' },
+  { key: 'rapport',        label: 'Rapport',        path: '/rapport',        icon: 'BarChart3' },
 ];
 
 // Rôle → modules permis. 'ALL' = tout. Les autres ne voient jamais le reste,
@@ -54,7 +52,6 @@ export function roleAllows(role, key) {
 export function defaultModulesEnabled() {
   return {
     leads: true, soumissions: true, factures: true, sous_traitants: true,
-    punch: true, rapport: true,
-    contacts: false, contrats: false, commandes: false, factures_achat: false,
+    contacts: true, punch: true, rapport: true,
   };
 }
