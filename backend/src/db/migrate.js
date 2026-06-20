@@ -14,6 +14,7 @@ const client = new pg.Client({
   ssl: (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL?.includes('sslmode=disable'))
     ? { rejectUnauthorized: false }
     : false,
+  connectionTimeoutMillis: 10000,  // fail fast if DB unreachable
 });
 
 async function migrate() {
@@ -35,8 +36,9 @@ async function migrate() {
     await client.query(schema);
     console.log('✅ Schema applied successfully');
   } catch (err) {
-    console.error('❌ Migration failed:', err.message);
-    process.exit(1);
+    // Ne pas bloquer le démarrage si la migration initiale échoue —
+    // applyMigrations() dans db.js gère toutes les migrations de manière idempotente.
+    console.error('⚠️  Initial migration skipped:', err.message);
   } finally {
     await client.end();
   }
