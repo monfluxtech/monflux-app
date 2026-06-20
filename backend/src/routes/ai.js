@@ -25,7 +25,10 @@ function aiNotConfigured(res) {
 
 // POST /api/ai/health-check — AI dashboard health summary
 router.get('/health-check', requireFeature('ai_health_check'), async (req, res) => {
-  if (!aiReady()) return aiNotConfigured(res);
+  if (!aiReady()) {
+    console.warn('[health-check] AI not ready, returning 503');
+    return aiNotConfigured(res);
+  }
   try {
     const [projects, overdueinv, pendingLeads, pendingActions] = await Promise.all([
       query(`SELECT id,name,status,progress_pct,end_date,contract_value FROM projects WHERE company_id=$1 AND status='active'`, [req.company_id]),
@@ -42,6 +45,9 @@ router.get('/health-check', requireFeature('ai_health_check'), async (req, res) 
     };
 
     const client = initAnthropicIfReady();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
@@ -53,7 +59,9 @@ ${JSON.stringify(context, null, 2)}
 Fais-moi un résumé exécutif en 3-5 points concis (bullet points) en français québécois.
 Priorise ce qui demande attention immédiate. Sois direct et actionnable.`,
       }],
-    });
+    }, { signal: controller.signal });
+
+    clearTimeout(timeout);
 
     res.json({
       summary: msg.content[0].text,
@@ -62,6 +70,9 @@ Priorise ce qui demande attention immédiate. Sois direct et actionnable.`,
     });
   } catch (err) {
     console.error(err);
+    if (err.name === 'AbortError') {
+      return res.status(504).json({ error: 'Timeout IA (30s)' });
+    }
     res.status(500).json({ error: 'Erreur IA' });
   }
 });
