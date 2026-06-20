@@ -201,6 +201,53 @@ async function applyMigrations() {
          FOR EACH ROW EXECUTE FUNCTION accept_member_invites();
        END IF;
      END $$`);
+
+  // ── Refonte v3 — pipeline projet personnalisable (2026-06) ──────────────────
+  const DEFAULT_PIPELINE_JSON = `'[
+      {"key":"brouillon","label":"Brouillon","color":"#94a3b8"},
+      {"key":"estimation","label":"Estimation terrain","color":"#a855f7"},
+      {"key":"prix_envoye","label":"Prix envoyé","color":"#f59e0b"},
+      {"key":"accepte","label":"Accepté","color":"#3b82f6"},
+      {"key":"planifie","label":"Planifié","color":"#6366f1"},
+      {"key":"en_chantier","label":"En chantier","color":"#22c55e"},
+      {"key":"a_facturer","label":"À facturer","color":"#eab308"},
+      {"key":"paye","label":"Payé","color":"#10b981"},
+      {"key":"clos","label":"Clos","color":"#64748b","terminal":true}
+     ]'::jsonb`;
+  await run('companies pipeline_stages column',
+    `ALTER TABLE companies ADD COLUMN IF NOT EXISTS pipeline_stages JSONB`);
+  // Column-level default so new companies (onboarding) inherit the pipeline.
+  await run('companies pipeline_stages default',
+    `ALTER TABLE companies ALTER COLUMN pipeline_stages SET DEFAULT ${DEFAULT_PIPELINE_JSON}`);
+
+  // Seed the default 9-stage sales+ops pipeline where none is set yet.
+  await run('seed default pipeline',
+    `UPDATE companies SET pipeline_stages = ${DEFAULT_PIPELINE_JSON}
+     WHERE pipeline_stages IS NULL`);
+
+  // Map legacy project statuses onto the new pipeline keys (one-time, idempotent).
+  await run('migrate legacy project statuses',
+    `UPDATE projects SET status = CASE status
+       WHEN 'active'    THEN 'en_chantier'
+       WHEN 'lead'      THEN 'brouillon'
+       WHEN 'quote'     THEN 'prix_envoye'
+       WHEN 'on_hold'   THEN 'planifie'
+       WHEN 'completed' THEN 'clos'
+       WHEN 'cancelled' THEN 'clos'
+       ELSE status
+     END
+     WHERE status IN ('active','lead','quote','on_hold','completed','cancelled')`);
+
+  // ── Refonte v3 — visibilité modulaire (2026-06) ─────────────────────────────
+  // Seed default module visibility where none exists. Core tabs (dashboard, ia,
+  // projets) are always visible and not stored here. Contacts hidden by default.
+  await run('seed default modules_enabled',
+    `UPDATE companies SET modules_enabled = '{
+      "leads":true,"soumissions":true,"factures":true,"sous_traitants":true,
+      "punch":true,"rapport":true,
+      "contacts":false,"contrats":false,"commandes":false,"factures_achat":false
+     }'::jsonb
+     WHERE modules_enabled IS NULL OR modules_enabled = '{}'::jsonb`);
 }
 
 export async function initializeDatabase() {

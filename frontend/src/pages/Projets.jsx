@@ -1,9 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import SlideOver from '../components/SlideOver';
 import { projects as projectsApi } from '../api';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp } from 'lucide-react';
+import { useConfigStore } from '../store';
+import { DEFAULT_PIPELINE } from '../config/modules';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X } from 'lucide-react';
 
 const num = (v) => Number(v) || 0;
 const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
@@ -30,7 +32,7 @@ function loadLeaflet() {
   return leafletPromise;
 }
 
-function MapView({ projects, onGeocodeAll, geocoding }) {
+function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
   const navigate = useNavigate();
   const mapEl = useRef(null);
   const mapRef = useRef(null);
@@ -59,7 +61,7 @@ function MapView({ projects, onGeocodeAll, geocoding }) {
     const bounds = [];
     located.forEach((p) => {
       const lat = Number(p.latitude), lng = Number(p.longitude);
-      const color = SC[p.status] || '#94a3b8';
+      const color = stageMap?.[p.status]?.color || '#94a3b8';
       const icon = L.divIcon({
         className: '',
         html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>`,
@@ -98,10 +100,75 @@ function MapView({ projects, onGeocodeAll, geocoding }) {
   );
 }
 
-const SB = { active:'badge-green', lead:'badge-gray', quote:'badge-yellow', on_hold:'badge-blue', completed:'badge-gray', cancelled:'badge-red' };
-const SL = { active:'Actif', lead:'Lead', quote:'Soumission', on_hold:'En pause', completed:'Terminé', cancelled:'Annulé' };
-const SC = { active:'#22c55e', lead:'#94a3b8', quote:'#f59e0b', on_hold:'#6366f1', completed:'#22c55e', cancelled:'#ef4444' };
 const EMPTY = { name:'', address:'', start_date:'', end_date:'', contract_value:'' };
+
+const slugify = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'etat';
+
+// Éditeur du pipeline — renommer, recolorer, réordonner, ajouter/retirer des états.
+function PipelineManager({ pipeline, onSave, onClose }) {
+  const [stages, setStages] = useState(() => pipeline.map((s) => ({ ...s })));
+  const [saving, setSaving] = useState(false);
+  const upd = (i, patch) => setStages((s) => s.map((st, idx) => idx === i ? { ...st, ...patch } : st));
+  const move = (i, dir) => setStages((s) => {
+    const j = i + dir; if (j < 0 || j >= s.length) return s;
+    const next = [...s]; [next[i], next[j]] = [next[j], next[i]]; return next;
+  });
+  const remove = (i) => setStages((s) => s.filter((_, idx) => idx !== i));
+  const add = () => setStages((s) => [...s, { key: '', label: 'Nouvel état', color: '#94a3b8' }]);
+
+  const save = async () => {
+    setSaving(true);
+    const seen = new Set();
+    const cleaned = stages.filter((st) => (st.label || '').trim()).map((st) => {
+      let key = st.key && /^[a-z0-9_]+$/.test(st.key) ? st.key : slugify(st.label);
+      const base = key; let n = 1;
+      while (seen.has(key)) key = `${base}_${n++}`;
+      seen.add(key);
+      return { key, label: st.label.trim(), color: st.color || '#94a3b8', ...(st.terminal ? { terminal: true } : {}) };
+    });
+    if (cleaned.length) await onSave(cleaned);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <SlideOver
+      title="Gérer le pipeline"
+      subtitle="Personnalise les états par lesquels tes projets passent"
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button type="button" className="btn-primary flex-1" onClick={save} disabled={saving}>
+            {saving && <Loader2 size={14} className="animate-spin" />} Enregistrer
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-2">
+        {stages.map((st, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 rounded-xl border border-gray-100 bg-gray-50">
+            <div className="flex flex-col">
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowUp size={13} /></button>
+              <button type="button" onClick={() => move(i, 1)} disabled={i === stages.length - 1} className="text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowDown size={13} /></button>
+            </div>
+            <input type="color" value={st.color || '#94a3b8'} onChange={(e) => upd(i, { color: e.target.value })} className="w-7 h-7 rounded cursor-pointer flex-shrink-0 border border-gray-200" title="Couleur" />
+            <input className="input flex-1 py-1 text-sm" value={st.label} onChange={(e) => upd(i, { label: e.target.value })} placeholder="Nom de l'état" />
+            <label className="flex items-center gap-1 text-[10px] text-gray-400 flex-shrink-0" title="État final (projet terminé)">
+              <input type="checkbox" checked={!!st.terminal} onChange={(e) => upd(i, { terminal: e.target.checked })} /> fin
+            </label>
+            <button type="button" onClick={() => remove(i)} className="text-gray-300 hover:text-red-500 flex-shrink-0"><X size={14} /></button>
+          </div>
+        ))}
+        <button type="button" onClick={add} className="w-full flex items-center justify-center gap-1 py-2 text-sm text-brand border border-dashed border-brand/40 rounded-xl hover:bg-orange-50">
+          <Plus size={14} /> Ajouter un état
+        </button>
+        <p className="text-xs text-gray-400 pt-1">L'ordre définit la progression. Coche « fin » pour les états où le projet est clos (rangé dans « Terminés »).</p>
+      </div>
+    </SlideOver>
+  );
+}
 
 function ProjectModal({ project, onClose, onSave }) {
   const [form, setForm] = useState(project ? {
@@ -155,7 +222,16 @@ export default function Projets() {
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [pipeOpen, setPipeOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Sélecteurs individuels (éviter de retourner un nouvel objet → boucle de rendu).
+  const storePipeline = useConfigStore((s) => s.pipeline);
+  const loadCfg = useConfigStore((s) => s.load);
+  const setPipeline = useConfigStore((s) => s.setPipeline);
+  const pipeline = (storePipeline && storePipeline.length) ? storePipeline : DEFAULT_PIPELINE;
+  const stageMap = useMemo(() => Object.fromEntries(pipeline.map((s) => [s.key, s])), [pipeline]);
+  const isTerminal = (p) => !!stageMap[p.status]?.terminal;
 
   const load = async () => {
     setLoading(true);
@@ -163,7 +239,12 @@ export default function Projets() {
     catch {} finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadCfg(); }, []);
+
+  const changeStage = async (id, status) => {
+    setItems((i) => i.map((p) => p.id === id ? { ...p, status } : p));
+    try { await projectsApi.update(id, { status }); } catch {}
+  };
 
   const handleSave = (data, isEdit) => {
     if (isEdit) setItems(i=>i.map(p=>p.id===data.id?{...p,...data}:p));
@@ -183,8 +264,8 @@ export default function Projets() {
     const matchStatus = !statusFilter || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
-  const active = filtered.filter(p=>p.status==='active');
-  const others = filtered.filter(p=>p.status!=='active');
+  const active = filtered.filter(p => !isTerminal(p));
+  const others = filtered.filter(p => isTerminal(p));
 
   const [sliderProject, setSliderProject] = useState(null);
   const [view, setView] = useState('list');
@@ -212,10 +293,11 @@ export default function Projets() {
 
   const ProjectCard = ({ p }) => {
     const pct = p.progress_pct || 0;
-    const color = SC[p.status] || '#94a3b8';
+    const st = stageMap[p.status] || {};
+    const color = st.color || '#94a3b8';
     const isEditing = sliderProject === p.id;
 
-    const daysLeft = p.end_date && p.status === 'active'
+    const daysLeft = p.end_date && !st.terminal
       ? Math.ceil((new Date(p.end_date) - Date.now()) / 86400000)
       : null;
 
@@ -226,7 +308,7 @@ export default function Projets() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
               <p className="font-medium text-gray-900 text-sm truncate">{p.name}</p>
-              <span className={`badge ${SB[p.status]}`}>{SL[p.status]}</span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: `${color}1a`, color }}>{st.label || p.status}</span>
               {daysLeft !== null && daysLeft <= 7 && (
                 <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${daysLeft < 0 ? 'text-red-500' : 'text-orange-500'}`}>
                   <Clock size={9}/>{daysLeft < 0 ? `${Math.abs(daysLeft)}j retard` : `${daysLeft}j`}
@@ -251,7 +333,7 @@ export default function Projets() {
                 );
               })()}
             </div>
-            {p.status === 'active' && (
+            {!st.terminal && (
               <div
                 className="flex items-center gap-2 group"
                 onClick={e => { e.stopPropagation(); setSliderProject(isEditing ? null : p.id); }}
@@ -264,6 +346,15 @@ export default function Projets() {
             )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <select
+              value={p.status}
+              onChange={e => changeStage(p.id, e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-1.5 py-1 text-gray-600 bg-white hover:border-gray-300 cursor-pointer max-w-[8.5rem]"
+              title="Changer l'état"
+            >
+              {pipeline.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              {!stageMap[p.status] && <option value={p.status}>{p.status}</option>}
+            </select>
             <button className="btn-ghost p-1.5 text-gray-400 hover:text-blue-500" onClick={() => setEditItem(p)}><Pencil size={13}/></button>
             <button className="btn-ghost p-1.5 text-gray-400 hover:text-red-500" onClick={() => del(p.id)}><Trash2 size={13}/></button>
             <ChevronRight size={14} className="text-gray-300 ml-1"/>
@@ -316,12 +407,14 @@ export default function Projets() {
                 onClick={()=>setView('map')}
               ><MapIcon size={13}/> Carte</button>
             </div>
+            <button className="btn-secondary" onClick={()=>setPipeOpen(true)} title="Personnaliser le pipeline"><Settings2 size={15}/> Pipeline</button>
             <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={15}/> Nouveau projet</button>
           </div>
         </div>
 
         {showNew && <ProjectModal onClose={()=>setShowNew(false)} onSave={handleSave}/>}
         {editItem && <ProjectModal project={editItem} onClose={()=>setEditItem(null)} onSave={handleSave}/>}
+        {pipeOpen && <PipelineManager pipeline={pipeline} onSave={setPipeline} onClose={()=>setPipeOpen(false)}/>}
 
         {/* Search + filter bar */}
         <div className="flex gap-2 mb-4 flex-wrap">
@@ -330,15 +423,15 @@ export default function Projets() {
             <input className="input pl-8" placeholder="Rechercher par nom ou adresse…" value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <select className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-            <option value="">Tous les statuts</option>
-            {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            <option value="">Tous les états</option>
+            {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 py-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div>
         ) : view === 'map' ? (
-          <MapView projects={filtered} onGeocodeAll={geocodeAll} geocoding={geocoding} />
+          <MapView projects={filtered} onGeocodeAll={geocodeAll} geocoding={geocoding} stageMap={stageMap} />
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (
@@ -372,7 +465,7 @@ export default function Projets() {
             )}
             {others.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Autres ({others.length})</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Terminés ({others.length})</p>
                 <div className="grid gap-3">{others.map(p=><ProjectCard key={p.id} p={p}/>)}</div>
               </div>
             )}

@@ -16,8 +16,15 @@ router.patch('/', async (req, res) => {
   const allowed = ['name','rbq_number','neq_number','logo_url','address','city','postal_code',
     'phone','email','website','sector','size','tps_number','tvq_number',
     'default_deposit_pct','payment_terms_days','modules_enabled','social_links',
-    'default_labor_cost_rate'];
-  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+    'default_labor_cost_rate','pipeline_stages'];
+  // pipeline_stages is a JSONB *array* — node-pg would encode a JS array as a
+  // Postgres array, not JSON. Stringify JSONB fields so they land as jsonb.
+  const JSONB_FIELDS = ['modules_enabled','social_links','pipeline_stages'];
+  const updates = Object.fromEntries(
+    Object.entries(req.body)
+      .filter(([k]) => allowed.includes(k))
+      .map(([k, v]) => [k, JSONB_FIELDS.includes(k) && v != null ? JSON.stringify(v) : v])
+  );
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.company_id];

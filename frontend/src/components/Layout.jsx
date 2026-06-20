@@ -1,28 +1,22 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
-import { useAuthStore, useUIStore } from '../store';
+import { useAuthStore, useUIStore, useConfigStore } from '../store';
 import { dashboard as dashApi } from '../api';
-import FloatingChat from './FloatingChat';
+import { CORE_MODULES, SECONDARY_MODULES, roleAllows } from '../config/modules';
 import SearchModal from './SearchModal';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
   HardHat, QrCode, Settings, Menu, Moon, Sun, Plus, X,
   LogOut, User, ChevronRight, BookUser, BarChart3, Bell,
   AlertCircle, Clock, FileQuestion, Search, Sparkles,
+  FileSignature, ShoppingCart, FileStack, SlidersHorizontal, Check,
 } from 'lucide-react';
 
-const NAV = [
-  { to: '/dashboard',       icon: LayoutDashboard, label: 'Tableau de bord' },
-  { to: '/chat',            icon: Sparkles,        label: 'Assistant IA', highlight: true },
-  { to: '/projets',         icon: FolderKanban,    label: 'Projets' },
-  { to: '/leads',           icon: Users,           label: 'Leads' },
-  { to: '/contacts',        icon: BookUser,        label: 'Contacts' },
-  { to: '/soumissions',     icon: FileText,        label: 'Soumissions' },
-  { to: '/factures',        icon: Receipt,         label: 'Factures' },
-  { to: '/sous-traitants',  icon: HardHat,         label: 'Sous-traitants' },
-  { to: '/punch',           icon: QrCode,          label: 'Punch' },
-  { to: '/rapport',         icon: BarChart3,       label: 'Rapport' },
-];
+// Résolution des icônes par nom (le registre des modules stocke des chaînes).
+const ICONS = {
+  LayoutDashboard, Sparkles, FolderKanban, Users, FileText, Receipt,
+  HardHat, QrCode, BarChart3, BookUser, FileSignature, ShoppingCart, FileStack,
+};
 
 const QUICK = [
   { label: 'Nouveau lead',        path: '/leads?new=1' },
@@ -32,8 +26,9 @@ const QUICK = [
 ];
 
 export default function Layout({ children }) {
-  const { user, logout } = useAuthStore();
+  const { user, logout, company } = useAuthStore();
   const { darkMode, sidebarOpen, toggleDark, toggleSidebar } = useUIStore();
+  const { modules, load, toggleModule } = useConfigStore();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -41,8 +36,17 @@ export default function Layout({ children }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [notifSeen, setNotifSeen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
+
+  const role = company?.role;
+  // 3 onglets cœur + modules secondaires activés, filtrés par rôle.
+  const coreNav = CORE_MODULES.filter((m) => roleAllows(role, m.key));
+  const secondaryNav = SECONDARY_MODULES.filter((m) => roleAllows(role, m.key) && modules?.[m.key]);
+  const manageable = SECONDARY_MODULES.filter((m) => roleAllows(role, m.key));
+
+  useEffect(() => { load(); }, []);
 
   // Close menus on outside click
   useEffect(() => {
@@ -92,22 +96,63 @@ export default function Layout({ children }) {
           {sidebarOpen && <span className="font-bold text-gray-900 text-sm">MONFLUX</span>}
         </div>
 
-        {/* Nav */}
+        {/* Nav — 3 onglets cœur + modules activés */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {NAV.map(({ to, icon: Icon, label, highlight }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${highlight ? 'nav-item-ai' : ''}`}
-              title={!sidebarOpen ? label : undefined}
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">{label}</span>}
-              {highlight && sidebarOpen && (
-                <span className="ml-auto text-[10px] font-semibold text-brand bg-brand/10 px-1.5 py-0.5 rounded-full">IA</span>
+          {[...coreNav, ...secondaryNav].map((m) => {
+            const Icon = ICONS[m.icon] || FolderKanban;
+            return (
+              <NavLink
+                key={m.path}
+                to={m.path}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${m.highlight ? 'nav-item-ai' : ''}`}
+                title={!sidebarOpen ? m.label : undefined}
+              >
+                <Icon size={16} className="flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">{m.label}</span>}
+                {m.highlight && sidebarOpen && (
+                  <span className="ml-auto text-[10px] font-semibold text-brand bg-brand/10 px-1.5 py-0.5 rounded-full">IA</span>
+                )}
+                {m.comingSoon && sidebarOpen && !m.highlight && (
+                  <span className="ml-auto text-[9px] text-gray-300 italic">bientôt</span>
+                )}
+              </NavLink>
+            );
+          })}
+
+          {/* Gérer les vues — affiche/masque les onglets disponibles pour le profil */}
+          {sidebarOpen && manageable.length > 0 && (
+            <div className="pt-2">
+              <button
+                onClick={() => setManageOpen((o) => !o)}
+                className="nav-item w-full text-gray-400 hover:text-gray-700"
+              >
+                <SlidersHorizontal size={16} className="flex-shrink-0" />
+                <span className="truncate">Gérer les vues</span>
+                <ChevronRight size={14} className={`ml-auto transition-transform ${manageOpen ? 'rotate-90' : ''}`} />
+              </button>
+              {manageOpen && (
+                <div className="mt-1 ml-1 pl-2 border-l border-gray-100 space-y-0.5">
+                  {manageable.map((m) => {
+                    const on = !!modules?.[m.key];
+                    return (
+                      <button
+                        key={m.key}
+                        onClick={() => toggleModule(m.key)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                        title={on ? 'Masquer' : 'Afficher'}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 ${on ? 'bg-brand text-white' : 'border border-gray-300'}`}>
+                          {on && <Check size={10} />}
+                        </span>
+                        <span className="truncate">{m.label}</span>
+                        {m.comingSoon && <span className="ml-auto text-[9px] text-gray-300 italic">bientôt</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </NavLink>
-          ))}
+            </div>
+          )}
         </nav>
 
         {/* Sidebar footer */}
@@ -277,9 +322,6 @@ export default function Layout({ children }) {
 
       {/* Global search */}
       {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}
-
-      {/* Floating AI chat */}
-      <FloatingChat />
     </div>
   );
 }

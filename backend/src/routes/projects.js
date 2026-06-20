@@ -109,7 +109,7 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
-        req.company_id, name, description, type || 'other', status || 'active',
+        req.company_id, name, description, type || 'other', status || 'brouillon',
         address, city, postal_code, client_id || null, lead_id || null,
         start_date || null, end_date || null, contract_value || null,
         budget_materials || null, budget_labor || null, created_from_project || null,
