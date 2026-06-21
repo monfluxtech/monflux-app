@@ -27,7 +27,9 @@ export const CORE_MODULES = [
 export const SECONDARY_MODULES = [
   { key: 'leads',          label: 'Leads',          path: '/leads',          icon: 'Users' },
   { key: 'soumissions',    label: 'Soumissions',    path: '/soumissions',    icon: 'FileText' },
+  { key: 'contrats',       label: 'Contrats',       path: '/contrats',       icon: 'FileSignature' },
   { key: 'factures',       label: 'Factures',       path: '/factures',       icon: 'Receipt' },
+  { key: 'commandes',      label: 'Commandes',      path: '/commandes',      icon: 'ShoppingCart' },
   { key: 'sous_traitants', label: 'Sous-traitants', path: '/sous-traitants', icon: 'HardHat' },
   { key: 'contacts',       label: 'Contacts',       path: '/contacts',       icon: 'BookUser' },
   { key: 'punch',          label: 'Punch',          path: '/punch',          icon: 'QrCode' },
@@ -51,7 +53,7 @@ export function roleAllows(role, key) {
 
 export function defaultModulesEnabled() {
   return {
-    leads: true, soumissions: true, factures: true, sous_traitants: true,
-    contacts: true, punch: true, rapport: true,
+    leads: true, soumissions: true, contrats: true, factures: true,
+    commandes: true, sous_traitants: true, contacts: true, punch: true, rapport: true,
   };
 }

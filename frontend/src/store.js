@@ -70,7 +70,7 @@ export const useConfigStore = create((set, get) => ({
     try {
       const { data } = await companiesApi.get();
       set({
-        modules: data.modules_enabled || defaultModulesEnabled(),
+        modules: { ...defaultModulesEnabled(), ...(data.modules_enabled || {}) },
         pipeline: Array.isArray(data.pipeline_stages) && data.pipeline_stages.length
           ? data.pipeline_stages : DEFAULT_PIPELINE,
         loaded: true,
