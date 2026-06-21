@@ -66,6 +66,8 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
   const [notifs, setNotifs] = useState([]);
   const [notifSeen, setNotifSeen] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(null);
+  const [testRole, setTestRole] = useState('');
+  const [testPlan, setTestPlan] = useState('');
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
   const quickRef = useRef(null);
@@ -229,6 +231,35 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
         {toc ? toc : <div className="flex-1" />}
 
         <div className="app-sidebar-bottom">
+          {/* Box test rôle/forfait */}
+          <div style={{ margin: '0 8px 10px', padding: '10px 12px', background: 'rgba(255,255,255,.07)', borderRadius: 10, border: '1px solid rgba(255,255,255,.1)' }}>
+            <p style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>Test rôle / forfait</p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              {['Propriétaire', 'Chef', 'Technicien', 'Sous-traitant'].map(r => (
+                <button key={r} type="button"
+                  onClick={() => setTestRole(testRole === r ? '' : r)}
+                  style={{ flex: 1, fontSize: 9, fontWeight: 700, padding: '4px 2px', borderRadius: 5, border: '1px solid', cursor: 'pointer', textAlign: 'center', transition: 'all .12s',
+                    background: testRole === r ? '#E8794E' : 'transparent',
+                    borderColor: testRole === r ? '#E8794E' : 'rgba(255,255,255,.2)',
+                    color: testRole === r ? '#fff' : 'rgba(255,255,255,.5)',
+                  }}
+                >{r}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['Solo', 'Pro', 'Équipe', 'Entreprise'].map(p => (
+                <button key={p} type="button"
+                  onClick={() => setTestPlan(testPlan === p ? '' : p)}
+                  style={{ flex: 1, fontSize: 9, fontWeight: 700, padding: '4px 2px', borderRadius: 5, border: '1px solid', cursor: 'pointer', textAlign: 'center', transition: 'all .12s',
+                    background: testPlan === p ? '#3B5BDB' : 'transparent',
+                    borderColor: testPlan === p ? '#3B5BDB' : 'rgba(255,255,255,.2)',
+                    color: testPlan === p ? '#fff' : 'rgba(255,255,255,.5)',
+                  }}
+                >{p}</button>
+              ))}
+            </div>
+          </div>
+
           {onboardingDone === false && (
             <div className="app-sidebar-status">
               <span className="app-sidebar-status-dot warn" />
@@ -261,6 +292,15 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
               onClick={() => setLanguage(lang === 'fr' ? 'en' : 'fr')}
             >
               <Languages size={14} />
+            </button>
+            <button
+              type="button"
+              className="mini"
+              title="Visite guidée — relancer la visite de bienvenue"
+              onClick={() => navigate('/onboarding?tour=1')}
+              style={{ color: '#E8794E' }}
+            >
+              <Sparkles size={14} />
             </button>
           </div>
 

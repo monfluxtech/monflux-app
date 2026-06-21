@@ -33,7 +33,10 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-quotes', icon: '📋', label: 'Soumissions' },
   { id: 's-documents', icon: '📁', label: 'Documents' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
-  { id: 's-portal', icon: '🌐', label: 'Portails' },
+  { id: 's-portal', icon: '🌐', label: 'Portails d\'accès' },
+  { id: 's-feed', icon: '📰', label: 'Fil du chantier' },
+  { id: 's-plans', icon: '🏛', label: 'Plans & rendus', badge: 'B8' },
+  { id: 's-comms', icon: '✉', label: 'Courriels & comms', badge: 'B9' },
   { id: 's-co', icon: '📝', label: 'Avenants' },
 ];
 
@@ -502,6 +505,13 @@ export default function ProjectDetail() {
   const [analyzingCoId, setAnalyzingCoId] = useState(null);
   const [aiNotice, setAiNotice] = useState('');
   const [activeSection, setActiveSection] = useState('s-ai');
+  const [statusPopup, setStatusPopup] = useState(null);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [estimTab, setEstimTab] = useState('ia');
+  const [clientMsgCopied, setClientMsgCopied] = useState(false);
+  const [terrainAnswers, setTerrainAnswers] = useState({});
+  const [searchingPrices, setSearchingPrices] = useState(false);
+  const [supplierPrices, setSupplierPrices] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -842,6 +852,30 @@ export default function ProjectDetail() {
     setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
   };
 
+  const changeProjectStatus = async () => {
+    if (!statusPopup) return;
+    setChangingStatus(true);
+    try {
+      const { data } = await projectsApi.update(id, { status: statusPopup.key });
+      setProject(p => ({ ...p, status: data.status }));
+      setStatusPopup(null);
+    } catch {} finally { setChangingStatus(false); }
+  };
+
+  const searchMaterialPrices = async () => {
+    if (!project) return;
+    setSearchingPrices(true);
+    try {
+      const trades = (project.trades || []).map(t => t.trade).join(', ') || 'rénovation générale';
+      const { data } = await aiApi.ask({
+        project_id: id,
+        message: `Recherche les prix courants des matériaux de construction au Québec pour ce type de projet : ${project.name}. Corps de métier impliqués : ${trades}. Fais une liste des principaux matériaux avec le prix moyen estimé chez les fournisseurs québécois (Rona, Canac, Home Depot, BMR). Format : tableau avec colonnes Matériau, Prix estimé, Fournisseur suggéré.`,
+      });
+      setSupplierPrices(data?.response || data?.message || null);
+    } catch { setSupplierPrices('Impossible de récupérer les prix. Réessayez plus tard.'); }
+    finally { setSearchingPrices(false); }
+  };
+
   // B6 — handlers Chantier
   const approveTs = async (tsId) => {
     try {
@@ -1153,7 +1187,11 @@ export default function ProjectDetail() {
                     const isDone = i < activeIdx;
                     const isActive = i === activeIdx;
                     return (
-                      <div key={s.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer' }}>
+                      <div key={s.key}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
+                        onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
+                        title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
+                      >
                         <div style={{
                           width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
                           border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : '#E8EAED'}`,
@@ -1207,17 +1245,149 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* ── Estimation terrain ── (mint) */}
+        {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation terrain</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Listes de vérification générées selon les corps de métier</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation générale</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>3 façons de recueillir les informations et générer une estimation</div>
             </div>
             <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
           </div>
-          <FieldEstimation project={project} onUpdated={load} />
+
+          {/* Onglets méthodes */}
+          <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,.7)', borderRadius: 10, padding: 3, marginBottom: 20, gap: 2 }}>
+            {[
+              { k: 'ia', icon: '✨', label: 'L\'IA estime (projets similaires)' },
+              { k: 'photos', icon: '📷', label: 'Demander les photos au client' },
+              { k: 'terrain', icon: '🏗', label: 'Visite terrain' },
+            ].map(({ k, icon, label }) => (
+              <button key={k} type="button"
+                onClick={() => setEstimTab(k)}
+                style={{
+                  border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+                  background: estimTab === k ? '#fff' : 'transparent',
+                  color: estimTab === k ? '#15171C' : '#7C8089',
+                  boxShadow: estimTab === k ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+                }}
+              >{icon} {label}</button>
+            ))}
+          </div>
+
+          {/* Méthode 1 — IA estime à partir de projets similaires */}
+          {estimTab === 'ia' && (
+            <div>
+              <FieldEstimation project={project} onUpdated={load} />
+              <div style={{ marginTop: 20, padding: 16, background: 'rgba(255,255,255,.8)', borderRadius: 12, border: '1px solid rgba(232,121,78,.2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 16 }}>💰</span>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>Prix des matériaux en ligne</p>
+                    <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>L'IA consulte les sites Rona, Canac, Home Depot, BMR et Richelieu pour estimer les coûts matériaux de ce projet.</p>
+                  </div>
+                  <button
+                    className="btn-primary text-xs flex-shrink-0"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={searchMaterialPrices}
+                    disabled={searchingPrices}
+                  >
+                    {searchingPrices ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
+                    {searchingPrices ? 'Recherche…' : 'Chercher les prix'}
+                  </button>
+                </div>
+                {supplierPrices && (
+                  <div style={{ background: '#fff', borderRadius: 8, padding: 12, fontSize: 12.5, color: '#3A3D44', lineHeight: 1.7, whiteSpace: 'pre-wrap', border: '1px solid #E8EAED', marginTop: 4 }}>
+                    {supplierPrices}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Méthode 2 — Demander des photos et infos au client */}
+          {estimTab === 'photos' && (
+            <div style={{ background: 'rgba(255,255,255,.8)', borderRadius: 12, padding: 20, border: '1px solid #E8EAED' }}>
+              <p style={{ fontSize: 13, color: '#7C8089', marginBottom: 14 }}>Envoyez ce message au client pour lui demander les informations nécessaires à l'estimation.</p>
+              <textarea
+                style={{ width: '100%', minHeight: 220, padding: 14, borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit', background: '#FAFAFA' }}
+                defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.name || 'votre projet'}.\n\nPour préparer une estimation précise, pourriez-vous nous envoyer :\n\n1. Des photos d'ensemble de chaque pièce (4 angles)\n2. Une courte vidéo (30–60 s) en décrivant les travaux souhaités\n3. Des photos rapprochées des éléments à modifier\n4. Les dimensions approximatives des espaces\n5. L'âge du bâtiment, votre budget visé, l'échéancier souhaité\n\nN'hésitez pas si vous avez des questions.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                <button className="btn-primary text-xs" onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(document.querySelector('#client-msg-ta')?.value || ''); }}>
+                  {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
+                </button>
+                <button className="btn-secondary text-xs" onClick={() => window.open(`https://wa.me/${project.client_phone?.replace(/\D/g,'')}`, '_blank')} disabled={!project.client_phone}>
+                  <MessageCircle size={13}/> Envoyer par WhatsApp
+                </button>
+              </div>
+              <div style={{ marginTop: 16, padding: '12px 14px', background: '#EEF1FD', borderRadius: 10 }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>📋 Checklist photos à demander</p>
+                {['Vue d\'ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, toilette)', 'Panneau électrique (ouvert)', 'Sous-sol ou vide sanitaire', 'Toiture et gouttières (extérieur)'].map((item, i) => (
+                  <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#3A3D44', marginBottom: 6, cursor: 'pointer' }}>
+                    <input type="checkbox" style={{ accentColor: BRAND }}/>
+                    {item}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Méthode 3 — Visite terrain */}
+          {estimTab === 'terrain' && (
+            <div style={{ background: 'rgba(255,255,255,.8)', borderRadius: 12, padding: 20, border: '1px solid #E8EAED' }}>
+              <div style={{ padding: '10px 14px', background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 9, marginBottom: 16, fontSize: 12.5, color: '#9A3412' }}>
+                Répondez à ces questions sur place. Vos réponses permettent à l'IA de préremplir l'estimation automatiquement.
+              </div>
+              {[
+                { id: 'trades', q: 'Quels corps de métier sont impliqués ?', opts: ['Électricité', 'Plomberie', 'Charpenterie', 'Peinture', 'Couverture', 'Excavation'] },
+                { id: 'bearing_walls', q: 'Des murs porteurs sont-ils touchés ?', opts: ['Oui', 'Non', 'À vérifier'] },
+                { id: 'occupied', q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — locataires présents', 'Non — vacant', 'Partiellement'] },
+                { id: 'permit', q: 'Un permis municipal est-il requis ?', opts: ['Oui — en cours', 'Oui — à demander', 'Non requis'] },
+                { id: 'hazmat', q: 'Présence de matériaux dangereux ?', opts: ['Amiante suspectée', 'Peinture au plomb', 'Aucun à ma connaissance'] },
+              ].map(({ id, q, opts }) => (
+                <div key={id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #F0F2F4' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>{q}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {opts.map(opt => (
+                      <button key={opt} type="button"
+                        onClick={() => setTerrainAnswers(a => ({ ...a, [id]: opt }))}
+                        style={{
+                          padding: '5px 12px', borderRadius: 8, fontSize: 12.5, border: '1px solid', cursor: 'pointer', fontWeight: 600, transition: 'all .12s',
+                          background: terrainAnswers[id] === opt ? BRAND : '#fff',
+                          borderColor: terrainAnswers[id] === opt ? BRAND : '#E8EAED',
+                          color: terrainAnswers[id] === opt ? '#fff' : '#3A3D44',
+                        }}
+                      >{opt}</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>Superficie totale à rénover (pi²)</p>
+                <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth: 160 }}
+                  value={terrainAnswers.area || ''} onChange={e => setTerrainAnswers(a => ({ ...a, area: e.target.value }))}/>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>Observations sur place</p>
+                <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
+                  value={terrainAnswers.notes || ''} onChange={e => setTerrainAnswers(a => ({ ...a, notes: e.target.value }))}/>
+              </div>
+              {Object.keys(terrainAnswers).length >= 3 && (
+                <div style={{ padding: '8px 14px', background: '#E9F8EE', borderRadius: 8, fontSize: 12.5, color: '#16a34a', fontWeight: 700, marginBottom: 12 }}>
+                  ✓ {Object.keys(terrainAnswers).length} éléments renseignés — cliquez ci-dessous pour générer l'estimation.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary text-xs" onClick={() => { setEstimTab('ia'); }} disabled={Object.keys(terrainAnswers).length < 3}>
+                  <Sparkles size={13}/> Générer l'estimation (IA)
+                </button>
+                <button className="btn-secondary text-xs">
+                  <FileText size={13}/> Rapport de visite PDF (bientôt)
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Rentabilité ── (violet) */}
@@ -1416,6 +1586,62 @@ export default function ProjectDetail() {
         </div>
 
         {/* ── Médias chantier ── (cream) */}
+        {/* ── Fil du chantier ── */}
+        <div id="s-feed" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📰</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Fil du chantier</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Activités récentes — statuts, heures, médias, alertes</div>
+            </div>
+          </div>
+          {(() => {
+            const feedItems = [
+              ...(timesheets.slice(0, 5).map(ts => ({
+                type: 'heures', icon: '⏱', color: '#E8794E', bg: '#FFF1EB',
+                title: `${ts.worker_name || 'Employé'} — ${ts.hours ? `${ts.hours}h punchées` : 'punch'}`,
+                sub: ts.note || '',
+                date: ts.date || ts.created_at,
+              }))),
+              ...(media.slice(0, 3).map(m => ({
+                type: 'media', icon: m.type === 'photo' ? '📷' : m.type === 'voice' ? '🎙' : '📌', color: '#4f46e5', bg: '#EEF1FD',
+                title: `${m.author_name || 'Photo'} — ${m.type === 'photo' ? 'photo ajoutée' : m.type === 'voice' ? 'mémo vocal' : 'note de chantier'}`,
+                sub: m.caption || m.transcript || '',
+                date: m.created_at,
+              }))),
+              ...(changeOrdersList.filter(co => co.status === 'pending_approval').map(co => ({
+                type: 'alerte', icon: '⚠', color: '#d97706', bg: '#FFFBEB',
+                title: `Avenant en attente : ${co.title}`,
+                sub: `${co.amount ? money(co.amount) + ' $' : ''}`,
+                date: co.created_at,
+              }))),
+            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+
+            if (!feedItems.length) return (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', fontSize: 13 }}>
+                Aucune activité enregistrée. Les punchs, photos et alertes apparaîtront ici.
+              </div>
+            );
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {feedItems.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: '#FAFAFA', borderRadius: 10, border: '1px solid #F0F2F4' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>{item.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{item.title}</p>
+                      {item.sub && <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sub}</p>}
+                    </div>
+                    <span style={{ fontSize: 11, color: '#C8CACD', flexShrink: 0, alignSelf: 'center' }}>
+                      {item.date ? new Date(item.date).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
         <div id="s-media" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
@@ -1484,7 +1710,24 @@ export default function ProjectDetail() {
           )}
 
           {media.length > 0 ? (
-            <div className="space-y-2">
+            <>
+              {/* Galerie horizontale */}
+              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
+                {media.map(m => (
+                  <div key={`gal-${m.id}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff' }}>
+                    {m.type === 'photo' && m.url
+                      ? <img src={m.url} alt={m.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}/>
+                      : <div style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 28 }}>{m.type === 'voice' ? '🎙' : '📌'}</div>
+                    }
+                    <div style={{ padding: '8px 10px' }}>
+                      <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>{new Date(m.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}</p>
+                      <p style={{ fontSize: 12, color: '#15171C', margin: '2px 0 0', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{m.caption || m.transcript || '—'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Détails / analyse IA */}
+              <div className="space-y-2">
               {media.map(m => {
                 const a = m.ai_analysis;
                 const issues = (a?.non_conformities?.length || 0) + (a?.safety_risks?.length || 0);
@@ -1541,7 +1784,8 @@ export default function ProjectDetail() {
                   </div>
                 );
               })}
-            </div>
+              </div>
+            </>
           ) : !showMediaForm && (
             <div className="text-center py-5">
               <Camera size={26} className="text-gray-200 mx-auto mb-2"/>
@@ -2324,8 +2568,8 @@ export default function ProjectDetail() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🌐</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Portail client</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Lien partageable — suivi temps réel du chantier</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Portails d'accès</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Liens sécurisés — client et fournisseurs</div>
             </div>
           </div>
 
@@ -2375,6 +2619,48 @@ export default function ProjectDetail() {
               <p className="text-sm text-gray-400 mb-4">Le lien portail sera disponible au prochain rechargement (migration DB en cours).</p>
             </div>
           )}
+
+          {/* Portail fournisseur */}
+          <div style={{ marginTop: 20, padding: 16, background: '#F4F6F8', borderRadius: 12, border: '1px solid #E8EAED' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#E7EFF4', display: 'grid', placeItems: 'center', fontSize: 18 }}>🏢</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>Portail fournisseur</p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>Demandes de prix, commandes, documents techniques — bientôt disponible</p>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#3A3D44' }}>Bientôt</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Plans & rendus ── (stub) */}
+        <div id="s-plans" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>🏛</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Plans & rendus d'architecte</h2>
+              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>PDF, DWG, extraction IA des surfaces — B8</div>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B8</span>
+          </div>
+          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
+            Upload de plans (PDF/DWG), prévisualisation, extraction IA des dimensions et surfaces pour préremplir l'estimation, rendu visuel IA, intégration BIM.
+          </div>
+        </div>
+
+        {/* ── Courriels & communications ── (stub) */}
+        <div id="s-comms" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>✉</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Courriels & communications</h2>
+              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>Gmail · WhatsApp · SMS liés au projet — B9</div>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B9</span>
+          </div>
+          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
+            Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
+          </div>
         </div>
 
         {/* ── Avenants (Change Orders) ── (cream) */}
@@ -2526,6 +2812,25 @@ export default function ProjectDetail() {
         )}
 
       </div>
+      {/* ── Popup changement statut pipeline ── */}
+      {statusPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setStatusPopup(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: BRAND_SOFT, display: 'grid', placeItems: 'center', fontSize: 22, marginBottom: 16 }}>🔄</div>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#15171C', margin: '0 0 8px' }}>Changer le statut ?</h3>
+            <p style={{ fontSize: 14, color: '#7C8089', margin: '0 0 20px' }}>
+              Passer de <b>{PIPELINE_LABELS[project.status] || project.status}</b> à <b style={{ color: BRAND }}>{statusPopup.label}</b> ?
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-secondary flex-1" onClick={() => setStatusPopup(null)}>Annuler</button>
+              <button className="btn-primary flex-1" onClick={changeProjectStatus} disabled={changingStatus}>
+                {changingStatus ? <Loader2 size={14} className="animate-spin"/> : null} Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
       {showInfo && (
         <InfoModal
