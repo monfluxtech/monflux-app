@@ -1,0 +1,1508 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MONFLUX — Prototype B1 v5</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --or:#E8794E;--or-d:#C85A2B;--or-s:#FFF1EB;--or-b:#F9D5C0;
+  --ink:#15171C;--ink2:#3A3D44;--mu:#7C8089;
+  --line:#E8EAED;--bg:#F5F6F8;
+  --blue:#E7EFF4;--cream:#F4EFE4;--mint:#E9F3EC;--violet:#F0EBFD;
+  --green:#16a34a;--green-s:#E9F8EE;--green-b:#BEE5CC;
+  --amber:#b45309;--amber-s:#FEF6E0;--amber-b:#F6E3B0;
+  --purple:#6741d9;--purple-s:#EEEBFA;
+  --r:12px;--r-lg:16px;
+  --sh:0 1px 2px rgba(0,0,0,.05),0 4px 12px rgba(0,0,0,.04);
+  --sh-md:0 2px 8px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.05);
+  --sb:240px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:Inter,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer}
+
+/* ═══════════════════════════════════════
+   LAYOUT : nav-rail | toc | doc
+══════════════════════════════════════ */
+.shell{display:grid;grid-template-columns:var(--sb) 1fr;min-height:100vh}
+
+/* ─── SIDEBAR ─────────────────────── */
+.sidebar{position:sticky;top:0;height:100vh;width:var(--sb);background:#111317;display:flex;flex-direction:column;z-index:30;overflow:hidden}
+.sb-header{display:flex;align-items:center;gap:10px;padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto}
+.sb-logo{width:34px;height:34px;background:var(--or);border-radius:10px;display:grid;place-items:center;font-weight:900;font-size:16px;color:#fff;flex:0 0 34px}
+.sb-app{font-size:14px;font-weight:800;color:#fff;letter-spacing:-.01em;flex:1}
+.sb-notif{width:30px;height:30px;border-radius:8px;border:none;background:none;color:#6B7280;font-size:16px;display:grid;place-items:center;position:relative;transition:.12s;cursor:pointer}
+.sb-notif:hover{background:rgba(255,255,255,.08);color:#fff}
+.sb-ndot{position:absolute;top:5px;right:5px;width:6px;height:6px;background:#ef4444;border-radius:50%;border:1.5px solid #111317}
+.sb-global{padding:10px 8px 6px;flex:0 0 auto;border-bottom:1px solid rgba(255,255,255,.07)}
+.sb-nav{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;border:none;background:none;color:#9CA3AF;font-size:12.5px;font-weight:600;width:100%;text-align:left;transition:.12s;cursor:pointer}
+.sb-nav:hover{background:rgba(255,255,255,.07);color:#E5E7EB}
+.sb-nav.active{background:rgba(232,121,78,.18);color:var(--or)}
+.sb-nav-ic{font-size:14px;width:20px;text-align:center;flex:0 0 20px}
+.sb-proj-label{font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.28);padding:12px 18px 2px;flex:0 0 auto}
+.sb-proj-name{font-size:13px;font-weight:800;color:#fff;padding:4px 18px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;border-bottom:1px solid rgba(255,255,255,.07)}
+.toc-list{flex:1;overflow-y:auto;padding:6px 8px}
+.toc-list::-webkit-scrollbar{width:3px}
+.toc-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+.toc-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;cursor:pointer;user-select:none;transition:.12s;position:relative}
+.toc-item:hover{background:rgba(255,255,255,.07)}
+.toc-item.toc-active{background:rgba(232,121,78,.18)}
+.toc-item.toc-active .ti-lbl{color:var(--or);font-weight:700}
+.toc-item.dragging-over{border-top:2px solid var(--or)}
+.toc-item.drag-src{opacity:.4}
+.toc-item .ti-drag{color:rgba(255,255,255,.2);font-size:11px;cursor:grab;flex:0 0 auto;line-height:1;opacity:0;transition:.12s}
+.toc-item:hover .ti-drag{opacity:1}
+.toc-item .ti-icon{font-size:14px;flex:0 0 18px;text-align:center}
+.toc-item .ti-lbl{flex:1;font-size:12.5px;font-weight:500;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toc-item .ti-badge{font-size:8px;font-weight:700;background:rgba(255,255,255,.1);color:rgba(255,255,255,.4);padding:2px 5px;border-radius:99px;flex:0 0 auto}
+.toc-item .ti-eye{width:20px;height:20px;border:none;background:none;font-size:11px;color:rgba(255,255,255,.3);border-radius:5px;display:grid;place-items:center;opacity:0;flex:0 0 20px;transition:.12s;position:relative}
+.toc-item:hover .ti-eye{opacity:.6}
+.toc-item.long-pressed .ti-eye{opacity:1;color:#fff}
+.toc-item .ti-eye:hover{opacity:1!important;background:rgba(255,255,255,.1)}
+.toc-item.sec-hidden{opacity:.5}
+.toc-item.sec-hidden .ti-lbl{text-decoration:line-through;color:rgba(255,255,255,.25)}
+.toc-item.sec-hidden .ti-eye{opacity:1}
+.toc-item.sec-hidden .ti-eye .eye-slash{display:block}
+.toc-item.sec-hidden .ti-eye .eye-open{display:none}
+.eye-slash{display:none}
+.toc-section-sep{height:1px;background:rgba(255,255,255,.07);margin:8px 10px}
+.toc-hidden-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.2);padding:8px 10px 4px}
+.sb-bottom{border-top:1px solid rgba(255,255,255,.08);padding:10px 10px 14px;flex:0 0 auto}
+.admin-box{border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:9px 10px;background:rgba(255,255,255,.04);margin-bottom:10px}
+.admin-lab{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.3);display:flex;align-items:center;gap:5px;margin-bottom:7px}
+.admin-box select{width:100%;font-size:11px;font-weight:600;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:#fff;margin-bottom:5px}
+.admin-box select:last-of-type{margin-bottom:0}
+.ob-row{display:flex;align-items:center;gap:8px;padding:6px 2px 8px}
+.ob-dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.15);flex:0 0 9px}
+.ob-dot.warn{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.15)}
+.ob-text{flex:1;font-size:11px;color:rgba(255,255,255,.6);line-height:1.3}
+.ob-edit{font-size:10px;font-weight:700;color:var(--or);background:none;border:none;padding:2px 5px;border-radius:5px;flex:0 0 auto;cursor:pointer}
+.user-row{display:flex;align-items:center;gap:8px}
+.user-av{width:30px;height:30px;border-radius:50%;background:var(--or);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;flex:0 0 30px}
+.user-info{flex:1}.user-info b{display:block;font-size:12px;font-weight:700;color:#fff}.user-info small{font-size:10.5px;color:rgba(255,255,255,.4)}
+.settings-btn{width:28px;height:28px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);border-radius:8px;display:grid;place-items:center;color:rgba(255,255,255,.4);font-size:14px;transition:.12s;flex:0 0 28px;cursor:pointer}
+.settings-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+/* Hamburger mobile */
+.hamburger{display:none;position:fixed;top:10px;left:10px;width:38px;height:38px;background:#111317;color:#fff;border:none;border-radius:10px;font-size:18px;z-index:50;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;align-items:center;justify-content:center}
+.sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:29}
+
+/* ─── DOC ────────────────────────────── */
+.doc{min-width:0;display:flex;flex-direction:column}
+
+/* Topbar */
+.topbar{position:sticky;top:0;height:54px;background:rgba(255,255,255,.92);backdrop-filter:blur(12px) saturate(180%);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 36px;z-index:15}
+.breadcrumb{font-size:13px;color:var(--mu);display:flex;align-items:center;gap:7px}
+.breadcrumb b{color:var(--ink);font-weight:700}
+.bc-sep{opacity:.35}
+.topbar .sp{flex:1}
+.search-pill{display:flex;align-items:center;gap:8px;background:#F4F5F6;border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:12.5px;color:var(--mu);width:220px}
+.kbd{font-size:10px;margin-left:auto;background:#E8E9EB;border-radius:4px;padding:1px 5px;color:#888}
+.t-btn{height:32px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:0 11px;font-size:12px;font-weight:700;color:var(--ink2);display:flex;align-items:center;gap:6px;transition:.12s}
+.t-btn:hover{border-color:var(--or);color:var(--or-d)}
+.t-btn.primary{background:var(--or);border-color:var(--or);color:#fff}
+.t-btn.primary:hover{background:var(--or-d);border-color:var(--or-d)}
+
+/* Hero */
+.hero{padding:48px 56px 36px;background:var(--blue);border-bottom:1px solid var(--line)}
+.hero-eyebrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.hero-tag{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--or);border-radius:99px;padding:4px 14px;display:flex;align-items:center;gap:8px}
+.hero-tag .ht-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.7);display:inline-block}
+.edit-btn{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--ink2);background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 12px;transition:.12s}
+.edit-btn:hover{border-color:var(--or);color:var(--or-d)}
+.hero h1{font-size:54px;font-weight:900;letter-spacing:-.04em;line-height:1.02;color:var(--ink)}
+.hero .lede{margin:12px 0 0;font-size:15px;color:var(--ink2);line-height:1.55;max-width:70ch}
+.kv-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.kv{background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 14px;min-width:120px}
+.kv-k{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--mu)}
+.kv-v{font-size:18px;font-weight:900;letter-spacing:-.01em;margin-top:5px}
+
+/* ─── DOC SECTIONS ─────────────────── */
+.doc-sections{flex:1}
+.ds{border-top:1px solid var(--line);position:relative}
+.ds.bg-cream{background:var(--cream)}
+.ds.bg-mint{background:var(--mint)}
+.ds.bg-blue{background:var(--blue)}
+.ds.bg-violet{background:var(--violet)}
+.ds.bg-stub{background:#FAFBFE;opacity:.78}
+.ds-inner{padding:36px 56px 44px}
+.ds-hdr{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px}
+.ds-ic{width:46px;height:46px;border-radius:13px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:22px;flex:0 0 46px;box-shadow:var(--sh)}
+.ds-hdr-text{flex:1}
+.ds-hdr h2{font-size:28px;font-weight:900;letter-spacing:-.02em;color:var(--ink);margin:0}
+.ds-hdr .ds-sub{font-size:13px;color:var(--mu);margin-top:4px}
+.timing{font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap;flex:0 0 auto;margin-top:4px}
+.timing.now{background:var(--green-s);color:var(--green)}
+.timing.soon{background:var(--purple-s);color:var(--purple)}
+
+/* ─── SHARED COMPONENTS ─────────────── */
+.warnbox{background:var(--amber-s);border:1px solid var(--amber-b);border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--amber);line-height:1.5;margin:14px 0}
+.infobox{background:#F3F4F6;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--ink2);line-height:1.5;margin:0 0 14px}
+.tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.tag.ok{background:var(--green-s);color:var(--green)}
+.tag.wait{background:var(--amber-s);color:var(--amber)}
+.tag.no{background:#F3F4F6;color:#6b7280}
+
+/* ─── PIPELINE SECTION ──────────────── */
+.pipe-track{position:relative;padding:8px 0 24px}
+.pipe-line{position:absolute;top:28px;left:0;right:0;height:3px;background:var(--line);z-index:0}
+.pipe-fill{position:absolute;top:28px;left:0;height:3px;background:var(--or);z-index:1;transition:.4s}
+.pipe-steps{display:flex;justify-content:space-between;position:relative;z-index:2}
+.pipe-step{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1}
+.pipe-dot{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);background:#fff;display:grid;place-items:center;transition:.2s}
+.pipe-step.done .pipe-dot{background:var(--green);border-color:var(--green)}
+.pipe-step.active .pipe-dot{background:var(--or);border-color:var(--or);box-shadow:0 0 0 4px rgba(242,101,34,.2);width:22px;height:22px}
+.pipe-step.active .pipe-lbl{color:var(--or-d);font-weight:800}
+.pipe-step.done .pipe-dot::after{content:'✓';color:#fff;font-size:9px;font-weight:700}
+.pipe-step.active .pipe-dot::after{content:'●';color:#fff;font-size:8px}
+.pipe-lbl{font-size:11px;font-weight:600;color:var(--mu);text-align:center;line-height:1.3}
+.pipe-step.done .pipe-lbl{color:var(--green)}
+
+/* ─── ESTIMATION ────────────────────── */
+.est-tabs{display:inline-flex;background:#EEF0F2;border-radius:10px;padding:3px;gap:3px;margin-bottom:20px}
+.et{border:none;background:none;padding:9px 15px;border-radius:8px;font-size:12.5px;font-weight:700;color:var(--mu);transition:.15s}
+.et.on{background:#fff;color:var(--or-d);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.vp{display:none}.vp.on{display:block}
+.metier-band{display:flex;align-items:center;gap:9px;background:var(--or-s);border:1px solid var(--or-b);border-radius:10px;padding:10px 13px;font-size:12.5px;font-weight:600;color:var(--or-d);margin-bottom:18px}
+/* Editable estimation table */
+.etab{width:100%;border-collapse:collapse;font-size:13px}
+.etab th{text-align:left;padding:10px 10px;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);border-bottom:2px solid var(--line);background:#FAFBFC;white-space:nowrap}
+.etab td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.etab tbody tr:hover td{background:#FEFCFA}
+.etab tfoot td{padding:11px 10px;font-weight:800;background:#F4F5F7;border-top:2px solid var(--line)}
+.etab .del-btn{border:none;background:none;color:#D1D5DB;font-size:14px;padding:2px 4px;border-radius:5px;transition:.12s}
+.etab .del-btn:hover{color:#ef4444;background:#FEF2F2}
+/* Inline editable cells */
+.ecell{border:none;background:transparent;font-family:Inter,sans-serif;font-size:13px;color:var(--ink);width:100%;padding:5px 6px;border-radius:6px;transition:.12s;outline:none}
+.ecell:hover{background:rgba(242,101,34,.06)}
+.ecell:focus{background:#fff;outline:2px solid var(--or);outline-offset:0}
+.ecell.mk{font-weight:800;color:var(--or-d)}
+.ecell.src{color:#185fa5;font-size:11.5px}
+.src-conf{font-size:10px;color:var(--mu)}
+.add-row-btn{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--or-d);background:none;border:1px dashed var(--or-b);border-radius:8px;padding:7px 12px;margin-top:10px;transition:.12s}
+.add-row-btn:hover{background:var(--or-s)}
+/* Voie B message */
+.msg-area{width:100%;border:1px solid var(--line);border-radius:12px;padding:16px;font-size:13.5px;line-height:1.7;color:var(--ink2);background:#FAFBFC;min-height:180px;resize:vertical;outline:none}
+.msg-area:focus{border-color:var(--or);box-shadow:0 0 0 3px rgba(242,101,34,.1)}
+.send-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.send-btn{font-size:12.5px;font-weight:700;border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 13px;display:flex;align-items:center;gap:6px;color:var(--ink2);transition:.12s}
+.send-btn:hover{border-color:var(--or);color:var(--or-d)}
+.photo-cl{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.photo-cl h4{padding:10px 14px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#FAFBFC;border-bottom:1px solid var(--line);color:var(--ink2)}
+.photo-cl label{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line);cursor:pointer;transition:.1s}
+.photo-cl label:last-child{border:none}
+.photo-cl label:hover{background:#FAFBFC}
+/* Voie C form */
+.voiec{display:flex;flex-direction:column;gap:14px}
+.vc-q{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.vc-qh{display:flex;align-items:center;gap:12px;padding:12px 15px;background:#FAFBFC;border-bottom:1px solid var(--line)}
+.vc-num{width:24px;height:24px;border-radius:7px;background:var(--or-s);color:var(--or-d);display:grid;place-items:center;font-size:11px;font-weight:800;flex:0 0 24px}
+.vc-ql{font-size:14px;font-weight:600;flex:1}
+.vc-body{padding:13px 15px}
+.opts{display:flex;flex-wrap:wrap;gap:7px}
+.opt{background:#F4F5F6;border:1.5px solid transparent;border-radius:8px;padding:7px 11px;font-size:12.5px;font-weight:600;color:var(--ink2);transition:.12s}
+.opt:hover{border-color:var(--or);background:var(--or-s);color:var(--or-d)}
+.opt.sel{border-color:var(--or);background:var(--or-s);color:var(--or-d)}
+.vc-body textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.5;resize:vertical;min-height:70px;color:var(--ink);background:#fff;outline:none}
+.vc-body textarea:focus{border-color:var(--or);box-shadow:0 0 0 3px rgba(242,101,34,.1)}
+.vc-body input[type=number]{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;color:var(--ink);background:#fff;width:180px;outline:none}
+.vc-body input[type=number]:focus{border-color:var(--or)}
+.vc-result{background:var(--green-s);border:1px solid var(--green-b);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--green);font-weight:600;margin-top:14px}
+
+/* ─── CHECKLIST ─────────────────────── */
+.ck-group{margin-bottom:20px}
+.ck-group-hdr{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4f46e5;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.ck-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.ck-item:last-child{border:none}
+.ck-item input[type=checkbox]{width:17px;height:17px;accent-color:var(--or);cursor:pointer;flex:0 0 17px}
+.ck-item label{flex:1;font-size:13.5px;cursor:pointer}
+.ck-tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:#EEF1FD;color:#4f46e5;white-space:nowrap}
+
+/* ─── TRADES ────────────────────────── */
+.trade{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.trade:last-of-type{border:none}
+.trade-ic{width:42px;height:42px;border-radius:12px;background:#F4F5F6;display:grid;place-items:center;font-size:21px;flex:0 0 42px}
+.trade-info{flex:1}.trade-info b{font-size:14px}.trade-info small{display:block;color:var(--mu);font-size:12px;margin-top:2px}
+.trade-ph{font-size:12.5px;font-weight:700;color:#185fa5;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.trade-media{font-size:11px;font-weight:700;color:var(--or-d);background:var(--or-s);border:1px solid var(--or-b);border-radius:8px;padding:5px 9px;white-space:nowrap;transition:.12s}
+.trade-media:hover{background:var(--or-b)}
+
+/* ─── FINANCES ──────────────────────── */
+.fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:24px}
+.fin-kpi{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px}
+.fk-l{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mu)}
+.fk-v{font-size:26px;font-weight:900;letter-spacing:-.02em;margin-top:7px}
+.fk-sub{font-size:11px;color:var(--mu);margin-top:4px}
+.ftab{width:100%;border-collapse:collapse;font-size:13px}
+.ftab th{text-align:left;padding:10px 12px;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);border-bottom:1px solid var(--line);background:#FAFBFC}
+.ftab td{padding:11px 12px;border-bottom:1px solid var(--line)}
+.ftab tr:last-child td{border:none}
+.inc{color:var(--green);font-weight:700}.pend{color:var(--mu)}
+
+/* ─── GALLERY ───────────────────────── */
+.gallery{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory;margin-top:6px}
+.gc{flex:0 0 220px;scroll-snap-align:start;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;box-shadow:var(--sh)}
+.gc-img{height:148px;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff}
+.gc-cap{padding:11px 13px}
+.gc-meta{font-size:10px;color:var(--mu);display:flex;justify-content:space-between;margin-bottom:5px}
+.gc-cap p{font-size:12.5px;line-height:1.4;color:var(--ink2);margin:0}
+.gc.note-card{flex:0 0 230px;background:#FFFDF7;border-color:#F2E7CF}
+.gc.note-card .gc-img{display:none}
+
+/* ─── DOCUMENTS ─────────────────────── */
+.dtab{width:100%;border-collapse:collapse;font-size:13px}
+.dtab th{text-align:left;padding:10px 13px;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);border-bottom:1px solid var(--line);background:#FAFBFC}
+.dtab td{padding:12px 13px;border-bottom:1px solid var(--line)}
+.dtab tr:last-child td{border:none}
+.lnk{color:#185fa5;text-decoration:underline;cursor:pointer;font-weight:600}
+
+/* ─── PORTAILS ──────────────────────── */
+.portal-row{display:flex;align-items:center;gap:14px;padding:16px;background:#fff;border:1px solid var(--line);border-radius:13px;margin-bottom:10px}
+.portal-row:last-child{margin-bottom:0}
+.portal-ic{width:42px;height:42px;background:#F4F5F6;border-radius:12px;display:grid;place-items:center;font-size:22px;flex:0 0 42px}
+.portal-info{flex:1}.portal-info h4{font-size:14px;font-weight:700}
+.portal-link{font-size:12px;color:#185fa5;text-decoration:underline;display:block;margin-top:3px}
+.portal-info small{display:block;font-size:11px;color:var(--mu);margin-top:2px}
+.p-btn{font-size:11.5px;font-weight:700;background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 11px;white-space:nowrap;transition:.12s}
+.p-btn:hover{border-color:var(--or);color:var(--or-d)}
+
+/* ─── FEED ──────────────────────────── */
+.feed-row{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory}
+.fc{flex:0 0 210px;scroll-snap-align:start;border:1px solid var(--line);border-radius:13px;padding:14px;background:#fff;box-shadow:var(--sh)}
+.fc-top{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.fc-ic{width:29px;height:29px;border-radius:8px;display:grid;place-items:center;font-size:14px;flex:0 0 29px}
+.fc-type{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.fc-time{margin-left:auto;font-size:10.5px;color:var(--mu)}
+.fc b{display:block;font-size:14px;margin-bottom:3px}
+.fc p{font-size:12px;color:var(--ink2);line-height:1.45;margin:0}
+
+/* ─── AI HUB ────────────────────────── */
+.aihub{background:linear-gradient(135deg,#F2843F 0%,#F26522 52%,#D8480F 100%);color:#fff;border-radius:16px;padding:26px;box-shadow:0 10px 28px rgba(216,72,15,.28)}
+.hub-top{display:flex;gap:18px;align-items:flex-start}
+.hub-plus{width:58px;height:58px;border-radius:16px;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.4);display:grid;place-items:center;font-size:32px;flex:0 0 58px}
+.hub-top h3{font-size:19px;font-weight:800;margin:0}
+.hub-top p{margin:6px 0 0;font-size:13px;color:rgba(255,255,255,.9);line-height:1.5;max-width:54ch}
+.hub-acts{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px}
+.ha{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:10px 14px;font-size:12.5px;font-weight:600;transition:.15s}
+.ha:hover{background:rgba(255,255,255,.26)}
+.ha.primary{background:#fff;color:var(--or-d)}
+.hub-next{margin-top:15px;background:rgba(255,255,255,.13);border:1px dashed rgba(255,255,255,.4);border-radius:12px;padding:12px 14px;font-size:12.5px;display:flex;gap:10px}
+
+/* ─── STUB ──────────────────────────── */
+.stub-body{background:#F9FAFC;border:1px dashed var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--mu);line-height:1.6}
+
+/* ─── FLOAT-UP ──────────────────────── */
+.float-up{position:fixed;bottom:28px;right:28px;width:42px;height:42px;background:var(--ink);color:#fff;border:none;border-radius:12px;font-size:18px;display:grid;place-items:center;box-shadow:0 4px 16px rgba(0,0,0,.18);z-index:60;opacity:0;pointer-events:none;transition:.2s;cursor:pointer}
+.float-up.show{opacity:1;pointer-events:auto}
+.float-up:hover{background:var(--or)}
+
+/* ─── POPOVER ─────────────────────── */
+#statusPopContainer{display:none;position:fixed;inset:0;z-index:200}
+.pop-overlay{position:absolute;inset:0;background:rgba(0,0,0,.38)}
+.pop-box{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:18px;padding:26px 28px;min-width:320px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.pop-title{font-size:17px;font-weight:800;margin-bottom:7px}
+.pop-msg{font-size:13.5px;color:var(--ink2);line-height:1.5;margin-bottom:20px}
+.pop-btns{display:flex;gap:8px;justify-content:flex-end}
+.pop-cancel{background:#F4F5F6;border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;color:var(--ink2);cursor:pointer}
+.pop-cancel:hover{background:#E8EAED}
+.pop-ok{background:var(--or);border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;color:#fff;cursor:pointer}
+.pop-ok:hover{background:var(--or-d)}
+
+/* ─── TOAST ───────────────────────── */
+#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%) translateY(16px);background:#111317;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.22);z-index:300;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ─── CMD PALETTE ─────────────────── */
+#cmdOverlay{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:400;display:none}
+#cmdBox{position:fixed;top:15%;left:50%;transform:translateX(-50%);width:min(540px,90vw);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.22);z-index:401;overflow:hidden;display:none}
+.cmd-top{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.cmd-top input{flex:1;border:none;outline:none;font-size:15px;font-weight:500;color:var(--ink)}
+.cmd-esc{font-size:10px;font-weight:700;background:#EEF0F2;border-radius:5px;padding:2px 6px;color:var(--mu);cursor:pointer}
+.cmd-results{padding:6px 6px 10px;max-height:300px;overflow-y:auto}
+.cmd-section{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);padding:10px 12px 4px}
+.cmd-r{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;cursor:pointer;transition:.1s}
+.cmd-r:hover,.cmd-r.sel{background:var(--or-s)}
+.cmd-r .cr-ic{font-size:16px;width:22px;text-align:center}
+.cmd-r .cr-lbl{font-size:13.5px;font-weight:600;flex:1}
+.cmd-r .cr-sub{font-size:11.5px;color:var(--mu)}
+
+/* ─── PIPELINE CLICKABLE ─────────── */
+.pipe-step.clickable{cursor:pointer}
+.pipe-step.clickable:hover .pipe-dot{transform:scale(1.15);transition:.15s}
+.pipe-step.clickable:not(.active):hover .pipe-lbl{color:var(--or-d);font-weight:700}
+
+/* ─── MINI GANTT ──────────────────── */
+.mg-wrap{margin-top:4px;overflow-x:auto;padding-bottom:4px}
+.mg-hdr{display:flex;align-items:center;margin-bottom:8px;gap:0}
+.mg-lbl-hdr{width:120px;flex:0 0 120px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu)}
+.mg-months{flex:1;display:flex}
+.mg-month{flex:1;font-size:10px;font-weight:600;color:var(--mu);text-align:center}
+.mg-row{display:flex;align-items:center;gap:0;margin-bottom:6px}
+.mg-lbl{width:120px;flex:0 0 120px;font-size:12px;font-weight:600;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+.mg-track{flex:1;background:var(--line);border-radius:4px;height:18px;position:relative}
+.mg-bar{height:100%;border-radius:4px;position:absolute;top:0;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:700;color:#fff;overflow:hidden;white-space:nowrap;transition:.2s}
+.mg-today{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--or);border-radius:2px;z-index:2}
+.mg-today::after{content:'Auj.';position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--or);white-space:nowrap}
+
+/* ─── DEVIS PRÉCIS ────────────────── */
+.dv-line{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);gap:8px;font-size:13px}
+.dv-line:last-of-type{border:none}
+.dv-num{width:22px;font-size:11px;color:var(--mu);font-weight:700;flex:0 0 22px}
+.dv-poste{flex:1;font-weight:600}
+.dv-qty{width:55px;text-align:right;color:var(--mu);font-size:12px}
+.dv-pu{width:75px;text-align:right;color:var(--mu);font-size:12px}
+.dv-total{width:85px;text-align:right;font-weight:800}
+.dv-tps{display:flex;justify-content:flex-end;gap:30px;padding:6px 0;font-size:12.5px;color:var(--ink2);border-top:1px solid var(--line);margin-top:4px}
+.dv-total-final{display:flex;justify-content:flex-end;gap:30px;padding:10px 0 4px;font-size:17px;font-weight:900;color:var(--ink);border-top:2px solid var(--ink)}
+
+/* ─── AVENANTS ────────────────────── */
+.av-item{border:1px solid var(--line);border-radius:13px;padding:14px;background:#fff;margin-bottom:8px}
+.av-item:last-of-type{margin-bottom:0}
+.av-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.av-num{font-size:10px;font-weight:700;background:#F4F5F6;border-radius:6px;padding:2px 7px;color:var(--ink2)}
+.av-title{font-size:14px;font-weight:700;flex:1}
+.av-body{font-size:12.5px;color:var(--ink2);line-height:1.5;margin-bottom:8px}
+.av-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:var(--mu)}
+.av-meta b{color:var(--ink)}
+
+/* ─── COMMS FEED ──────────────────── */
+.cm-item{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.cm-item:last-child{border:none}
+.cm-av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;flex:0 0 34px}
+.cm-body{flex:1}
+.cm-hdr{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+.cm-from{font-size:13px;font-weight:700}
+.cm-ch{font-size:11px;font-weight:600;background:#F4F5F6;border-radius:6px;padding:1px 6px;color:var(--mu)}
+.cm-when{margin-left:auto;font-size:11px;color:var(--mu)}
+.cm-subj{font-size:12.5px;color:var(--ink2);line-height:1.5}
+.cm-actions{display:flex;gap:7px;margin-top:8px}
+.cm-act{font-size:11.5px;font-weight:700;background:var(--or-s);border:1px solid var(--or-b);color:var(--or-d);border-radius:7px;padding:4px 9px;cursor:pointer;transition:.12s}
+.cm-act:hover{background:var(--or-b)}
+
+/* ─── AVENANT MODAL ───────────────── */
+#avenantModal{display:none;position:fixed;inset:0;z-index:200}
+.am-overlay{position:absolute;inset:0;background:rgba(0,0,0,.38);cursor:pointer}
+.am-box{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:18px;padding:26px 28px;width:min(480px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
+.am-box h3{font-size:18px;font-weight:800;margin-bottom:18px}
+.am-field{margin-bottom:14px}
+.am-field label{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin-bottom:5px}
+.am-field input,.am-field textarea,.am-field select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:13.5px;color:var(--ink);background:#fff;outline:none;font-family:Inter,sans-serif}
+.am-field input:focus,.am-field textarea:focus,.am-field select:focus{border-color:var(--or);box-shadow:0 0 0 3px rgba(242,101,34,.1)}
+.am-field textarea{min-height:80px;resize:vertical}
+.am-row{display:flex;gap:10px}
+.am-row .am-field{flex:1}
+
+@media(max-width:900px){
+  :root{--sb:200px}
+  .hero{padding:28px 20px 24px}.hero h1{font-size:36px}
+  .ds-inner{padding:24px 20px 30px}
+}
+@media(max-width:680px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{position:fixed;top:0;left:-240px;width:240px;height:100vh;transition:left .25s cubic-bezier(.4,0,.2,1);z-index:40}
+  .sidebar.open{left:0}
+  .sb-overlay.show{display:block}
+  .hamburger{display:flex}
+  .topbar{padding:0 16px 0 56px}
+  .hero{padding:20px 16px 20px}.hero h1{font-size:26px}
+  .ds-inner{padding:18px 14px 24px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ══════ SIDEBAR 240px ══════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+
+  <!-- Header : Logo + app name + notif -->
+  <div class="sb-header">
+    <div class="sb-logo">M</div>
+    <span class="sb-app">MONFLUX</span>
+    <button class="sb-notif" title="Notifications">🔔<span class="sb-ndot"></span></button>
+  </div>
+
+  <!-- Navigation globale -->
+  <nav class="sb-global">
+    <button class="sb-nav" onclick="showToast('Tableau de bord — bientôt')">
+      <span class="sb-nav-ic">🗂</span>Tableau de bord
+    </button>
+    <button class="sb-nav active">
+      <span class="sb-nav-ic">📁</span>Projets
+    </button>
+    <button class="sb-nav" onclick="showToast('Assistant IA — bientôt')">
+      <span class="sb-nav-ic">✨</span>Assistant IA
+    </button>
+  </nav>
+
+  <!-- Fiche projet -->
+  <div class="sb-proj-label">Fiche projet</div>
+  <div class="sb-proj-name">Duplex Laurier</div>
+
+  <!-- TOC sections (injectées par JS) -->
+  <div class="toc-list" id="tocList"></div>
+
+  <!-- Admin + profil -->
+  <div class="sb-bottom">
+    <div class="admin-box">
+      <div class="admin-lab">🛠 Test admin</div>
+      <select><option>Rôle : Propriétaire</option><option>Chef de chantier</option><option>Technicien</option><option>Sous-traitant</option><option>Client (lecture)</option></select>
+      <select><option>Forfait : Pro</option><option>Solo</option><option>Équipe</option><option>Entreprise</option></select>
+    </div>
+    <div class="ob-row">
+      <div class="ob-dot"></div>
+      <div class="ob-text">Profil complété<br>Entrepreneur général · Montréal</div>
+      <button class="ob-edit">Modifier</button>
+    </div>
+    <div class="user-row">
+      <div class="user-av">RJ</div>
+      <div class="user-info"><b>Réjean Tremblay</b><small>Propriétaire · Pro</small></div>
+      <button class="settings-btn" title="Réglages">⚙</button>
+    </div>
+  </div>
+</aside>
+
+<!-- Overlay mobile -->
+<div class="sb-overlay" id="sbOverlay" onclick="closeSidebar()"></div>
+<!-- Hamburger mobile -->
+<button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+
+<!-- ══════ DOC ═════════════════════════════════════════ -->
+<div class="doc">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="breadcrumb">Projets <span class="bc-sep">›</span> <b>Duplex Laurier</b></div>
+    <div class="sp"></div>
+    <div class="search-pill">🔍 Rechercher… <span class="kbd">⌘K</span></div>
+    <button class="t-btn">📥 Exporter PDF</button>
+    <button class="t-btn primary">Envoyer au client →</button>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <div class="hero-eyebrow">
+      <div class="hero-tag" id="heroBadge"><span class="ht-dot"></span>PROJET · EN CHANTIER</div>
+      <button class="edit-btn">✏️ Éditer les infos</button>
+    </div>
+    <h1>Duplex Laurier</h1>
+    <p class="lede">Rénovation complète d'un duplex — 2 logements, cuisine et salle de bain. Client : Famille Côté · 1240 rue Laurier Est, Montréal (H2J 2W3).</p>
+    <div class="kv-row">
+      <div class="kv"><div class="kv-k">Valeur contrat</div><div class="kv-v">48 500 $</div></div>
+      <div class="kv"><div class="kv-k">Termes paiement</div><div class="kv-v">30–40–30 %</div></div>
+      <div class="kv"><div class="kv-k">Prochain versement</div><div class="kv-v">19 400 $</div></div>
+      <div class="kv"><div class="kv-k">Échéance</div><div class="kv-v">15 août</div></div>
+      <div class="kv"><div class="kv-k">Chargé de projet</div><div class="kv-v" style="font-size:15px">Réjean T.</div></div>
+    </div>
+  </div>
+
+  <!-- SECTIONS CONTAINER -->
+  <div class="doc-sections" id="docSections">
+
+    <!-- HUB IA -->
+    <div class="ds" id="s-hub">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">📡</div>
+          <div class="ds-hdr-text">
+            <h2>Capture IA du chantier</h2>
+            <div class="ds-sub">Parle, photo, vidéo, document ou note — l'IA classe et propose la suite</div>
+          </div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="aihub">
+          <div class="hub-top">
+            <div class="hub-plus">+</div>
+            <div><h3>Ajoute n'importe quoi au projet</h3><p>L'IA analyse, classe dans la bonne section et te propose la prochaine étape concrète.</p></div>
+          </div>
+          <div class="hub-acts">
+            <button class="ha">🎤 Parler</button>
+            <button class="ha">📷 Photo</button>
+            <button class="ha">🎥 Filmer</button>
+            <button class="ha">📄 Document</button>
+            <button class="ha primary">✍️ Écrire</button>
+          </div>
+          <div class="hub-next">
+            <span style="margin-top:1px">→</span>
+            <span><b>Prochaine étape :</b> confirmer l'électricien — inspecion filage prévue semaine du 30 juin.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PIPELINE -->
+    <div class="ds bg-cream" id="s-pipeline">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">🔄</div>
+          <div class="ds-hdr-text">
+            <h2>Pipeline du projet</h2>
+            <div class="ds-sub">Avancement dans les 9 étapes — de la soumission à la clôture</div>
+          </div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="pipe-track">
+          <div class="pipe-line"></div>
+          <div class="pipe-fill" id="pipeFill" style="width:62.5%"></div>
+          <div class="pipe-steps" id="pipeSteps">
+            <div class="pipe-step done clickable" data-idx="0" onclick="showStatusPop(0)"><div class="pipe-dot"></div><div class="pipe-lbl">Brouillon</div></div>
+            <div class="pipe-step done clickable" data-idx="1" onclick="showStatusPop(1)"><div class="pipe-dot"></div><div class="pipe-lbl">Estimation</div></div>
+            <div class="pipe-step done clickable" data-idx="2" onclick="showStatusPop(2)"><div class="pipe-dot"></div><div class="pipe-lbl">Prix envoyé</div></div>
+            <div class="pipe-step done clickable" data-idx="3" onclick="showStatusPop(3)"><div class="pipe-dot"></div><div class="pipe-lbl">Accepté</div></div>
+            <div class="pipe-step done clickable" data-idx="4" onclick="showStatusPop(4)"><div class="pipe-dot"></div><div class="pipe-lbl">Planifié</div></div>
+            <div class="pipe-step active clickable" data-idx="5" onclick="showStatusPop(5)"><div class="pipe-dot"></div><div class="pipe-lbl">En chantier</div></div>
+            <div class="pipe-step clickable" data-idx="6" onclick="showStatusPop(6)"><div class="pipe-dot"></div><div class="pipe-lbl">À facturer</div></div>
+            <div class="pipe-step clickable" data-idx="7" onclick="showStatusPop(7)"><div class="pipe-dot"></div><div class="pipe-lbl">Payé</div></div>
+            <div class="pipe-step clickable" data-idx="8" onclick="showStatusPop(8)"><div class="pipe-dot"></div><div class="pipe-lbl">Clos</div></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          <div class="kv"><div class="kv-k">Marge théorique</div><div class="kv-v" style="color:var(--green)">22 %</div></div>
+          <div class="kv"><div class="kv-k">Marge $</div><div class="kv-v" style="color:var(--green)">10 670 $</div></div>
+          <div class="kv"><div class="kv-k">Avancement</div><div class="kv-v">Jour 12 / 70</div></div>
+          <div class="kv"><div class="kv-k">Retard / Avance</div><div class="kv-v" style="color:var(--green)">+2 jours</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ESTIMATION -->
+    <div class="ds" id="s-estimation">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">📊</div>
+          <div class="ds-hdr-text">
+            <h2>Estimation approximative</h2>
+            <div class="ds-sub">3 voies disponibles · avant le devis précis · toutes les cellules sont éditables</div>
+          </div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="metier-band">✨ Adapté à ton profil : <b>Entrepreneur général</b> — les lignes, photos et questions varient selon le métier.</div>
+        <div class="est-tabs">
+          <button class="et on" onclick="estTab(this,'A')">Voie A — Recherche IA</button>
+          <button class="et" onclick="estTab(this,'B')">Voie B — Message client</button>
+          <button class="et" onclick="estTab(this,'C')">Voie C — Visite sur place</button>
+        </div>
+
+        <!-- VOIE A -->
+        <div class="vp on" data-v="A">
+          <div style="overflow-x:auto">
+            <table class="etab" id="estTable">
+              <thead>
+                <tr>
+                  <th>Poste</th>
+                  <th>Source</th>
+                  <th>Inclus</th>
+                  <th>Non inclus</th>
+                  <th style="width:70px">Durée</th>
+                  <th style="width:90px">Coût</th>
+                  <th style="width:90px">Prix vente</th>
+                  <th style="width:70px">Markup</th>
+                  <th style="width:30px"></th>
+                </tr>
+              </thead>
+              <tbody id="estBody">
+                <tr>
+                  <td><input class="ecell" value="Démolition"></td>
+                  <td><input class="ecell src" value="Proj #142 (2025)"><div class="src-conf">Confiance élevée</div></td>
+                  <td><input class="ecell" style="font-size:12px" value="Retrait + disposition"></td>
+                  <td><input class="ecell" style="font-size:12px" value="Désamiantage"></td>
+                  <td><input class="ecell" data-type="dur" value="3 j" oninput="updateMk(this)"></td>
+                  <td><input class="ecell" data-type="cost" value="2400" oninput="updateMk(this)"></td>
+                  <td><input class="ecell" data-type="price" value="2800" oninput="updateMk(this)"></td>
+                  <td><input class="ecell mk" data-type="mk" value="+17 %" readonly></td>
+                  <td><button class="del-btn" onclick="delRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                  <td><input class="ecell" value="Matériaux cuisine"></td>
+                  <td><input class="ecell src" value="Rona, Canac"><div class="src-conf">Confiance moyenne</div></td>
+                  <td><input class="ecell" style="font-size:12px" value="Armoires, comptoir"></td>
+                  <td><input class="ecell" style="font-size:12px" value="Électroménagers"></td>
+                  <td><input class="ecell" data-type="dur" value="—"></td>
+                  <td><input class="ecell" data-type="cost" value="9200" oninput="updateMk(this)"></td>
+                  <td><input class="ecell" data-type="price" value="11200" oninput="updateMk(this)"></td>
+                  <td><input class="ecell mk" data-type="mk" value="+22 %" readonly></td>
+                  <td><button class="del-btn" onclick="delRow(this)">✕</button></td>
+                </tr>
+                <tr>
+                  <td><input class="ecell" value="Main-d'œuvre"></td>
+                  <td><input class="ecell src" value="Historique interne"><div class="src-conf">Confiance élevée</div></td>
+                  <td><input class="ecell" style="font-size:12px" value="420 h estimées"></td>
+                  <td><input class="ecell" style="font-size:12px" value="Heures supplémentaires"></td>
+                  <td><input class="ecell" data-type="dur" value="5 sem"></td>
+                  <td><input class="ecell" data-type="cost" value="22300" oninput="updateMk(this)"></td>
+                  <td><input class="ecell" data-type="price" value="27300" oninput="updateMk(this)"></td>
+                  <td><input class="ecell mk" data-type="mk" value="+22 %" readonly></td>
+                  <td><button class="del-btn" onclick="delRow(this)">✕</button></td>
+                </tr>
+              </tbody>
+              <tfoot id="estFoot">
+                <tr>
+                  <td colspan="5"><b>TOTAL approximatif · Fourchette : 41 300 $ – 49 300 $</b></td>
+                  <td><b id="totalCost">33 900 $</b></td>
+                  <td><b id="totalPrice">41 300 $</b></td>
+                  <td><b id="totalMk">+22 %</b></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <button class="add-row-btn" onclick="addEstRow()">＋ Ajouter une ligne</button>
+          <div class="warnbox" style="margin-top:14px">⚠ Estimation <b>approximative — non contractuelle</b>. Le devis précis viendra après confirmation des prix sous-traitants et choix des matériaux.</div>
+        </div>
+
+        <!-- VOIE B -->
+        <div class="vp" data-v="B">
+          <textarea class="msg-area" id="msgClient">Bonjour Famille Côté,
+
+Merci pour votre demande concernant la rénovation complète de votre duplex au 1240 rue Laurier Est, Montréal.
+
+Pour préparer une estimation précise, pourriez-vous nous envoyer :
+
+(1) Des photos d'ensemble de chaque pièce (4 angles)
+(2) Une courte vidéo (30–60 s) en décrivant les travaux souhaités
+(3) Des photos rapprochées des éléments à modifier (cuisine, salle de bain, etc.)
+(4) Les dimensions approximatives des espaces
+(5) Quelques précisions : âge du bâtiment, budget visé, échéancier souhaité
+
+Déposez vos fichiers via ce lien sécurisé :
+monflux.app/upload/dl-9f2a
+
+N'hésitez pas si vous avez des questions.
+
+Cordialement,
+Réjean Tremblay
+MONFLUX Construction inc. — RBQ 1234-5678-01
+514-555-0100</textarea>
+          <div class="send-row">
+            <button class="send-btn">✉️ Envoyer par courriel</button>
+            <button class="send-btn">📱 Par SMS</button>
+            <button class="send-btn">🔗 Copier le lien d'upload</button>
+          </div>
+          <div class="photo-cl">
+            <h4>📷 Checklist photos demandées</h4>
+            <label><input type="checkbox"> Ensemble de chaque pièce (4 angles)</label>
+            <label><input type="checkbox"> Points d'eau (évier, douche, WC)</label>
+            <label><input type="checkbox"> Panneau électrique ouvert</label>
+            <label><input type="checkbox"> Sous-sol ou vide sanitaire</label>
+            <label><input type="checkbox"> Toiture / gouttières (de l'extérieur)</label>
+          </div>
+        </div>
+
+        <!-- VOIE C -->
+        <div class="vp" data-v="C">
+          <div class="infobox">Questions guidées pour <b>Entrepreneur général</b>. Répondez sur place — les réponses préremplissent la Voie A automatiquement.</div>
+          <div class="voiec">
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">1</div><div class="vc-ql">Quels corps de métier sont impliqués ?</div></div><div class="vc-body"><div class="opts"><button class="opt sel" onclick="tog(this)">⚡ Électricité</button><button class="opt sel" onclick="tog(this)">🔧 Plomberie</button><button class="opt" onclick="tog(this)">🏗 Charpenterie</button><button class="opt" onclick="tog(this)">🎨 Peinture</button><button class="opt" onclick="tog(this)">🏠 Couverture</button><button class="opt" onclick="tog(this)">⛏ Excavation</button></div></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">2</div><div class="vc-ql">Des murs porteurs sont-ils touchés ?</div></div><div class="vc-body"><div class="opts"><button class="opt" onclick="tog(this)">Oui</button><button class="opt sel" onclick="tog(this)">Non</button><button class="opt" onclick="tog(this)">À vérifier</button></div></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">3</div><div class="vc-ql">Le bâtiment est-il occupé pendant les travaux ?</div></div><div class="vc-body"><div class="opts"><button class="opt sel" onclick="tog(this)">Oui — locataires présents</button><button class="opt" onclick="tog(this)">Non — vacant</button><button class="opt" onclick="tog(this)">Partiellement</button></div></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">4</div><div class="vc-ql">Un permis municipal est-il requis ?</div></div><div class="vc-body"><div class="opts"><button class="opt sel" onclick="tog(this)">Oui — en cours</button><button class="opt" onclick="tog(this)">Oui — à demander</button><button class="opt" onclick="tog(this)">Non requis</button></div></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">5</div><div class="vc-ql">Présence de matériaux dangereux ?</div></div><div class="vc-body"><div class="opts"><button class="opt" onclick="tog(this)">Amiante suspectée</button><button class="opt" onclick="tog(this)">Peinture au plomb</button><button class="opt sel" onclick="tog(this)">Aucun à ma connaissance</button></div></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">6</div><div class="vc-ql">Superficie totale à rénover (pi²)</div></div><div class="vc-body"><input type="number" placeholder="Ex. 1 200" value="1850"></div></div>
+            <div class="vc-q"><div class="vc-qh"><div class="vc-num">7</div><div class="vc-ql">Observations sur place</div></div><div class="vc-body"><textarea placeholder="Décrivez ce que vous observez…">Duplex bien entretenu, planchers en bon état. Cuisine des 2 logements à refaire entièrement. Tuyauterie ancienne à évaluer.</textarea></div></div>
+          </div>
+          <div class="vc-result">✓ 7/7 questions répondues — la Voie A a été mise à jour automatiquement.</div>
+          <button class="t-btn" style="margin-top:14px">📄 Générer le rapport de visite PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHECKLIST -->
+    <div class="ds bg-mint" id="s-checklist">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">✓</div>
+          <div class="ds-hdr-text"><h2>Checklist terrain</h2><div class="ds-sub">Selon le métier — l'EG agrège toutes les sous-checklists</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="ck-group"><div class="ck-group-hdr">⚡ Électricité</div>
+          <div class="ck-item"><input type="checkbox" checked><label>Ampérage de l'entrée relevé (200 A)</label><span class="ck-tag">Électricien</span></div>
+          <div class="ck-item"><input type="checkbox" checked><label>Photo du panneau ouvert prise</label><span class="ck-tag">Électricien</span></div>
+          <div class="ck-item"><input type="checkbox"><label>Circuits et prises à ajouter comptés</label><span class="ck-tag">Électricien</span></div>
+        </div>
+        <div class="ck-group"><div class="ck-group-hdr">🔧 Plomberie</div>
+          <div class="ck-item"><input type="checkbox" checked><label>Entrée d'eau principale localisée</label><span class="ck-tag">Plombier</span></div>
+          <div class="ck-item"><input type="checkbox"><label>Drain de plancher vérifié</label><span class="ck-tag">Plombier</span></div>
+          <div class="ck-item"><input type="checkbox"><label>Chauffe-eau — âge et capacité notés</label><span class="ck-tag">Plombier</span></div>
+        </div>
+        <div class="ck-group"><div class="ck-group-hdr">🏗 Structure</div>
+          <div class="ck-item"><input type="checkbox" checked><label>Murs porteurs identifiés et photographiés</label><span class="ck-tag">EG</span></div>
+          <div class="ck-item"><input type="checkbox"><label>Plancher : flexion et craquements notés</label><span class="ck-tag">EG</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CORPS DE MÉTIER -->
+    <div class="ds" id="s-corps">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">👷</div>
+          <div class="ds-hdr-text"><h2>Corps de métier & sous-traitants</h2><div class="ds-sub">Téléphone cliquable · clic sur Médias → galerie partagée</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="trade"><div class="trade-ic">🏗</div><div class="trade-info"><b>Charpenterie</b><small>Interne — équipe Réjean</small></div><span class="tag ok">Confirmé</span></div>
+        <div class="trade"><div class="trade-ic">🔧</div><div class="trade-info"><b>Plomberie</b><small>Plomberie RL inc.</small></div><a class="trade-ph" href="tel:5145550142">📞 514-555-0142</a><button class="trade-media">📷 Médias</button><span class="tag ok">Confirmé</span></div>
+        <div class="trade"><div class="trade-ic">⚡</div><div class="trade-info"><b>Électricité</b><small>Électrik Pro — 2 contacts suggérés</small></div><a class="trade-ph" href="tel:4385550199">📞 438-555-0199</a><button class="trade-media">📷 Médias</button><span class="tag wait">Contacté</span></div>
+        <div class="trade"><div class="trade-ic">🎨</div><div class="trade-info"><b>Peinture</b><small>Non assigné</small></div><span class="tag no">À trouver</span></div>
+        <div class="infobox" style="margin-top:14px">RFQ, assignation et pré-réservation d'agenda → <b>Bientôt · B5</b></div>
+      </div>
+    </div>
+
+    <!-- FINANCES -->
+    <div class="ds bg-cream" id="s-finances">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">💰</div>
+          <div class="ds-hdr-text"><h2>Finances & rentabilité</h2><div class="ds-sub">Revenus, coûts, marge théorique</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="infobox">Marge <b>théorique</b> basée sur les estimations. La marge <b>réelle</b> (heures punchées − factures) sera disponible dès B7/B9.</div>
+        <div class="fin-grid">
+          <div class="fin-kpi"><div class="fk-l">Revenus (contrat)</div><div class="fk-v">48 500 $</div><div class="fk-sub">29 100 $ facturés · 19 400 $ à venir</div></div>
+          <div class="fin-kpi"><div class="fk-l">Coûts estimés</div><div class="fk-v">37 830 $</div><div class="fk-sub">M.O. 22 300 $ · Mat. 11 200 $ · S-T 4 330 $</div></div>
+          <div class="fin-kpi"><div class="fk-l">Marge théorique</div><div class="fk-v" style="color:var(--green)">22 %</div><div class="fk-sub">10 670 $ projetés</div></div>
+          <div class="fin-kpi"><div class="fk-l">Marge réelle</div><div class="fk-v" style="font-size:16px;color:var(--mu)">À venir · B7/B9</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAIEMENTS -->
+    <div class="ds" id="s-paiements">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">💳</div>
+          <div class="ds-hdr-text"><h2>Paiements</h2><div class="ds-sub">Versements contractuels · 30–40–30 % · suivi des encaissements</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="fin-grid" style="margin-bottom:20px">
+          <div class="fin-kpi"><div class="fk-l">Total facturé</div><div class="fk-v" style="color:var(--green)">29 100 $</div><div class="fk-sub">60 % du contrat reçu</div></div>
+          <div class="fin-kpi"><div class="fk-l">Prochain versement</div><div class="fk-v">19 400 $</div><div class="fk-sub">À la fin des travaux</div></div>
+          <div class="fin-kpi"><div class="fk-l">Solde restant</div><div class="fk-v" style="color:var(--mu)">19 400 $</div><div class="fk-sub">40 % du contrat</div></div>
+        </div>
+        <table class="ftab">
+          <thead><tr><th>Date</th><th>Description</th><th>Montant</th><th>% contrat</th><th>Statut</th></tr></thead>
+          <tbody>
+            <tr><td>12 juin</td><td>Acompte initial</td><td class="inc">14 550 $</td><td>30 %</td><td><span class="tag ok">Reçu</span></td></tr>
+            <tr><td>18 juin</td><td>2e versement mi-chantier</td><td class="inc">14 550 $</td><td>30 %</td><td><span class="tag ok">Reçu</span></td></tr>
+            <tr><td>Fin travaux</td><td>Solde final</td><td class="pend">19 400 $</td><td>40 %</td><td><span class="tag no">À venir</span></td></tr>
+          </tbody>
+        </table>
+        <button class="add-row-btn" style="margin-top:10px">+ Enregistrer un paiement</button>
+      </div>
+    </div>
+
+    <!-- PHOTOS -->
+    <div class="ds" id="s-photos">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">📷</div>
+          <div class="ds-hdr-text"><h2>Photos</h2><div class="ds-sub">Feed chronologique · bascule par thème</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div style="display:inline-flex;background:#EEF0F2;border-radius:9px;padding:3px;margin-bottom:14px">
+          <button style="border:none;background:#fff;border-radius:7px;padding:6px 11px;font-size:12px;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.06)">Chronologique</button>
+          <button style="border:none;background:none;padding:6px 11px;font-size:12px;font-weight:600;color:var(--mu)">Par thème</button>
+        </div>
+        <div class="gallery">
+          <div class="gc"><div class="gc-img" style="background:linear-gradient(135deg,#5B8DEF,#3B5BDB)">Cuisine — avant</div><div class="gc-cap"><div class="gc-meta"><span>9 juin</span><span>Photo</span></div><p>État initial avant démolition.</p></div></div>
+          <div class="gc"><div class="gc-img" style="background:linear-gradient(135deg,#F2A77C,#C9410F)">Démolition</div><div class="gc-cap"><div class="gc-meta"><span>12 juin</span><span>Photo</span></div><p>Murs porteurs dégagés.</p></div></div>
+          <div class="gc note-card"><div class="gc-cap" style="padding-top:16px"><div class="gc-meta"><span>14 juin</span><span>Note</span></div><p style="font-weight:700">Client veut déplacer l'îlot de 30 cm. À chiffrer en avenant.</p></div></div>
+          <div class="gc"><div class="gc-img" style="background:linear-gradient(135deg,#37B679,#0B7A4B)">Rough-in</div><div class="gc-cap"><div class="gc-meta"><span>18 juin</span><span>Photo</span></div><p>Plomberie inspectée ✓</p></div></div>
+          <div class="gc"><div class="gc-img" style="background:linear-gradient(135deg,#9775FA,#6741D9)">Filage</div><div class="gc-cap"><div class="gc-meta"><span>20 juin</span><span>Photo</span></div><p>Branchements sous-évier.</p></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTS -->
+    <div class="ds bg-blue" id="s-documents">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">📄</div>
+          <div class="ds-hdr-text"><h2>Documents</h2><div class="ds-sub">PDF, contrats, correspondances</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <table class="dtab">
+          <thead><tr><th>Nom</th><th>Date</th><th>Type</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td>Contrat signé — Famille Côté</td><td>5 juin</td><td>PDF</td><td><span class="lnk">Ouvrir</span></td></tr>
+            <tr><td>Plan électrique v2</td><td>15 juin</td><td>PDF</td><td><span class="lnk">Ouvrir</span></td></tr>
+            <tr><td>Devis plomberie RL</td><td>8 juin</td><td>PDF</td><td><span class="lnk">Ouvrir</span></td></tr>
+            <tr><td>Bon de commande Rona #4821</td><td>10 juin</td><td>PDF</td><td><span class="lnk">Ouvrir</span></td></tr>
+          </tbody>
+        </table>
+        <button class="add-row-btn" style="margin-top:10px">+ Ajouter un document</button>
+      </div>
+    </div>
+
+    <!-- PLANS stub B8 -->
+    <div class="ds bg-stub" id="s-plans">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic" style="opacity:.5">🏛</div>
+          <div class="ds-hdr-text"><h2 style="color:var(--mu)">Plans & rendus d'architecte</h2><div class="ds-sub">PDF, DWG, extraction IA des surfaces</div></div>
+          <span class="timing soon">Bientôt · B8</span>
+        </div>
+        <div class="stub-body">Upload de plans (PDF/DWG), prévisualisation in-app, extraction IA des dimensions/surfaces pour préremplir l'estimation matériaux, rendu visuel IA et intégration BIM. Batch B8.</div>
+      </div>
+    </div>
+
+    <!-- PORTAILS -->
+    <div class="ds bg-violet" id="s-portails">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">🔗</div>
+          <div class="ds-hdr-text"><h2>Portails d'accès</h2><div class="ds-sub">Liens sécurisés partagés avec le client et les fournisseurs</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="portal-row">
+          <div class="portal-ic">👥</div>
+          <div class="portal-info"><h4>Portail client</h4><span class="portal-link">monflux.app/portal/dl-9f2a</span><small>Suivi avancement · factures · documents partagés · vue lecture seule</small></div>
+          <button class="p-btn">Copier le lien</button>
+          <button class="p-btn">Partager</button>
+        </div>
+        <div class="portal-row">
+          <div class="portal-ic">🏢</div>
+          <div class="portal-info"><h4>Portail fournisseur</h4><span class="portal-link">monflux.app/supplier/pl-2a4k</span><small>Demandes de prix · suivi commandes · documents techniques</small></div>
+          <button class="p-btn">Copier le lien</button>
+          <button class="p-btn">Partager</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEED -->
+    <div class="ds" id="s-feed">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic">📰</div>
+          <div class="ds-hdr-text"><h2>Feed du chantier</h2><div class="ds-sub">Statuts · heures · actions · alertes · durées</div></div>
+          <span class="timing now">Maintenant</span>
+        </div>
+        <div class="feed-row">
+          <div class="fc"><div class="fc-top"><div class="fc-ic" style="background:var(--green-s)">✓</div><div class="fc-type" style="color:var(--green)">Statut</div><div class="fc-time">il y a 1h</div></div><b>Planifié → En chantier</b><p>Validé par Réjean Tremblay.</p></div>
+          <div class="fc"><div class="fc-top"><div class="fc-ic" style="background:var(--or-s)">⏱</div><div class="fc-type" style="color:var(--or-d)">Heures</div><div class="fc-time">aujourd'hui</div></div><b>Marc — 6h12 punchées</b><p>Total chantier : 312 h / 420 h estimées.</p></div>
+          <div class="fc"><div class="fc-top"><div class="fc-ic" style="background:#EEF1FD">📷</div><div class="fc-type" style="color:#4f46e5">Action</div><div class="fc-time">il y a 4h</div></div><b>Sophie : 2 photos ajoutées</b><p>Section plomberie.</p></div>
+          <div class="fc" style="border-color:var(--amber-b);background:#FFFDF5"><div class="fc-top"><div class="fc-ic" style="background:var(--amber-s)">⚠</div><div class="fc-type" style="color:var(--amber)">Alerte</div><div class="fc-time">il y a 2h</div></div><b>Électricien non confirmé</b><p>Bloque le filage (étape S5).</p></div>
+          <div class="fc"><div class="fc-top"><div class="fc-ic" style="background:#F3F4F6">📅</div><div class="fc-type" style="color:var(--mu)">Durée</div><div class="fc-time">jour 12/70</div></div><b>En avance de 2 jours</b><p>Rythme : +14 % vs plan.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GANTT (aperçu visuel) -->
+    <div class="ds bg-stub" id="s-gantt">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic" style="opacity:.55">📅</div>
+          <div class="ds-hdr-text"><h2 style="color:var(--mu)">Tâches & Gantt</h2><div class="ds-sub">Phases, dépendances, jalons — aperçu prototype</div></div>
+          <span class="timing soon">Bientôt · B6</span>
+        </div>
+        <div class="infobox">Aperçu visuel uniquement. Drag-and-drop, dépendances entre corps de métier et jalons de facturation arriveront en B6.</div>
+        <div class="mg-wrap">
+          <div class="mg-hdr">
+            <div class="mg-lbl-hdr">Phase</div>
+            <div class="mg-months">
+              <div class="mg-month">Juin</div>
+              <div class="mg-month">Juillet</div>
+              <div class="mg-month">Août</div>
+            </div>
+          </div>
+          <!-- today ≈ 40% into June-Aug range -->
+          <div class="mg-row"><div class="mg-lbl">Démolition</div><div class="mg-track"><div class="mg-today" style="left:18%"></div><div class="mg-bar" style="background:#3B5BDB;left:0%;width:22%">Électricité</div></div></div>
+          <div class="mg-row"><div class="mg-lbl">Plomberie rough</div><div class="mg-track"><div class="mg-bar" style="background:#37B679;left:18%;width:20%">Plomberie</div></div></div>
+          <div class="mg-row"><div class="mg-lbl">Filage électrique</div><div class="mg-track"><div class="mg-bar" style="background:#F2A77C;left:18%;width:24%">Élect.</div></div></div>
+          <div class="mg-row"><div class="mg-lbl">Gypse & fini</div><div class="mg-track"><div class="mg-bar" style="background:#9775FA;left:38%;width:28%">Charpenterie</div></div></div>
+          <div class="mg-row"><div class="mg-lbl">Cuisine install.</div><div class="mg-track"><div class="mg-bar" style="background:#F26522;left:55%;width:22%">Armoires</div></div></div>
+          <div class="mg-row"><div class="mg-lbl">Peinture finale</div><div class="mg-track"><div class="mg-bar" style="background:#6741d9;left:72%;width:18%">Peinture</div></div></div>
+        </div>
+        <button class="add-row-btn" style="margin-top:12px;opacity:.6" disabled>+ Créer une tâche (Bientôt · B6)</button>
+      </div>
+    </div>
+
+    <!-- DEVIS PRÉCIS (aperçu) -->
+    <div class="ds bg-stub" id="s-devis">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic" style="opacity:.55">📋</div>
+          <div class="ds-hdr-text"><h2 style="color:var(--mu)">Devis précis</h2><div class="ds-sub">Ligne par ligne · TPS/TVQ · contractuel · aperçu prototype</div></div>
+          <span class="timing soon">Bientôt · B5</span>
+        </div>
+        <div class="infobox">Aperçu non contractuel. B5 livrera la soumission ferme complète avec e-signature et envoi au client.</div>
+        <div class="dv-line" style="font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);padding-bottom:6px">
+          <span class="dv-num">#</span><span class="dv-poste">Description</span><span class="dv-qty">Qté</span><span class="dv-pu">Prix unit.</span><span class="dv-total">Total</span>
+        </div>
+        <div class="dv-line"><span class="dv-num">1</span><span class="dv-poste">Démolition complète — 2 logements</span><span class="dv-qty">1 forfait</span><span class="dv-pu">2 800 $</span><span class="dv-total">2 800 $</span></div>
+        <div class="dv-line"><span class="dv-num">2</span><span class="dv-poste">Matériaux cuisine (armoires, comptoir)</span><span class="dv-qty">2 unités</span><span class="dv-pu">5 600 $</span><span class="dv-total">11 200 $</span></div>
+        <div class="dv-line"><span class="dv-num">3</span><span class="dv-poste">Main-d'œuvre (420 h × 65 $/h)</span><span class="dv-qty">420 h</span><span class="dv-pu">65 $</span><span class="dv-total">27 300 $</span></div>
+        <div class="dv-line"><span class="dv-num">4</span><span class="dv-poste">Plomberie rough-in & finition</span><span class="dv-qty">1 forfait</span><span class="dv-pu">5 200 $</span><span class="dv-total">5 200 $</span></div>
+        <div class="dv-line"><span class="dv-num">5</span><span class="dv-poste">Électricité — 200 A + prises</span><span class="dv-qty">1 forfait</span><span class="dv-pu">2 000 $</span><span class="dv-total">2 000 $</span></div>
+        <div class="dv-tps"><span>Sous-total</span><span style="font-weight:700">48 500 $</span></div>
+        <div class="dv-tps"><span>TPS (5 %)</span><span>2 425 $</span></div>
+        <div class="dv-tps"><span>TVQ (9,975 %)</span><span>4 838 $</span></div>
+        <div class="dv-total-final"><span>Total avec taxes</span><span>55 763 $</span></div>
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+          <button class="t-btn primary" style="opacity:.55" disabled>📄 Générer PDF (B5)</button>
+          <button class="t-btn" style="opacity:.55" disabled>✉️ Envoyer au client (B5)</button>
+          <button class="t-btn" style="opacity:.55" disabled>✍️ Signature électronique (B5)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUITTANCES stub -->
+    <div class="ds bg-stub" id="s-quittances"><div class="ds-inner"><div class="ds-hdr"><div class="ds-ic" style="opacity:.4">📜</div><div class="ds-hdr-text"><h2 style="color:var(--mu)">Quittances & certificat de satisfaction</h2><div class="ds-sub">Signature client · dénonciation de contrat</div></div><span class="timing soon">Bientôt · B9</span></div><div class="stub-body">Quittance finale + certificat QC + signature électronique + dénonciation. Batch B9.</div></div></div>
+
+    <!-- AVENANTS (interactif) -->
+    <div class="ds bg-stub" id="s-avenants">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic" style="opacity:.65">±</div>
+          <div class="ds-hdr-text"><h2 style="color:var(--mu)">Avenants & demandes de changement</h2><div class="ds-sub">Numérotés · impact coût/délai · approbation client</div></div>
+          <span class="timing soon">Bientôt · B8</span>
+        </div>
+        <div id="avenantList">
+          <div class="av-item">
+            <div class="av-top"><span class="av-num">AV-001</span><span class="av-title">Déplacement îlot cuisine — 30 cm vers fenêtre</span><span class="tag wait">En attente</span></div>
+            <div class="av-body">Le client souhaite déplacer l'îlot de 30 cm vers la fenêtre. Implique replomberie drain + rallongement comptoir.</div>
+            <div class="av-meta"><span>💰 <b>+1 400 $</b></span><span>⏱ <b>+2 jours</b></span><span>📅 Soumis 14 juin</span><span>👤 Sophie Côté</span></div>
+          </div>
+          <div class="av-item">
+            <div class="av-top"><span class="av-num">AV-002</span><span class="av-title">Ajout d'une prise 240V pour lave-vaisselle</span><span class="tag ok">Approuvé</span></div>
+            <div class="av-body">Ajout d'un circuit dédié 240V pour lave-vaisselle encastré dans la cuisine du rez-de-chaussée.</div>
+            <div class="av-meta"><span>💰 <b>+380 $</span><span>⏱ <b>0 jour</b></span><span>📅 Approuvé 16 juin</span></div>
+          </div>
+        </div>
+        <button class="add-row-btn" onclick="openAvenantModal()" style="margin-top:10px">± Nouvel avenant</button>
+        <div class="infobox" style="margin-top:12px">Analyse IA d'impact + approbation client par lien → <b>Bientôt · B8</b></div>
+      </div>
+    </div>
+
+    <!-- COMMS FEED -->
+    <div class="ds bg-stub" id="s-comms">
+      <div class="ds-inner">
+        <div class="ds-hdr">
+          <div class="ds-ic" style="opacity:.65">✉</div>
+          <div class="ds-hdr-text"><h2 style="color:var(--mu)">Courriels & communications</h2><div class="ds-sub">Gmail · WhatsApp · SMS liés au projet</div></div>
+          <span class="timing soon">Bientôt · B9</span>
+        </div>
+        <div class="infobox">Aperçu prototype — les messages seront synchronisés depuis Gmail et WhatsApp en B9.</div>
+        <div class="cm-item">
+          <div class="cm-av" style="background:#3B5BDB">FC</div>
+          <div class="cm-body">
+            <div class="cm-hdr"><span class="cm-from">Famille Côté</span><span class="cm-ch">✉ Courriel</span><span class="cm-when">15 juin, 10h23</span></div>
+            <div class="cm-subj"><b>RE: Déplacement îlot</b> — Oui on confirme le déplacement ! Est-ce que ça change le prix final ? On voudrait aussi savoir si…</div>
+            <div class="cm-actions"><button class="cm-act">Répondre</button><button class="cm-act">Créer avenant</button><button class="cm-act">✨ Résumé IA</button></div>
+          </div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-av" style="background:#37B679">RL</div>
+          <div class="cm-body">
+            <div class="cm-hdr"><span class="cm-from">Plomberie RL inc.</span><span class="cm-ch">📱 SMS</span><span class="cm-when">18 juin, 7h48</span></div>
+            <div class="cm-subj">On sera là mardi 24 pour le rough-in. Besoin d'accès au sous-sol dès 7h. Peux-tu confirmer ?</div>
+            <div class="cm-actions"><button class="cm-act">Répondre</button><button class="cm-act">Ajouter au planning</button></div>
+          </div>
+        </div>
+        <div class="cm-item">
+          <div class="cm-av" style="background:#F26522">EP</div>
+          <div class="cm-body">
+            <div class="cm-hdr"><span class="cm-from">Électrik Pro</span><span class="cm-ch">✉ Courriel</span><span class="cm-when">20 juin, 14h02</span></div>
+            <div class="cm-subj"><b>Disponibilité semaine 28</b> — Nous avons une fenêtre du 7 au 11 juillet pour l'inspection filage. Confirmez-vous ?</div>
+            <div class="cm-actions"><button class="cm-act">Confirmer</button><button class="cm-act">Proposer autre date</button></div>
+          </div>
+        </div>
+        <div class="infobox" style="margin-top:12px">Synchronisation Gmail + WhatsApp + résumé IA → <b>Bientôt · B9</b></div>
+      </div>
+    </div>
+
+    <div style="height:100px"></div>
+  </div><!-- /docSections -->
+</div><!-- /doc -->
+</div><!-- /shell -->
+
+<!-- STATUS POPUP -->
+<div id="statusPopContainer">
+  <div class="pop-overlay" onclick="closePop()"></div>
+  <div class="pop-box">
+    <div class="pop-title" id="popTitle">Changer le statut ?</div>
+    <div class="pop-msg" id="popMsg"></div>
+    <div class="pop-btns">
+      <button class="pop-cancel" onclick="closePop()">Annuler</button>
+      <button class="pop-ok" id="popOk">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- AVENANT MODAL -->
+<div id="avenantModal">
+  <div class="am-overlay" onclick="closeAvenantModal()"></div>
+  <div class="am-box">
+    <h3>± Nouvel avenant</h3>
+    <div class="am-field"><label>Titre</label><input id="avTitle" placeholder="Ex. Déplacement îlot cuisine"></div>
+    <div class="am-field"><label>Description</label><textarea id="avDesc" placeholder="Décrivez le changement demandé…"></textarea></div>
+    <div class="am-row">
+      <div class="am-field"><label>Coût supplémentaire ($)</label><input id="avCost" type="number" placeholder="0"></div>
+      <div class="am-field"><label>Impact délai (jours)</label><input id="avDelay" type="number" placeholder="0"></div>
+    </div>
+    <div class="am-field"><label>Demandé par</label><input id="avBy" placeholder="Ex. Sophie Côté" value="Famille Côté"></div>
+    <div class="am-field"><label>Statut</label>
+      <select id="avStatus"><option>En attente</option><option>Approuvé</option><option>Refusé</option></select>
+    </div>
+    <div class="pop-btns" style="margin-top:4px">
+      <button class="pop-cancel" onclick="closeAvenantModal()">Annuler</button>
+      <button class="pop-ok" onclick="saveAvenant()">Enregistrer l'avenant</button>
+    </div>
+  </div>
+</div>
+
+<!-- CMD PALETTE -->
+<div id="cmdOverlay" onclick="closeCmd()"></div>
+<div id="cmdBox">
+  <div class="cmd-top">
+    <span style="font-size:16px">🔍</span>
+    <input id="cmdInput" placeholder="Rechercher ou aller à…" oninput="filterCmd(this.value)" onkeydown="cmdKey(event)">
+    <span class="cmd-esc" onclick="closeCmd()">ESC</span>
+  </div>
+  <div class="cmd-results" id="cmdResults"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<button class="float-up" id="floatUp" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Remonter en haut">↑</button>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   TOC CONFIG
+═══════════════════════════════════════════════════ */
+const SECTIONS = [
+  {id:'s-hub',        label:'Capture IA',           icon:'📡'},
+  {id:'s-pipeline',   label:'Pipeline du projet',   icon:'🔄'},
+  {id:'s-estimation', label:'Estimation',           icon:'📊'},
+  {id:'s-checklist',  label:'Checklist terrain',    icon:'✓'},
+  {id:'s-corps',      label:'Corps de métier',      icon:'👷'},
+  {id:'s-finances',   label:'Finances & rentabilité',icon:'💰'},
+  {id:'s-paiements',  label:'Paiements',            icon:'💳'},
+  {id:'s-photos',     label:'Photos',               icon:'📷'},
+  {id:'s-documents',  label:'Documents',            icon:'📄'},
+  {id:'s-plans',      label:'Plans & rendus',       icon:'🏛',  badge:'B8'},
+  {id:'s-portails',   label:'Portails',             icon:'🔗'},
+  {id:'s-feed',       label:'Feed du chantier',     icon:'📰'},
+  {id:'s-gantt',      label:'Tâches & Gantt',       icon:'📅',  badge:'B6'},
+  {id:'s-devis',      label:'Devis précis',         icon:'📋',  badge:'B5'},
+  {id:'s-quittances', label:'Quittances',           icon:'📜',  badge:'B9'},
+  {id:'s-avenants',   label:'Avenants',             icon:'±',   badge:'B8'},
+  {id:'s-comms',      label:'Courriels & comms',    icon:'✉',   badge:'B9'},
+];
+
+/* State */
+const tocState = {}; // id → {hidden: bool}
+SECTIONS.forEach(s => tocState[s.id] = {hidden: false});
+
+/* Build TOC */
+const tocList = document.getElementById('tocList');
+let dragSrcItem = null;
+
+function buildToc() {
+  tocList.innerHTML = '';
+  // Visible items first
+  const visible = SECTIONS.filter(s => !tocState[s.id].hidden);
+  const hidden  = SECTIONS.filter(s =>  tocState[s.id].hidden);
+
+  visible.forEach(s => tocList.appendChild(makeTocItem(s)));
+
+  if (hidden.length) {
+    const sep = document.createElement('div');
+    sep.className = 'toc-section-sep'; tocList.appendChild(sep);
+    const lbl = document.createElement('div');
+    lbl.className = 'toc-hidden-label'; lbl.textContent = 'Masquées';
+    tocList.appendChild(lbl);
+    hidden.forEach(s => tocList.appendChild(makeTocItem(s)));
+  }
+}
+
+function makeTocItem(s) {
+  const div = document.createElement('div');
+  div.className = 'toc-item' + (tocState[s.id].hidden ? ' sec-hidden' : '');
+  div.dataset.id = s.id;
+  div.draggable = true;
+  div.innerHTML = `
+    <span class="ti-drag">⠿⠿</span>
+    <span class="ti-icon">${s.icon}</span>
+    <span class="ti-lbl">${s.label}</span>
+    ${s.badge ? `<span class="ti-badge">${s.badge}</span>` : ''}
+    <button class="ti-eye" data-id="${s.id}" title="Masquer / afficher">
+      <span class="eye-open">👁</span>
+      <span class="eye-slash">🚫</span>
+    </button>`;
+
+  // Scroll on click (not on drag, not on eye)
+  let pressTimer = null;
+  let moved = false;
+
+  div.addEventListener('mousedown', () => {
+    moved = false;
+    pressTimer = setTimeout(() => {
+      div.classList.add('long-pressed');
+    }, 420);
+  });
+  div.addEventListener('mousemove', () => { moved = true; });
+  div.addEventListener('mouseup', () => {
+    clearTimeout(pressTimer);
+    // Remove long-pressed after short delay so eye remains clickable
+    setTimeout(() => div.classList.remove('long-pressed'), 1200);
+  });
+
+  div.addEventListener('click', (e) => {
+    if (e.target.closest('.ti-eye')) return;
+    if (!moved) {
+      const el = document.getElementById(s.id);
+      if (el && !tocState[s.id].hidden) el.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  });
+
+  // Eye button
+  div.querySelector('.ti-eye').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleVisibility(s.id);
+  });
+
+  // Drag events
+  div.addEventListener('dragstart', (e) => {
+    clearTimeout(pressTimer);
+    dragSrcItem = s.id;
+    div.classList.add('drag-src');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', s.id);
+  });
+  div.addEventListener('dragend', () => {
+    div.classList.remove('drag-src');
+    document.querySelectorAll('.toc-item.dragging-over').forEach(d => d.classList.remove('dragging-over'));
+    dragSrcItem = null;
+    syncDocOrder();
+  });
+  div.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (s.id !== dragSrcItem) div.classList.add('dragging-over');
+  });
+  div.addEventListener('dragleave', () => div.classList.remove('dragging-over'));
+  div.addEventListener('drop', (e) => {
+    e.preventDefault();
+    div.classList.remove('dragging-over');
+    if (!dragSrcItem || dragSrcItem === s.id) return;
+    // Reorder SECTIONS array
+    const from = SECTIONS.findIndex(x => x.id === dragSrcItem);
+    const to   = SECTIONS.findIndex(x => x.id === s.id);
+    if (from < 0 || to < 0) return;
+    const [moved2] = SECTIONS.splice(from, 1);
+    SECTIONS.splice(to, 0, moved2);
+    buildToc();
+    syncDocOrder();
+  });
+
+  return div;
+}
+
+function toggleVisibility(id) {
+  tocState[id].hidden = !tocState[id].hidden;
+  const el = document.getElementById(id);
+  if (el) el.style.display = tocState[id].hidden ? 'none' : '';
+  buildToc();
+  syncDocOrder();
+}
+
+function syncDocOrder() {
+  const container = document.getElementById('docSections');
+  SECTIONS.forEach(s => {
+    const el = document.getElementById(s.id);
+    if (el) container.appendChild(el);
+  });
+}
+
+/* ─── Highlight active TOC item on scroll ─── */
+window.addEventListener('scroll', () => {
+  floatUp.classList.toggle('show', window.scrollY > 320);
+  const items = document.querySelectorAll('.toc-item');
+  items.forEach(item => {
+    const id = item.dataset.id;
+    const el = document.getElementById(id);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    item.classList.toggle('toc-active', r.top <= 80 && r.bottom > 80);
+  });
+}, {passive: true});
+
+const floatUp = document.getElementById('floatUp');
+
+/* Init */
+buildToc();
+
+/* ═══════════════════════════════════════════════════
+   ESTIMATION LOGIC
+═══════════════════════════════════════════════════ */
+function estTab(btn, v) {
+  btn.closest('.est-tabs').querySelectorAll('.et').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  btn.closest('.ds-inner').querySelectorAll('.vp').forEach(p => p.classList.toggle('on', p.dataset.v === v));
+}
+
+function updateMk(input) {
+  const row = input.closest('tr');
+  const costIn  = row.querySelector('[data-type=cost]');
+  const priceIn = row.querySelector('[data-type=price]');
+  const mkIn    = row.querySelector('[data-type=mk]');
+  if (!costIn || !priceIn || !mkIn) return;
+  const cost  = parseFloat(costIn.value.replace(/[^0-9.]/g,'')) || 0;
+  const price = parseFloat(priceIn.value.replace(/[^0-9.]/g,'')) || 0;
+  if (cost > 0) {
+    const pct = Math.round((price - cost) / cost * 100);
+    mkIn.value = (pct >= 0 ? '+' : '') + pct + ' %';
+  }
+  recalcTotals();
+}
+
+function recalcTotals() {
+  let tc = 0, tp = 0;
+  document.querySelectorAll('#estBody tr').forEach(row => {
+    const c = parseFloat(row.querySelector('[data-type=cost]')?.value.replace(/[^0-9.]/g,'')) || 0;
+    const p = parseFloat(row.querySelector('[data-type=price]')?.value.replace(/[^0-9.]/g,'')) || 0;
+    tc += c; tp += p;
+  });
+  const fmt = n => n.toLocaleString('fr-CA', {minimumFractionDigits:0}) + ' $';
+  const pct = tc > 0 ? Math.round((tp - tc) / tc * 100) : 0;
+  document.getElementById('totalCost').textContent  = fmt(tc);
+  document.getElementById('totalPrice').textContent = fmt(tp);
+  document.getElementById('totalMk').textContent    = (pct >= 0 ? '+' : '') + pct + ' %';
+}
+
+function addEstRow() {
+  const tbody = document.getElementById('estBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="ecell" placeholder="Nouveau poste"></td>
+    <td><input class="ecell src" placeholder="Source"><div class="src-conf">—</div></td>
+    <td><input class="ecell" style="font-size:12px" placeholder="Inclus"></td>
+    <td><input class="ecell" style="font-size:12px" placeholder="Non inclus"></td>
+    <td><input class="ecell" data-type="dur" placeholder="—"></td>
+    <td><input class="ecell" data-type="cost" placeholder="0" oninput="updateMk(this)"></td>
+    <td><input class="ecell" data-type="price" placeholder="0" oninput="updateMk(this)"></td>
+    <td><input class="ecell mk" data-type="mk" value="—" readonly></td>
+    <td><button class="del-btn" onclick="delRow(this)">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function delRow(btn) {
+  btn.closest('tr').remove();
+  recalcTotals();
+}
+
+/* Voie C option toggle */
+function tog(btn) { btn.classList.toggle('sel'); }
+
+/* Init totals */
+recalcTotals();
+
+/* ═══════════════════════════════════════════════════
+   PIPELINE STATUS MANAGEMENT
+═══════════════════════════════════════════════════ */
+const STATUSES = [
+  'Brouillon','Estimation terrain','Prix envoyé','Accepté',
+  'Planifié','En chantier','À facturer','Payé','Clos'
+];
+let currentStatusIdx = 5;
+let pendingStatusIdx = null;
+
+function showStatusPop(idx) {
+  if (idx === currentStatusIdx) return;
+  pendingStatusIdx = idx;
+  const direction = idx > currentStatusIdx ? 'Avancer' : 'Reculer';
+  document.getElementById('popTitle').textContent = direction + ' le statut ?';
+  document.getElementById('popMsg').innerHTML =
+    'Passer <b>"' + STATUSES[currentStatusIdx] + '"</b> → <b>"' + STATUSES[idx] + '"</b>';
+  document.getElementById('popOk').onclick = () => confirmStatus(idx);
+  document.getElementById('statusPopContainer').style.display = 'block';
+}
+
+function confirmStatus(idx) {
+  currentStatusIdx = idx;
+  closePop();
+  renderPipeline();
+  addFeedEntry(STATUSES[idx]);
+  showToast('Statut mis à jour : ' + STATUSES[idx]);
+}
+
+function closePop() {
+  document.getElementById('statusPopContainer').style.display = 'none';
+  pendingStatusIdx = null;
+}
+
+function renderPipeline() {
+  const steps = document.querySelectorAll('#pipeSteps .pipe-step');
+  steps.forEach((s, i) => {
+    s.classList.remove('done','active');
+    if (i < currentStatusIdx) s.classList.add('done');
+    else if (i === currentStatusIdx) s.classList.add('active');
+  });
+  const pct = (currentStatusIdx / (STATUSES.length - 1)) * 100;
+  document.getElementById('pipeFill').style.width = pct + '%';
+  document.getElementById('heroBadge').innerHTML =
+    '<span class="ht-dot"></span>PROJET · ' + STATUSES[currentStatusIdx].toUpperCase();
+}
+
+function addFeedEntry(label) {
+  const feed = document.querySelector('.feed-row');
+  if (!feed) return;
+  const card = document.createElement('div');
+  card.className = 'fc';
+  card.style.borderColor = 'var(--green-b)';
+  card.style.background = 'var(--green-s)';
+  card.innerHTML = `<div class="fc-top"><div class="fc-ic" style="background:var(--green-s)">✓</div><div class="fc-type" style="color:var(--green)">Statut</div><div class="fc-time">maintenant</div></div><b>${STATUSES[Math.max(0,currentStatusIdx-1)]} → ${label}</b><p>Mis à jour par Réjean Tremblay.</p>`;
+  feed.insertBefore(card, feed.firstChild);
+}
+
+/* ═══════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════ */
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+/* ═══════════════════════════════════════════════════
+   AVENANT MODAL
+═══════════════════════════════════════════════════ */
+let avenantCount = 2;
+
+function openAvenantModal() {
+  document.getElementById('avenantModal').style.display = 'block';
+  document.getElementById('avTitle').focus();
+}
+
+function closeAvenantModal() {
+  document.getElementById('avenantModal').style.display = 'none';
+  ['avTitle','avDesc','avCost','avDelay'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+}
+
+function saveAvenant() {
+  const title  = document.getElementById('avTitle').value.trim();
+  const desc   = document.getElementById('avDesc').value.trim();
+  const cost   = parseFloat(document.getElementById('avCost').value) || 0;
+  const delay  = parseInt(document.getElementById('avDelay').value) || 0;
+  const by     = document.getElementById('avBy').value.trim();
+  const status = document.getElementById('avStatus').value;
+  if (!title) { document.getElementById('avTitle').focus(); return; }
+  avenantCount++;
+  const num = 'AV-00' + avenantCount;
+  const tagClass = status === 'Approuvé' ? 'ok' : status === 'Refusé' ? 'no' : 'wait';
+  const today = new Date().toLocaleDateString('fr-CA', {day:'numeric', month:'long'});
+  const html = `<div class="av-item">
+    <div class="av-top"><span class="av-num">${num}</span><span class="av-title">${title}</span><span class="tag ${tagClass}">${status}</span></div>
+    ${desc ? `<div class="av-body">${desc}</div>` : ''}
+    <div class="av-meta">
+      ${cost ? `<span>💰 <b>+${cost.toLocaleString('fr-CA')} $</b></span>` : ''}
+      ${delay ? `<span>⏱ <b>+${delay} jour${delay>1?'s':''}</b></span>` : ''}
+      <span>📅 Soumis ${today}</span>
+      ${by ? `<span>👤 ${by}</span>` : ''}
+    </div>
+  </div>`;
+  document.getElementById('avenantList').insertAdjacentHTML('beforeend', html);
+  closeAvenantModal();
+  showToast(num + ' créé — ' + title);
+}
+
+/* ═══════════════════════════════════════════════════
+   ⌘K COMMAND PALETTE
+═══════════════════════════════════════════════════ */
+const CMD_ITEMS = [
+  ...SECTIONS.map(s => ({ic: s.icon, lbl: s.label, sub: 'Section', action: () => {
+    const el = document.getElementById(s.id);
+    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  }})),
+  {ic:'🔄', lbl:'Changer le statut', sub:'Action', action: () => showStatusPop((currentStatusIdx + 1) % 9)},
+  {ic:'±',  lbl:'Nouvel avenant',    sub:'Action', action: openAvenantModal},
+  {ic:'📥', lbl:'Exporter PDF',      sub:'Action', action: () => showToast('Export PDF — Bientôt')},
+  {ic:'↑',  lbl:'Remonter en haut',  sub:'Navigation', action: () => window.scrollTo({top:0,behavior:'smooth'})},
+];
+let cmdSelIdx = 0;
+let filteredItems = [...CMD_ITEMS];
+
+function openCmd() {
+  document.getElementById('cmdOverlay').style.display = 'block';
+  document.getElementById('cmdBox').style.display = 'block';
+  document.getElementById('cmdInput').value = '';
+  filteredItems = [...CMD_ITEMS];
+  cmdSelIdx = 0;
+  renderCmd();
+  setTimeout(() => document.getElementById('cmdInput').focus(), 30);
+}
+
+function closeCmd() {
+  document.getElementById('cmdOverlay').style.display = 'none';
+  document.getElementById('cmdBox').style.display = 'none';
+}
+
+function filterCmd(q) {
+  const ql = q.toLowerCase();
+  filteredItems = CMD_ITEMS.filter(it =>
+    it.lbl.toLowerCase().includes(ql) || it.sub.toLowerCase().includes(ql)
+  );
+  cmdSelIdx = 0;
+  renderCmd();
+}
+
+function renderCmd() {
+  const res = document.getElementById('cmdResults');
+  if (!filteredItems.length) {
+    res.innerHTML = '<div style="padding:16px;text-align:center;font-size:13px;color:var(--mu)">Aucun résultat</div>';
+    return;
+  }
+  let last = '';
+  res.innerHTML = filteredItems.map((it, i) => {
+    let hdr = '';
+    if (it.sub !== last) { hdr = `<div class="cmd-section">${it.sub}</div>`; last = it.sub; }
+    return `${hdr}<div class="cmd-r${i===cmdSelIdx?' sel':''}" data-idx="${i}" onclick="execCmd(${i})">`
+      + `<span class="cr-ic">${it.ic}</span><span class="cr-lbl">${it.lbl}</span>`
+      + `<span class="cr-sub">${it.sub}</span></div>`;
+  }).join('');
+}
+
+function execCmd(i) {
+  closeCmd();
+  filteredItems[i].action();
+}
+
+function cmdKey(e) {
+  if (e.key === 'Escape') { closeCmd(); return; }
+  if (e.key === 'ArrowDown') { cmdSelIdx = Math.min(cmdSelIdx + 1, filteredItems.length - 1); renderCmd(); e.preventDefault(); }
+  if (e.key === 'ArrowUp')   { cmdSelIdx = Math.max(cmdSelIdx - 1, 0); renderCmd(); e.preventDefault(); }
+  if (e.key === 'Enter' && filteredItems[cmdSelIdx]) { execCmd(cmdSelIdx); }
+}
+
+/* ─── ⌘K / Ctrl+K shortcut ─────── */
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openCmd(); }
+  if (e.key === 'Escape') { closePop(); closeCmd(); closeAvenantModal(); }
+});
+
+/* ─── Wire search pill click ────── */
+document.querySelector('.search-pill')?.addEventListener('click', openCmd);
+
+/* ═══════════════════════════════════════════════════
+   MOBILE SIDEBAR
+═══════════════════════════════════════════════════ */
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sbOverlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sbOverlay').classList.remove('show');
+}
+</script>
+</body>
+</html>
