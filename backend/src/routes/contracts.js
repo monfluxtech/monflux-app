@@ -66,6 +66,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.post('/', async (req, res) => {
+  const { title, project_id, quote_id, content } = req.body;
+  if (!title) return res.status(400).json({ error: 'Le titre est requis' });
+  try {
+    const { rows: [c] } = await query(
+      `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId]
+    );
+    res.status(201).json(c);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const { rows: [c] } = await query(

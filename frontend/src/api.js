@@ -98,6 +98,7 @@ export const quotes = {
 export const contracts = {
   list:    (params)     => http.get('/contracts', { params }),
   get:     (id)         => http.get(`/contracts/${id}`),
+  create:  (data)       => http.post('/contracts', data),
   update:  (id, data)   => http.patch(`/contracts/${id}`, data),
   delete:  (id)         => http.delete(`/contracts/${id}`),
   send:    (id)         => http.post(`/contracts/${id}/send`),
@@ -139,6 +140,7 @@ export const timesheets = {
 };
 
 export const materialOrders = {
+  list:      ()              => http.get('/material-orders'),
   byProject: (projectId)     => http.get(`/material-orders/project/${projectId}`),
   create:    (data)          => http.post('/material-orders', data),
   update:    (id, data)      => http.patch(`/material-orders/${id}`, data),

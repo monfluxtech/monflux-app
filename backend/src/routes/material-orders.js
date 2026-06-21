@@ -4,6 +4,24 @@ import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
+// Global list (all projects)
+router.get('/', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT mo.*, p.name AS project_name
+       FROM material_orders mo
+       LEFT JOIN projects p ON p.id = mo.project_id
+       WHERE mo.company_id = $1
+       ORDER BY mo.created_at DESC`,
+      [req.company_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.get('/project/:projectId', async (req, res) => {
   try {
     const { rows } = await query(

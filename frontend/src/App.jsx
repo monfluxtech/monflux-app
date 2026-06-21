@@ -22,6 +22,8 @@ import ChangeOrderPublic  from './pages/ChangeOrderPublic';
 import Chat          from './pages/Chat';
 import Parametres    from './pages/Parametres';
 import ComingSoon    from './pages/ComingSoon';
+import Contrats      from './pages/Contrats';
+import Commandes     from './pages/Commandes';
 
 function Guard({ children }) {
   const { isAuthenticated } = useAuthStore();
@@ -55,8 +57,8 @@ export default function App() {
         <Route path="/contacts"           element={<Guard><Contacts /></Guard>} />
         <Route path="/rapport"            element={<Guard><Rapport /></Guard>} />
         {/* Modules activables — stubs jusqu'à leur batch dédié */}
-        <Route path="/contrats"           element={<Guard><ComingSoon title="Contrats" batch="Batch 4" /></Guard>} />
-        <Route path="/commandes"          element={<Guard><ComingSoon title="Commandes" batch="Batch 6" /></Guard>} />
+        <Route path="/contrats"           element={<Guard><Contrats /></Guard>} />
+        <Route path="/commandes"          element={<Guard><Commandes /></Guard>} />
         <Route path="/factures-achat"     element={<Guard><ComingSoon title="Factures d'achat" batch="Batch 6" /></Guard>} />
         <Route path="/punch"              element={<Guard><Punch /></Guard>} />
         <Route path="/chat"               element={<Guard><Chat /></Guard>} />
