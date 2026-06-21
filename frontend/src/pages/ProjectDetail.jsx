@@ -1012,20 +1012,107 @@ export default function ProjectDetail() {
       </div>
 
       {/* ── Doc sections ── */}
-      <div style={{ padding: '0 56px 64px' }}>
+      <div>
 
-        {/* Infos projet */}
-        <div id="s-infos" style={{ paddingTop: 40, paddingBottom: 32, borderBottom: '1px solid #E8EAED', marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>ℹ️</div>
-            <div>
-              <h2 style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Infos du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 3 }}>Responsabilités, permis, équipements</div>
+        {/* ── Capture IA ── */}
+        <div id="s-ai" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📡</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Capture IA du chantier</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Parle, photo, vidéo, document ou note — l'IA classe et propose la suite</div>
             </div>
-            <button className="btn-secondary text-xs ml-auto" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg,#F2843F 0%,#F26522 52%,#D8480F 100%)', color: '#fff', borderRadius: 16, padding: 26, boxShadow: '0 10px 28px rgba(216,72,15,.28)' }}>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+              <div style={{ width: 58, height: 58, borderRadius: 16, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', fontSize: 32, flexShrink: 0 }}>+</div>
+              <div>
+                <h3 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Ajoute n'importe quoi au projet</h3>
+                <p style={{ margin: '6px 0 0', fontSize: 13, color: 'rgba(255,255,255,.9)', lineHeight: 1.5, maxWidth: '54ch' }}>L'IA analyse, classe dans la bonne section et te propose la prochaine étape concrète.</p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 18 }}>
+              {[['🎤','Parler'],['📷','Photo'],['📄','Document'],['✍️','Écrire']].map(([ic,lbl]) => (
+                <button key={lbl} onClick={() => setShowMediaForm(true)} style={{ background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{ic} {lbl}</button>
+              ))}
+              <button onClick={() => setShowMediaForm(true)} style={{ background: '#fff', border: 'none', color: '#D8480F', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>✍️ Note</button>
+            </div>
+            {notes && (
+              <div style={{ marginTop: 15, background: 'rgba(255,255,255,.13)', border: '1px dashed rgba(255,255,255,.4)', borderRadius: 12, padding: '12px 14px', fontSize: 12.5, display: 'flex', gap: 10 }}>
+                <span>→</span><span><b>Dernière note :</b> {notes.slice(0, 120)}{notes.length > 120 ? '…' : ''}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Pipeline ── (cream) */}
+        {(() => {
+          const PIPE = [
+            { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
+            { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
+            { key: 'planifie', label: 'Planifié' }, { key: 'en_chantier', label: 'En chantier' },
+            { key: 'a_facturer', label: 'À facturer' }, { key: 'paye', label: 'Payé' },
+            { key: 'clos', label: 'Clos' },
+          ];
+          const activeIdx = PIPE.findIndex(s => s.key === project.status);
+          return (
+            <div id="s-pipeline" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔄</div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
+                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Avancement dans les 9 étapes — de la soumission à la clôture</div>
+                </div>
+                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
+              </div>
+              <div style={{ position: 'relative', padding: '8px 0 28px' }}>
+                <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: '#E8EAED', zIndex: 0 }} />
+                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: '#F26522', zIndex: 1, transition: '.4s', width: activeIdx >= 0 ? `${(activeIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
+                  {PIPE.map((s, i) => {
+                    const isDone = i < activeIdx;
+                    const isActive = i === activeIdx;
+                    return (
+                      <div key={s.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer' }}>
+                        <div style={{
+                          width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
+                          border: `3px solid ${isDone ? '#16a34a' : isActive ? '#F26522' : '#E8EAED'}`,
+                          background: isDone ? '#16a34a' : isActive ? '#F26522' : '#fff',
+                          display: 'grid', placeItems: 'center', transition: '.2s',
+                          boxShadow: isActive ? '0 0 0 4px rgba(242,101,34,.2)' : 'none',
+                        }}>
+                          {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                          {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? '#D8480F' : '#7C8089', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
+                <div className="kv"><div className="kv-k">Phases</div><div className="kv-v">{project.phases?.length || 0}</div></div>
+                <div className="kv"><div className="kv-k">Pointés</div><div className="kv-v" style={{ color: '#16a34a' }}>{activeTs.length}</div></div>
+                <div className="kv"><div className="kv-k">Total punchs</div><div className="kv-v">{timesheets.length}</div></div>
+                <div className="kv"><div className="kv-k">Avancement</div><div className="kv-v" style={{ color: '#F26522' }}>{pct}%</div></div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Infos projet ── */}
+        <div id="s-infos" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>ℹ️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Infos du projet</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Responsabilités, permis, équipements</div>
+            </div>
+            <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
           </div>
           {project.payment_terms && (
-            <div style={{ background: '#FFF3EC', border: '1px solid #FBE0CD', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ background: '#FFF3EC', border: '1px solid #FBE0CD', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <CreditCard size={16} style={{ color: '#F26522', flexShrink: 0 }} />
               <div>
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>Termes de paiement</p>
@@ -1033,7 +1120,7 @@ export default function ProjectDetail() {
               </div>
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 32px' }}>
             {[
               ['Chargé de projet', project.project_manager],
               ['Acheteur matériaux', project.materials_buyer],
@@ -1044,84 +1131,81 @@ export default function ProjectDetail() {
             ].map(([label, value]) => value ? (
               <div key={label}>
                 <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>{label}</p>
-                <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3 }}>{value}</p>
+                <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>{value}</p>
               </div>
             ) : null)}
           </div>
         </div>
 
-        {/* Estimation terrain */}
-        <div id="s-estimation">
-        <FieldEstimation project={project} onUpdated={load} />
+        {/* ── Estimation terrain ── (mint) */}
+        <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation terrain</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Listes de vérification générées selon les corps de métier</div>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
+          </div>
+          <FieldEstimation project={project} onUpdated={load} />
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-gray-900">{project.phases?.length || 0}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Phases</p>
-          </div>
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-green-500">{activeTs.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Pointés maintenant</p>
-          </div>
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-gray-900">{timesheets.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Total punchs</p>
-          </div>
-        </div>
-
-        {/* Rentabilité */}
+        {/* ── Rentabilité ── (violet) */}
         {profit && (
-          <div id="s-profit" className="card mb-4">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Rentabilité</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { label: 'Théorique', d: profit.theoretical, sub: 'Commande − coûts estimés (budgets + métiers)' },
-                { label: 'Réelle', d: profit.actual, sub: 'Factures émises − punch & dépenses' },
-              ].map(({ label, d, sub }) => {
-                const pos = (d.margin || 0) >= 0;
-                return (
-                  <div key={label} className="rounded-xl border border-gray-100 p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-gray-500">Marge {label.toLowerCase()}</p>
-                      {d.margin_pct != null && <span className={`badge ${pos ? 'badge-green' : 'badge-red'}`}>{d.margin_pct}%</span>}
-                    </div>
-                    <p className={`text-2xl font-bold mt-1 ${pos ? 'text-green-600' : 'text-red-500'}`}>{money(d.margin)}</p>
-                    <p className="text-xs text-gray-400 mb-2">{sub}</p>
-                    <div className="pt-2 border-t border-gray-50 space-y-0.5 text-xs text-gray-500">
-                      <div className="flex justify-between"><span>Revenus</span><span className="font-medium text-gray-700">{money(d.revenue)}</span></div>
-                      <div className="flex justify-between"><span>Coûts</span><span className="font-medium text-gray-700">{money(d.cost)}</span></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">Taux de coût main d'œuvre interne (punch)&nbsp;:</span>
-              <div className="flex items-center gap-1">
-                <input
-                  className="input py-1 text-xs" style={{ width: 80 }} type="number" min="0" step="0.5"
-                  value={laborRate} onChange={e => setLaborRate(e.target.value)} placeholder="0"
-                />
-                <span className="text-xs text-gray-400">$/h</span>
-                <button className="btn-secondary text-xs py-1 px-2" onClick={saveLaborRate} disabled={savingRate}>
-                  {savingRate ? <Loader2 size={12} className="animate-spin" /> : 'Enregistrer'}
-                </button>
+          <div id="s-profit" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💰</div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Rentabilité</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Marges théorique et réelle · punch et dépenses</div>
               </div>
-              <span className="text-[11px] text-gray-400">{profit.actual.cost_breakdown.hours_logged || 0}h pointées · main d'œuvre {money(profit.actual.cost_breakdown.labor_punch)} · dépenses {money(profit.actual.cost_breakdown.expenses)}</span>
             </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            {[
+              { label: 'Théorique', d: profit.theoretical, sub: 'Commande − coûts estimés (budgets + métiers)' },
+              { label: 'Réelle', d: profit.actual, sub: 'Factures émises − punch & dépenses' },
+            ].map(({ label, d, sub }) => {
+              const pos = (d.margin || 0) >= 0;
+              return (
+                <div key={label} className="rounded-xl border border-gray-100 p-4 bg-white">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-gray-500">Marge {label.toLowerCase()}</p>
+                    {d.margin_pct != null && <span className={`badge ${pos ? 'badge-green' : 'badge-red'}`}>{d.margin_pct}%</span>}
+                  </div>
+                  <p className={`text-3xl font-bold mt-1 ${pos ? 'text-green-600' : 'text-red-500'}`}>{money(d.margin)}</p>
+                  <p className="text-xs text-gray-400 mb-3">{sub}</p>
+                  <div className="pt-2 border-t border-gray-100 space-y-1 text-xs text-gray-500">
+                    <div className="flex justify-between"><span>Revenus</span><span className="font-medium text-gray-700">{money(d.revenue)}</span></div>
+                    <div className="flex justify-between"><span>Coûts</span><span className="font-medium text-gray-700">{money(d.cost)}</span></div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Taux MO interne (punch) :</span>
+            <div className="flex items-center gap-1">
+              <input className="input py-1 text-xs" style={{ width: 80 }} type="number" min="0" step="0.5"
+                value={laborRate} onChange={e => setLaborRate(e.target.value)} placeholder="0" />
+              <span className="text-xs text-gray-400">$/h</span>
+              <button className="btn-secondary text-xs py-1 px-2" onClick={saveLaborRate} disabled={savingRate}>
+                {savingRate ? <Loader2 size={12} className="animate-spin" /> : 'Enregistrer'}
+              </button>
+            </div>
+            <span className="text-[11px] text-gray-400">{profit.actual.cost_breakdown.hours_logged || 0}h · MO {money(profit.actual.cost_breakdown.labor_punch)} · dépenses {money(profit.actual.cost_breakdown.expenses)}</span>
+          </div>
+            </div>
         )}
 
-        {/* Gantt */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900 text-sm">Phases</h2>
-            <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowPhase(true)}>
+        {/* ── Phases & Gantt ── (blue) */}
+        <div id="s-phases" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📅</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases & Gantt</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Planification et suivi d'avancement des phases</div>
+            </div>
+            <button className="btn-secondary text-xs" onClick={()=>setShowPhase(true)}>
               <Plus size={13}/> Ajouter une phase
             </button>
           </div>
@@ -1173,41 +1257,40 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Notes */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <StickyNote size={15} className="text-brand" />
-            <h2 className="font-semibold text-gray-900 text-sm">Notes de chantier</h2>
-            {notesSaving && <span className="text-xs text-gray-400 ml-auto">Enregistrement…</span>}
-          </div>
-          <textarea
-            className="input resize-none"
-            style={{ minHeight: 96 }}
-            placeholder="Ajoutez des notes, remarques ou observations sur ce projet…"
-            value={notes}
-            onChange={e => handleNotesChange(e.target.value)}
-          />
-        </div>
-
-        {aiNotice && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
-            <p className="text-xs text-amber-700">{aiNotice}</p>
-            <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
-          </div>
-        )}
-
-        {/* ── Médias chantier (IA) ──────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Camera size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Médias chantier</h2>
-              {media.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{media.length}</span>}
+        {/* ── Médias chantier ── (cream) */}
+        <div id="s-media" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Photos & Médias</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Photos, notes et mémos — L'IA détecte non-conformités (RBQ) et risques CNESST</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
+            <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
           </div>
-          <p className="text-xs text-gray-400 mb-3">Photos, notes et mémos vocaux. L'IA détecte les non-conformités (RBQ) et risques de sécurité (CNESST).</p>
+
+          {/* Notes de chantier inline */}
+          <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E8EAED' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <StickyNote size={14} style={{ color: '#F26522' }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44' }}>Notes de chantier</span>
+              {notesSaving && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 'auto' }}>Enregistrement…</span>}
+            </div>
+            <textarea
+              className="input resize-none"
+              style={{ minHeight: 80 }}
+              placeholder="Ajoutez des notes, remarques ou observations…"
+              value={notes}
+              onChange={e => handleNotesChange(e.target.value)}
+            />
+          </div>
+
+          {aiNotice && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
+              <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
+              <p className="text-xs text-amber-700">{aiNotice}</p>
+              <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
+            </div>
+          )}
 
           {showMediaForm && (
             <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
@@ -1309,15 +1392,15 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Corps de métiers */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <HardHat size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Corps de métiers</h2>
-              {project.trades?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.trades.length}</span>}
+        {/* ── Corps de métiers ── (white) */}
+        <div id="s-trades" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Corps de métier</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Déclarez les corps requis et assignez le sous-traitant choisi{project.trades?.length > 0 ? ` · ${project.trades.length} métier(s)` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowTradeForm(v => !v)}><Plus size={13} /> Ajouter</button>
+            <button className="btn-secondary text-xs" onClick={() => setShowTradeForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
           {showTradeForm && (
@@ -1365,15 +1448,15 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Dépenses réelles */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Dépenses & factures fournisseurs</h2>
-              {project.expenses?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.expenses.length}</span>}
+        {/* ── Dépenses ── (violet) */}
+        <div id="s-expenses" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💸</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Dépenses & factures fournisseurs</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
+            <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
           {showExpenseForm && (
@@ -1406,12 +1489,14 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── Feuilles de temps ─────────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock size={15} className="text-brand"/>
-            <h2 className="font-semibold text-gray-900 text-sm">Feuilles de temps</h2>
-            {timesheets.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{timesheets.length}</span>}
+        {/* ── Feuilles de temps ── (mint) */}
+        <div id="s-punch" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⏱️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps{timesheets.length > 0 ? ` · ${timesheets.length} entrée(s) · ${activeTs.length} en cours` : ''}</div>
+            </div>
           </div>
           {timesheets.length > 0 ? (
             <>
@@ -1487,21 +1572,21 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── Commandes matériaux ───────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Package size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Commandes matériaux</h2>
-              {materialOrders.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{materialOrders.length}</span>}
+        {/* ── Commandes ── (cream) */}
+        <div id="s-orders" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📦</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Commandes matériaux</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Approvisionnements et suivi de livraison{materialOrders.length > 0 ? ` · ${materialOrders.length} commande(s)` : ''}</div>
             </div>
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: 8 }}>
               {materialOrders.length > 0 && (
-                <button className="btn-ghost text-xs py-1.5 text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
+                <button className="btn-ghost text-xs text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
                   {groupingPurchases ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>} Regrouper (IA)
                 </button>
               )}
-              <button className="btn-secondary text-xs py-1.5" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
+              <button className="btn-secondary text-xs" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
             </div>
           </div>
 
@@ -1580,11 +1665,15 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── QR Punch ─────────────────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch QR</h2></div>
-            <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
+        {/* ── QR Punch ── (blue) */}
+        <div id="s-qr" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔲</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>QR Punch</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Code QR chantier pour pointer entrée/sortie</div>
+            </div>
+            <button className="btn-secondary text-xs" onClick={generateQR} disabled={genQr}>
               {genQr ? <Loader2 size={13} className="animate-spin"/> : <QrCode size={13}/>} Générer QR
             </button>
           </div>
@@ -1602,16 +1691,19 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Quote Builder */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileText size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Soumission détaillée</h2>
+        {/* ── Soumission détaillée ── (white) */}
+        <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis précis</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Soumission détaillée par poste · génération du contrat</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
               {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
+              {quoteSaving && <span style={{ fontSize: 11, color: '#7C8089', display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }}/> Enreg…</span>}
             </div>
-            {quoteSaving && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin"/> Enreg…</span>}
           </div>
 
           {/* Line items by type */}
@@ -1712,15 +1804,15 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* RFQs — demandes de prix aux sous-traitants */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Users size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">{t('rfqs')} ({t('subcontractors').toLowerCase()})</h2>
-              {projectRfqs.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectRfqs.length}</span>}
+        {/* ── RFQs / Sous-traitants ── (violet) */}
+        <div id="s-rfqs" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de prix</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>RFQ aux sous-traitants{projectRfqs.length > 0 ? ` · ${projectRfqs.length} demande(s)` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowRfqForm(v => !v)}>
+            <button className="btn-secondary text-xs" onClick={() => setShowRfqForm(v => !v)}>
               <Plus size={13}/> {t('create_rfq')}
             </button>
           </div>
@@ -1804,20 +1896,21 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Contrats */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileSignature size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Contrat</h2>
-              {projectContracts.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectContracts.length}</span>}
+        {/* ── Contrats ── (white) */}
+        <div id="s-contracts" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✍️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Contrats</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Signature électronique et suivi des contrats signés</div>
             </div>
             {quoteBuilderQuote && projectContracts.length === 0 && (
-              <button className="btn-secondary text-xs py-1.5" onClick={generateContract} disabled={generatingContract}>
+              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
                 {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                Générer depuis la soumission
+                Générer
               </button>
             )}
+            {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
           </div>
 
           {projectContracts.length === 0 ? (
@@ -1883,15 +1976,16 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Factures liées */}
+        {/* ── Factures ── (mint) */}
         {projectInvoices.length > 0 && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Receipt size={15} className="text-brand" />
-                <h2 className="font-semibold text-gray-900 text-sm">Factures ({projectInvoices.length})</h2>
+          <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures liées à ce projet · {projectInvoices.length} facture(s)</div>
               </div>
-              <button className="btn-ghost text-xs py-1 px-2" onClick={() => navigate('/factures')}>Voir tout</button>
+              <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
             </div>
             <div className="space-y-2">
               {projectInvoices.map(inv => {
@@ -1913,15 +2007,16 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Soumissions liées */}
+        {/* ── Soumissions liées ── (blue) */}
         {projectQuotes.length > 0 && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FileText size={15} className="text-brand" />
-                <h2 className="font-semibold text-gray-900 text-sm">{t('quotes')} & {t('change_orders')} ({projectQuotes.length})</h2>
+          <div id="s-quotes" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📋</div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Soumissions & Avenants</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>{projectQuotes.length} soumission(s) liée(s) à ce projet</div>
               </div>
-              <button className="btn-secondary text-xs py-1 px-2" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
+              <button className="btn-secondary text-xs" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
             </div>
             {(() => {
               const QSB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
@@ -1944,12 +2039,14 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Documents */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <FolderOpen size={15} className="text-brand" />
-            <h2 className="font-semibold text-gray-900 text-sm">Documents</h2>
-            {project.documents?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.documents.length}</span>}
+        {/* ── Documents ── (white) */}
+        <div id="s-documents" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📁</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Documents</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Plans, permis et fichiers du projet{project.documents?.length > 0 ? ` · ${project.documents.length}` : ''}</div>
+            </div>
           </div>
           {project.documents?.length > 0 ? (
             <div className="space-y-2">
@@ -1971,13 +2068,13 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Quittance */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Shield size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Quittance finale</h2>
-              <span className="text-xs text-gray-400">— Certificat de satisfaction client (Québec)</span>
+        {/* ── Quittance ── (mint) */}
+        <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✅</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Quittances</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Certificat de satisfaction client · clôture du projet (Québec)</div>
             </div>
           </div>
 
@@ -2064,13 +2161,15 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Client Portal */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <Globe size={15} className="text-brand"/>
-            <h2 className="font-semibold text-gray-900 text-sm">Portail client</h2>
+        {/* ── Portail client ── (violet) */}
+        <div id="s-portal" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🌐</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Portail client</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Lien partageable — suivi temps réel du chantier</div>
+            </div>
           </div>
-          <p className="text-xs text-gray-400 mb-4">Partagez ce lien avec votre client pour qu'il suive l'avancement du chantier en temps réel.</p>
 
           {project.portal_token ? (
             <div className="space-y-3">
@@ -2120,21 +2219,18 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Change Orders */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileEdit size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Demandes de modification</h2>
-              {changeOrdersList.length > 0 && (
-                <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{changeOrdersList.length}</span>
-              )}
+        {/* ── Avenants (Change Orders) ── (cream) */}
+        <div id="s-co" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📝</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Avenants</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Demandes de modification{changeOrdersList.length > 0 ? ` · ${changeOrdersList.length}` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowCOForm(v=>!v)}>
+            <button className="btn-secondary text-xs" onClick={()=>setShowCOForm(v=>!v)}>
               <Plus size={13}/> Nouvelle
             </button>
           </div>
-
           {showCOForm && (
             <form onSubmit={createChangeOrder} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
               <div><label className="label">Titre *</label><input className="input" value={coForm.title} onChange={e=>setCoForm(f=>({...f,title:e.target.value}))} required placeholder="Ex: Ajout d'une salle de bain"/></div>
@@ -2270,47 +2366,6 @@ export default function ProjectDetail() {
             </div>
           </div>
         )}
-
-        {/* QR Punch */}
-        <div id="s-punch" className="card mt-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch</h2></div>
-            {!qrData && (
-              <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
-                {genQr?<Loader2 size={13} className="animate-spin"/>:<Plus size={13}/>} Générer QR
-              </button>
-            )}
-          </div>
-
-          {qrData ? (
-            <div className="flex items-start gap-4">
-              <img src={qrData.qr_image} alt="QR" className="w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0"/>
-              <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">Affichez ce QR à l'entrée du chantier</p>
-                <p className="text-xs text-gray-400 mb-3">Les travailleurs scannent pour pointer entrée et sortie.</p>
-                <button className="btn-primary text-xs py-1.5" onClick={printQR}><QrCode size={13}/> Imprimer le QR</button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400">Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier.</p>
-          )}
-
-          {timesheets.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">Punchs récents</p>
-              <div className="space-y-1.5">
-                {timesheets.slice(0,5).map(ts=>(
-                  <div key={ts.id} className="flex items-center gap-3 text-xs text-gray-600">
-                    <CheckCircle size={12} className={ts.clock_out?'text-gray-300':'text-green-500'}/>
-                    <span className="font-medium">{ts.user_name||ts.sub_name||ts.worker_name||'Inconnu'}</span>
-                    <span className="text-gray-400">{ts.clock_in&&new Date(ts.clock_in).toLocaleString('fr-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-                    {ts.hours_total&&<span className="ml-auto font-medium text-gray-700">{ts.hours_total}h</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
 
       </div>
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
