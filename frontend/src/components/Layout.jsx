@@ -56,7 +56,7 @@ function RailBtn({ to, icon: Icon, label, highlight, badge, onClick }) {
   );
 }
 
-export default function Layout({ children }) {
+export default function Layout({ children, toc = null, noTopbar = false }) {
   const t = useT();
   const { lang, setLanguage } = useLang();
   const { user, logout, company } = useAuthStore();
@@ -255,6 +255,27 @@ export default function Layout({ children }) {
       {/* ── MAIN AREA ── */}
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', overflow: 'hidden' }}>
 
+        {/* Optional TOC panel — shown inline before content when provided */}
+        {toc && (
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            {/* TOC sidebar */}
+            <div style={{
+              width: 204, flexShrink: 0, background: '#fff',
+              borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column',
+              overflowY: 'auto', position: 'sticky', top: 0, height: '100vh',
+            }}>
+              {toc}
+            </div>
+            {/* Doc area */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {children}
+            </div>
+          </div>
+        )}
+
+        {/* Default layout (no TOC) */}
+        {!toc && <>
+
         {/* Topbar */}
         <header style={{
           position: 'sticky', top: 0, height: 54,
@@ -332,6 +353,9 @@ export default function Layout({ children }) {
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}
         </main>
+
+        </>} {/* end !toc */}
+
       </div>
 
       {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}

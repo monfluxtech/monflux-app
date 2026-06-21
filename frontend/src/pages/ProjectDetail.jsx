@@ -860,57 +860,180 @@ export default function ProjectDetail() {
   const pct = project.progress_pct || 0;
   const activeTs = timesheets.filter(t=>!t.clock_out);
 
-  return (
-    <Layout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <button className="btn-ghost text-sm" onClick={()=>navigate('/projets')}>
-            <ArrowLeft size={14}/> Projets
-          </button>
+  // ── TOC sections list ──
+  const TOC_SECTIONS = [
+    { id: 's-ai',         icon: '📡', label: 'Capture IA' },
+    { id: 's-pipeline',   icon: '🔄', label: 'Pipeline' },
+    { id: 's-infos',      icon: 'ℹ️',  label: 'Infos projet' },
+    { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
+    { id: 's-phases',     icon: '📅', label: 'Phases & Gantt' },
+    { id: 's-profit',     icon: '💰', label: 'Rentabilité' },
+    { id: 's-media',      icon: '📷', label: 'Photos & médias' },
+    { id: 's-trades',     icon: '🏗️', label: 'Corps de métier' },
+    { id: 's-punch',      icon: '⏱️', label: 'Punch' },
+    { id: 's-soumission', icon: '📄', label: 'Devis précis' },
+    { id: 's-invoices',   icon: '🧾', label: 'Factures' },
+    { id: 's-contracts',  icon: '✍️', label: 'Contrats' },
+    { id: 's-portal',     icon: '🌐', label: 'Portail client' },
+    { id: 's-co',         icon: '📝', label: 'Avenants' },
+    { id: 's-orders',     icon: '📦', label: 'Commandes' },
+    { id: 's-quittances', icon: '✅', label: 'Quittances' },
+  ];
+
+  const PIPELINE_LABELS = {
+    brouillon: 'Brouillon', estimation: 'Estimation terrain', prix_envoye: 'Prix envoyé',
+    accepte: 'Accepté', planifie: 'Planifié', en_chantier: 'En chantier',
+    a_facturer: 'À facturer', paye: 'Payé', clos: 'Clos',
+  };
+
+  const ProjectTOC = () => (
+    <>
+      <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #E8EAED' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#7C8089', marginBottom: 5 }}>Fiche projet</div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+        {TOC_SECTIONS.map(s => (
           <button
-            className="btn-secondary text-xs"
-            onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
+            key={s.id}
+            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '7px 8px', borderRadius: 9, border: 'none', background: 'none',
+              cursor: 'pointer', textAlign: 'left', transition: '.12s',
+              fontSize: 12.5, fontWeight: 500, color: '#3A3D44',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#F4F5F6'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
           >
-            <GitBranch size={13}/> {t('create_change_order')}
+            <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{s.icon}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ borderTop: '1px solid #E8EAED', padding: '10px 12px' }}>
+        <button
+          className="btn-ghost w-full text-xs"
+          onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
+        >
+          <GitBranch size={12}/> {t('create_change_order')}
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <Layout toc={<ProjectTOC />} noTopbar>
+      {/* ── Project Topbar ── */}
+      <div style={{
+        position: 'sticky', top: 0, height: 54,
+        background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
+        gap: 10, padding: '0 36px', zIndex: 15,
+      }}>
+        <button
+          onClick={() => navigate('/projets')}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+        >
+          Projets
+        </button>
+        <span style={{ color: '#C8CACD', fontSize: 13 }}>›</span>
+        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
+        <div style={{ flex: 1 }} />
+        <button className="btn-secondary text-xs" onClick={() => window.print()}>
+          📥 Exporter PDF
+        </button>
+        <button className="btn-primary text-xs" onClick={() => {
+          if (project.portal_token) {
+            navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
+          }
+        }}>
+          Envoyer au client →
+        </button>
+      </div>
+
+      {/* ── Hero ── */}
+      <div id="s-hero" style={{ padding: '48px 56px 36px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#D8480F' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F26522', display: 'inline-block' }} />
+            Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
+          </div>
+          <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}>
+            ✏️ Éditer les infos
           </button>
         </div>
-
-        {/* Header */}
-        <div className="card mb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-gray-900 mb-1">{project.name}</h1>
-              <div className="flex flex-wrap gap-3 text-sm text-gray-400">
-                {project.address && <span className="flex items-center gap-1"><MapPin size={13}/>{project.address}</span>}
-                {project.start_date && <span className="flex items-center gap-1"><Calendar size={13}/>{new Date(project.start_date).toLocaleDateString('fr-CA')}{project.end_date && ` → ${new Date(project.end_date).toLocaleDateString('fr-CA')}`}</span>}
-                {project.contract_value && <span className="flex items-center gap-1"><DollarSign size={13}/>{Number(project.contract_value).toLocaleString('fr-CA')}$</span>}
+        <h1 style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C', margin: 0 }}>
+          {project.name}
+        </h1>
+        {(project.address || project.client_name) && (
+          <p style={{ margin: '12px 0 0', fontSize: 15, color: '#3A3D44', lineHeight: 1.55, maxWidth: '70ch' }}>
+            {[project.client_name && `Client : ${project.client_name}`, project.address].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        {/* KV chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
+          {project.contract_value && (
+            <div className="kv">
+              <div className="kv-k">Valeur contrat</div>
+              <div className="kv-v">{money(project.contract_value)}</div>
+            </div>
+          )}
+          {project.payment_terms && (
+            <div className="kv">
+              <div className="kv-k">Termes paiement</div>
+              <div className="kv-v" style={{ fontSize: 15 }}>{project.payment_terms}</div>
+            </div>
+          )}
+          {project.start_date && (
+            <div className="kv">
+              <div className="kv-k">Début → Fin</div>
+              <div className="kv-v" style={{ fontSize: 14 }}>
+                {new Date(project.start_date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}
+                {project.end_date && ` → ${new Date(project.end_date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}`}
               </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-3xl font-bold text-brand">{pct}%</div>
-              <div className="text-xs text-gray-400">Avancement</div>
+          )}
+          {project.project_manager && (
+            <div className="kv">
+              <div className="kv-k">Chargé de projet</div>
+              <div className="kv-v" style={{ fontSize: 14 }}>{project.project_manager}</div>
             </div>
-          </div>
-          {/* Overall progress bar */}
-          <div className="mt-3 w-full h-2 bg-gray-100 rounded-full">
-            <div className="h-full rounded-full bg-brand transition-all" style={{width:`${pct}%`}}/>
+          )}
+          <div className="kv">
+            <div className="kv-k">Avancement</div>
+            <div className="kv-v" style={{ color: '#F26522' }}>{pct}%</div>
           </div>
         </div>
+        {/* Progress bar */}
+        <div style={{ marginTop: 16, height: 4, background: '#D1D9E0', borderRadius: 99, overflow: 'hidden', maxWidth: 400 }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: '#F26522', borderRadius: 99, transition: '.4s' }} />
+        </div>
+      </div>
 
-        {/* Infos du projet — termes de paiement en haut + en-tête riche */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900 text-sm">Infos du projet</h2>
-            <button className="btn-ghost text-xs text-gray-400 hover:text-brand" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
-          </div>
-          <div className="mb-3 p-3 rounded-xl bg-orange-50 border border-orange-100 flex items-center gap-2">
-            <CreditCard size={16} className="text-brand flex-shrink-0"/>
+      {/* ── Doc sections ── */}
+      <div style={{ padding: '0 56px 64px' }}>
+
+        {/* Infos projet */}
+        <div id="s-infos" style={{ paddingTop: 40, paddingBottom: 32, borderBottom: '1px solid #E8EAED', marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>ℹ️</div>
             <div>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wide">Termes de paiement</p>
-              <p className="text-sm font-medium text-gray-900">{project.payment_terms || 'À définir'}</p>
+              <h2 style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Infos du projet</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 3 }}>Responsabilités, permis, équipements</div>
             </div>
+            <button className="btn-secondary text-xs ml-auto" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-sm">
+          {project.payment_terms && (
+            <div style={{ background: '#FFF3EC', border: '1px solid #FBE0CD', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <CreditCard size={16} style={{ color: '#F26522', flexShrink: 0 }} />
+              <div>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>Termes de paiement</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#15171C', marginTop: 2 }}>{project.payment_terms}</p>
+              </div>
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 24px' }}>
             {[
               ['Chargé de projet', project.project_manager],
               ['Acheteur matériaux', project.materials_buyer],
@@ -918,17 +1041,19 @@ export default function ProjectDetail() {
               ['Responsable permis', project.permits_responsible],
               ['Permis requis', project.permits_required ? 'Oui' : 'Non'],
               ['Machines', (project.machines || []).join(', ')],
-            ].map(([label, value]) => (
+            ].map(([label, value]) => value ? (
               <div key={label}>
-                <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
-                <p className="text-gray-800 truncate">{value || '—'}</p>
+                <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>{label}</p>
+                <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3 }}>{value}</p>
               </div>
-            ))}
+            ) : null)}
           </div>
         </div>
 
         {/* Estimation terrain */}
+        <div id="s-estimation">
         <FieldEstimation project={project} onUpdated={load} />
+        </div>
 
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-3 mb-4">
@@ -948,7 +1073,7 @@ export default function ProjectDetail() {
 
         {/* Rentabilité */}
         {profit && (
-          <div className="card mb-4">
+          <div id="s-profit" className="card mb-4">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp size={15} className="text-brand" />
               <h2 className="font-semibold text-gray-900 text-sm">Rentabilité</h2>
@@ -2147,7 +2272,7 @@ export default function ProjectDetail() {
         )}
 
         {/* QR Punch */}
-        <div className="card mt-4">
+        <div id="s-punch" className="card mt-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch</h2></div>
             {!qrData && (
