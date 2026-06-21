@@ -8,6 +8,50 @@ import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCi
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
 const money = (v) => (Number(v) || 0).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
+const BRAND = '#E8794E';
+const BRAND_DARK = '#C85A2B';
+const BRAND_SOFT = '#FFF1EB';
+const BRAND_BORDER = '#F9D5C0';
+
+const DETAIL_TOC_SECTIONS = [
+  { id: 's-ai', icon: '📡', label: 'Capture IA' },
+  { id: 's-pipeline', icon: '🔄', label: 'Pipeline du projet' },
+  { id: 's-infos', icon: 'ℹ️', label: 'Infos projet' },
+  { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
+  { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
+  { id: 's-payments', icon: '💳', label: 'Paiements' },
+  { id: 's-phases', icon: '📅', label: 'Phases & Gantt' },
+  { id: 's-media', icon: '📷', label: 'Photos & médias' },
+  { id: 's-trades', icon: '🏗️', label: 'Corps de métier' },
+  { id: 's-expenses', icon: '💸', label: 'Dépenses' },
+  { id: 's-punch', icon: '⏱️', label: 'Punch' },
+  { id: 's-orders', icon: '📦', label: 'Commandes' },
+  { id: 's-soumission', icon: '📄', label: 'Devis précis' },
+  { id: 's-rfqs', icon: '📨', label: 'RFQ' },
+  { id: 's-contracts', icon: '✍️', label: 'Contrats' },
+  { id: 's-invoices', icon: '🧾', label: 'Factures' },
+  { id: 's-quotes', icon: '📋', label: 'Soumissions' },
+  { id: 's-documents', icon: '📁', label: 'Documents' },
+  { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
+  { id: 's-portal', icon: '🌐', label: 'Portails' },
+  { id: 's-co', icon: '📝', label: 'Avenants' },
+];
+
+function parsePaymentTerms(terms) {
+  if (!terms) return [];
+  const matches = String(terms).match(/\d+(?:[.,]\d+)?/g) || [];
+  const values = matches.map((value) => Number(value.replace(',', '.'))).filter((value) => value > 0);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (!values.length || total > 100.5) return [];
+  return values;
+}
+
+function paymentStepLabel(index, total) {
+  if (index === 0) return 'Dépôt';
+  if (index === total - 1) return total === 2 ? 'Solde final' : 'Fin des travaux';
+  if (index === 1) return 'Mi-chantier';
+  return `Versement ${index + 1}`;
+}
 
 const TRADE_STATUS = {
   to_find:   { label: 'À trouver', badge: 'badge-gray' },
@@ -54,7 +98,7 @@ function DocPreview({ doc, onClose }) {
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
-const PHASE_COLORS = ['#F26522','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
+const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
 
 function GanttChart({ phases, projectStart, projectEnd }) {
   if (!phases || phases.length === 0) return null;
@@ -457,6 +501,7 @@ export default function ProjectDetail() {
   const [coImpact, setCoImpact] = useState({});   // { [coId]: impactObj }
   const [analyzingCoId, setAnalyzingCoId] = useState(null);
   const [aiNotice, setAiNotice] = useState('');
+  const [activeSection, setActiveSection] = useState('s-ai');
 
   const load = async () => {
     setLoading(true);
@@ -520,6 +565,33 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+
+    const sections = DETAIL_TOC_SECTIONS
+      .map((section) => document.getElementById(section.id))
+      .filter(Boolean);
+
+    if (!sections.length) return undefined;
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+      if (visible?.target?.id) {
+        setActiveSection(visible.target.id);
+      }
+    }, {
+      root: null,
+      rootMargin: '-18% 0px -62% 0px',
+      threshold: [0.15, 0.35, 0.6],
+    });
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [loading, profit, projectInvoices.length, projectQuotes.length, media.length, materialOrders.length, projectContracts.length, changeOrdersList.length]);
 
   const generateQR = async () => {
     setGenQr(true);
@@ -859,26 +931,37 @@ export default function ProjectDetail() {
 
   const pct = project.progress_pct || 0;
   const activeTs = timesheets.filter(t=>!t.clock_out);
-
-  // ── TOC sections list ──
-  const TOC_SECTIONS = [
-    { id: 's-ai',         icon: '📡', label: 'Capture IA' },
-    { id: 's-pipeline',   icon: '🔄', label: 'Pipeline' },
-    { id: 's-infos',      icon: 'ℹ️',  label: 'Infos projet' },
-    { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
-    { id: 's-phases',     icon: '📅', label: 'Phases & Gantt' },
-    { id: 's-profit',     icon: '💰', label: 'Rentabilité' },
-    { id: 's-media',      icon: '📷', label: 'Photos & médias' },
-    { id: 's-trades',     icon: '🏗️', label: 'Corps de métier' },
-    { id: 's-punch',      icon: '⏱️', label: 'Punch' },
-    { id: 's-soumission', icon: '📄', label: 'Devis précis' },
-    { id: 's-invoices',   icon: '🧾', label: 'Factures' },
-    { id: 's-contracts',  icon: '✍️', label: 'Contrats' },
-    { id: 's-portal',     icon: '🌐', label: 'Portail client' },
-    { id: 's-co',         icon: '📝', label: 'Avenants' },
-    { id: 's-orders',     icon: '📦', label: 'Commandes' },
-    { id: 's-quittances', icon: '✅', label: 'Quittances' },
-  ];
+  const contractValue = Number(project.contract_value || 0);
+  const billedInvoices = projectInvoices.filter((inv) => inv.status !== 'cancelled');
+  const totalBilled = billedInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+  const totalCollected = billedInvoices
+    .filter((inv) => inv.status === 'paid')
+    .reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+  const totalOutstanding = billedInvoices
+    .filter((inv) => ['sent', 'viewed', 'partial', 'overdue'].includes(inv.status))
+    .reduce((sum, inv) => sum + Number(inv.amount_due ?? inv.total ?? 0), 0);
+  const paymentTerms = parsePaymentTerms(project.payment_terms);
+  let runningPct = 0;
+  const installments = paymentTerms.map((pctValue, index) => {
+    const previousPct = runningPct;
+    runningPct += pctValue;
+    const amount = contractValue ? (contractValue * pctValue) / 100 : 0;
+    const paid = contractValue > 0 && totalCollected >= (contractValue * runningPct) / 100 - 1;
+    const current = !paid && totalCollected >= (contractValue * previousPct) / 100 - 1;
+    return {
+      label: paymentStepLabel(index, paymentTerms.length),
+      pct: pctValue,
+      amount,
+      paid,
+      current,
+    };
+  });
+  const nextInstallment = installments.find((item) => !item.paid) || null;
+  const nextDueInvoice = billedInvoices
+    .filter((inv) => ['sent', 'viewed', 'partial', 'overdue'].includes(inv.status) && inv.due_date)
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0] || null;
+  const heroNextPaymentAmount = nextInstallment?.amount || totalOutstanding || Math.max(contractValue - totalCollected, 0);
+  const heroDueDate = nextDueInvoice?.due_date || project.end_date || null;
 
   const PIPELINE_LABELS = {
     brouillon: 'Brouillon', estimation: 'Estimation terrain', prix_envoye: 'Prix envoyé',
@@ -888,30 +971,23 @@ export default function ProjectDetail() {
 
   const ProjectTOC = () => (
     <>
-      <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #E8EAED' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: '#7C8089', marginBottom: 5 }}>Fiche projet</div>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
-        {TOC_SECTIONS.map(s => (
+      <div className="app-sidebar-section-label">Fiche projet</div>
+      <div className="app-sidebar-section-title">{project.name}</div>
+      <div className="project-toc-list">
+        {DETAIL_TOC_SECTIONS.map((s) => (
           <button
             key={s.id}
-            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-              padding: '7px 8px', borderRadius: 9, border: 'none', background: 'none',
-              cursor: 'pointer', textAlign: 'left', transition: '.12s',
-              fontSize: 12.5, fontWeight: 500, color: '#3A3D44',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#F4F5F6'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
+            type="button"
+            className={`project-toc-item ${activeSection === s.id ? 'active' : ''}`}
+            onClick={() => scrollToSection(s.id)}
           >
-            <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{s.icon}</span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+            <span className="project-toc-icon">{s.icon}</span>
+            <span className="project-toc-label">{s.label}</span>
+            {s.badge && <span className="project-toc-badge">{s.badge}</span>}
           </button>
         ))}
       </div>
-      <div style={{ borderTop: '1px solid #E8EAED', padding: '10px 12px' }}>
+      <div className="app-sidebar-bottom pt-3">
         <button
           className="btn-ghost w-full text-xs"
           onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
@@ -955,8 +1031,8 @@ export default function ProjectDetail() {
       {/* ── Hero ── */}
       <div id="s-hero" style={{ padding: '48px 56px 36px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#D8480F' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F26522', display: 'inline-block' }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
             Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
           </div>
           <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}>
@@ -973,10 +1049,10 @@ export default function ProjectDetail() {
         )}
         {/* KV chips */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
-          {project.contract_value && (
+          {contractValue > 0 && (
             <div className="kv">
               <div className="kv-k">Valeur contrat</div>
-              <div className="kv-v">{money(project.contract_value)}</div>
+              <div className="kv-v">{money(contractValue)}</div>
             </div>
           )}
           {project.payment_terms && (
@@ -985,12 +1061,17 @@ export default function ProjectDetail() {
               <div className="kv-v" style={{ fontSize: 15 }}>{project.payment_terms}</div>
             </div>
           )}
-          {project.start_date && (
+          {heroNextPaymentAmount > 0 && (
             <div className="kv">
-              <div className="kv-k">Début → Fin</div>
-              <div className="kv-v" style={{ fontSize: 14 }}>
-                {new Date(project.start_date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}
-                {project.end_date && ` → ${new Date(project.end_date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}`}
+              <div className="kv-k">Prochain versement</div>
+              <div className="kv-v">{money(heroNextPaymentAmount)}</div>
+            </div>
+          )}
+          {heroDueDate && (
+            <div className="kv">
+              <div className="kv-k">Échéance</div>
+              <div className="kv-v" style={{ fontSize: 15 }}>
+                {new Date(heroDueDate).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}
               </div>
             </div>
           )}
@@ -1000,14 +1081,12 @@ export default function ProjectDetail() {
               <div className="kv-v" style={{ fontSize: 14 }}>{project.project_manager}</div>
             </div>
           )}
-          <div className="kv">
-            <div className="kv-k">Avancement</div>
-            <div className="kv-v" style={{ color: '#F26522' }}>{pct}%</div>
-          </div>
-        </div>
-        {/* Progress bar */}
-        <div style={{ marginTop: 16, height: 4, background: '#D1D9E0', borderRadius: 99, overflow: 'hidden', maxWidth: 400 }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: '#F26522', borderRadius: 99, transition: '.4s' }} />
+          {!project.project_manager && (
+            <div className="kv">
+              <div className="kv-k">Avancement</div>
+              <div className="kv-v" style={{ color: BRAND }}>{pct}%</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1024,7 +1103,7 @@ export default function ProjectDetail() {
             </div>
             <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
           </div>
-          <div style={{ background: 'linear-gradient(135deg,#F2843F 0%,#F26522 52%,#D8480F 100%)', color: '#fff', borderRadius: 16, padding: 26, boxShadow: '0 10px 28px rgba(216,72,15,.28)' }}>
+          <div style={{ background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff', borderRadius: 16, padding: 26, boxShadow: '0 10px 28px rgba(200,90,43,.26)' }}>
             <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
               <div style={{ width: 58, height: 58, borderRadius: 16, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', fontSize: 32, flexShrink: 0 }}>+</div>
               <div>
@@ -1036,7 +1115,7 @@ export default function ProjectDetail() {
               {[['🎤','Parler'],['📷','Photo'],['📄','Document'],['✍️','Écrire']].map(([ic,lbl]) => (
                 <button key={lbl} onClick={() => setShowMediaForm(true)} style={{ background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{ic} {lbl}</button>
               ))}
-              <button onClick={() => setShowMediaForm(true)} style={{ background: '#fff', border: 'none', color: '#D8480F', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>✍️ Note</button>
+              <button onClick={() => setShowMediaForm(true)} style={{ background: '#fff', border: 'none', color: BRAND_DARK, borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>✍️ Note</button>
             </div>
             {notes && (
               <div style={{ marginTop: 15, background: 'rgba(255,255,255,.13)', border: '1px dashed rgba(255,255,255,.4)', borderRadius: 12, padding: '12px 14px', fontSize: 12.5, display: 'flex', gap: 10 }}>
@@ -1068,7 +1147,7 @@ export default function ProjectDetail() {
               </div>
               <div style={{ position: 'relative', padding: '8px 0 28px' }}>
                 <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: '#E8EAED', zIndex: 0 }} />
-                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: '#F26522', zIndex: 1, transition: '.4s', width: activeIdx >= 0 ? `${(activeIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: activeIdx >= 0 ? `${(activeIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
                   {PIPE.map((s, i) => {
                     const isDone = i < activeIdx;
@@ -1077,15 +1156,15 @@ export default function ProjectDetail() {
                       <div key={s.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer' }}>
                         <div style={{
                           width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
-                          border: `3px solid ${isDone ? '#16a34a' : isActive ? '#F26522' : '#E8EAED'}`,
-                          background: isDone ? '#16a34a' : isActive ? '#F26522' : '#fff',
+                          border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : '#E8EAED'}`,
+                          background: isDone ? '#16a34a' : isActive ? BRAND : '#fff',
                           display: 'grid', placeItems: 'center', transition: '.2s',
-                          boxShadow: isActive ? '0 0 0 4px rgba(242,101,34,.2)' : 'none',
+                          boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
                         }}>
                           {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
                           {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
                         </div>
-                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? '#D8480F' : '#7C8089', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : '#7C8089', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
                       </div>
                     );
                   })}
@@ -1095,7 +1174,7 @@ export default function ProjectDetail() {
                 <div className="kv"><div className="kv-k">Phases</div><div className="kv-v">{project.phases?.length || 0}</div></div>
                 <div className="kv"><div className="kv-k">Pointés</div><div className="kv-v" style={{ color: '#16a34a' }}>{activeTs.length}</div></div>
                 <div className="kv"><div className="kv-k">Total punchs</div><div className="kv-v">{timesheets.length}</div></div>
-                <div className="kv"><div className="kv-k">Avancement</div><div className="kv-v" style={{ color: '#F26522' }}>{pct}%</div></div>
+                <div className="kv"><div className="kv-k">Avancement</div><div className="kv-v" style={{ color: BRAND }}>{pct}%</div></div>
               </div>
             </div>
           );
@@ -1111,15 +1190,6 @@ export default function ProjectDetail() {
             </div>
             <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
           </div>
-          {project.payment_terms && (
-            <div style={{ background: '#FFF3EC', border: '1px solid #FBE0CD', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <CreditCard size={16} style={{ color: '#F26522', flexShrink: 0 }} />
-              <div>
-                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>Termes de paiement</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#15171C', marginTop: 2 }}>{project.payment_terms}</p>
-              </div>
-            </div>
-          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 32px' }}>
             {[
               ['Chargé de projet', project.project_manager],
@@ -1197,6 +1267,94 @@ export default function ProjectDetail() {
             </div>
         )}
 
+        {/* ── Paiements ── */}
+        <div id="s-payments" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💳</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Paiements</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Versements contractuels, facturation et suivi des encaissements</div>
+            </div>
+            <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+            <div className="rounded-xl border border-gray-100 p-4 bg-white">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Total facturé</p>
+              <p className="text-3xl font-black text-green-600 mt-2">{money(totalBilled)}</p>
+              <p className="text-xs text-gray-400 mt-1">{billedInvoices.length} facture(s) non annulée(s)</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-4 bg-white">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Encaissements reçus</p>
+              <p className="text-3xl font-black text-gray-900 mt-2">{money(totalCollected)}</p>
+              <p className="text-xs text-gray-400 mt-1">{contractValue > 0 ? `${Math.round((totalCollected / contractValue) * 100)}% du contrat` : 'Paiements enregistrés'}</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-4 bg-white">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">À encaisser</p>
+              <p className="text-3xl font-black text-gray-900 mt-2">{money(totalOutstanding)}</p>
+              <p className="text-xs text-gray-400 mt-1">{nextDueInvoice?.due_date ? `Échéance ${new Date(nextDueInvoice.due_date).toLocaleDateString('fr-CA')}` : 'Aucune échéance active'}</p>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-4 bg-white">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Prochain versement</p>
+              <p className="text-3xl font-black text-gray-900 mt-2">{money(heroNextPaymentAmount)}</p>
+              <p className="text-xs text-gray-400 mt-1">{nextInstallment ? `${nextInstallment.label} · ${nextInstallment.pct}%` : project.payment_terms || 'À définir'}</p>
+            </div>
+          </div>
+
+          {installments.length > 0 && (
+            <div className="rounded-xl border border-gray-100 bg-white p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-900">Échéancier de paiement</p>
+                <span className="text-xs text-gray-400">{project.payment_terms}</span>
+              </div>
+              <div className="space-y-2">
+                {installments.map((item) => (
+                  <div key={item.label} className="flex items-center gap-3 border-b border-gray-50 last:border-b-0 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                      <p className="text-xs text-gray-400">{item.pct}% du contrat</p>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 flex-shrink-0">{money(item.amount)}</p>
+                    <span className={`badge ${item.paid ? 'badge-green' : item.current ? 'badge-orange' : 'badge-gray'}`}>
+                      {item.paid ? 'Reçu' : item.current ? 'À venir' : 'Planifié'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-gray-100 bg-white p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-900">Factures récentes</p>
+              <span className="text-xs text-gray-400">{project.payment_terms || 'Suivi libre'}</span>
+            </div>
+            {billedInvoices.length > 0 ? (
+              <div className="space-y-2">
+                {billedInvoices.slice(0, 4).map((inv) => {
+                  const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
+                  const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
+                  return (
+                    <div key={inv.id} className="flex items-center gap-3 border-b border-gray-50 last:border-b-0 py-2">
+                      <FileText size={14} className="text-gray-300 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">{inv.title || `Facture ${inv.number}`}</p>
+                        <p className="text-xs text-gray-400">
+                          {inv.due_date ? `Échéance ${new Date(inv.due_date).toLocaleDateString('fr-CA')}` : 'Sans échéance'}
+                        </p>
+                      </div>
+                      <span className={`badge ${SB[inv.status] || 'badge-gray'} text-xs`}>{SL[inv.status] || inv.status}</span>
+                      <p className="text-sm font-semibold text-gray-800 flex-shrink-0">{money(inv.total)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Aucune facture liée à ce projet pour le moment.</p>
+            )}
+          </div>
+        </div>
+
         {/* ── Phases & Gantt ── (blue) */}
         <div id="s-phases" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
@@ -1271,7 +1429,7 @@ export default function ProjectDetail() {
           {/* Notes de chantier inline */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E8EAED' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <StickyNote size={14} style={{ color: '#F26522' }} />
+              <StickyNote size={14} style={{ color: BRAND }} />
               <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44' }}>Notes de chantier</span>
               {notesSaving && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 'auto' }}>Enregistrement…</span>}
             </div>
