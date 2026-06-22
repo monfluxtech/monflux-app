@@ -1275,7 +1275,13 @@ export default function ProjectDetail() {
     setChangingStatus(true);
     try {
       const { data } = await projectsApi.update(id, { status: statusPopup.key });
-      setProject(p => ({ ...p, status: data.status }));
+      // Persiste la date du changement de statut dans field_assessment.status_dates
+      const prevFa = project.field_assessment || {};
+      const prevDates = prevFa.status_dates || {};
+      const nextDates = { ...prevDates, [statusPopup.key]: new Date().toISOString() };
+      const nextFa = { ...prevFa, status_dates: nextDates };
+      await projectsApi.update(id, { field_assessment: nextFa });
+      setProject(p => ({ ...p, status: data.status, field_assessment: nextFa }));
       setStatusPopup(null);
     } catch {} finally { setChangingStatus(false); }
   };
@@ -1577,6 +1583,19 @@ export default function ProjectDetail() {
         </button>
       </div>
 
+      {/* ── Résumé de la demande ── */}
+      <div style={{ padding: '16px 56px 20px', background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+        <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 6px' }}>Résumé de la demande</p>
+        <InlineField
+          value={project.description || ''}
+          onSave={v => saveField('description', v)}
+          placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
+          multiline
+          style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+          displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+        />
+      </div>
+
       {/* ── Hero ── */}
       {(() => {
         const fa = project.field_assessment || {};
@@ -1711,37 +1730,52 @@ export default function ProjectDetail() {
             </div>
 
             {/* ── Pipeline — fusionné dans l'entête ── */}
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
-              <div style={{ position: 'relative', padding: '8px 0 8px' }}>
-                <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: 'rgba(0,0,0,.1)', zIndex: 0 }} />
-                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
-                  {PIPE.map((s, i) => {
-                    const isDone = i < pipeActiveIdx;
-                    const isActive = i === pipeActiveIdx;
-                    return (
-                      <div key={s.key}
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
-                        onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
-                        title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
-                      >
-                        <div style={{
-                          width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
-                          border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : 'rgba(0,0,0,.15)'}`,
-                          background: isDone ? '#16a34a' : isActive ? BRAND : 'rgba(255,255,255,.7)',
-                          display: 'grid', placeItems: 'center', transition: '.2s',
-                          boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
-                        }}>
-                          {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                          {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
-                        </div>
-                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.55)', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
-                      </div>
-                    );
-                  })}
+            {(() => {
+              const statusDates = (project.field_assessment || {}).status_dates || {};
+              const fmtDate = iso => {
+                if (!iso) return null;
+                const d = new Date(iso);
+                return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+              };
+              return (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+                  <div style={{ position: 'relative', padding: '8px 0 0' }}>
+                    <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: 'rgba(0,0,0,.1)', zIndex: 0 }} />
+                    <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
+                      {PIPE.map((s, i) => {
+                        const isDone = i < pipeActiveIdx;
+                        const isActive = i === pipeActiveIdx;
+                        const dateStr = fmtDate(statusDates[s.key]);
+                        return (
+                          <div key={s.key}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
+                            onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
+                            title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
+                          >
+                            <div style={{
+                              width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
+                              border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : 'rgba(0,0,0,.15)'}`,
+                              background: isDone ? '#16a34a' : isActive ? BRAND : 'rgba(255,255,255,.7)',
+                              display: 'grid', placeItems: 'center', transition: '.2s',
+                              boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
+                            }}>
+                              {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                              {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.55)', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
+                            {dateStr
+                              ? <span style={{ fontSize: 9.5, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.35)', fontWeight: 500, textAlign: 'center', marginTop: -2 }}>{dateStr}</span>
+                              : <span style={{ fontSize: 9.5, color: 'transparent', userSelect: 'none' }}>·</span>
+                            }
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
           </div>
         );
