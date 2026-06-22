@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf } from '../api';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
@@ -622,6 +622,23 @@ export default function ProjectDetail() {
     } catch {}
   };
 
+  const saveAssessmentField = async (key, value) => {
+    const next = { ...(project.field_assessment || {}), [key]: value };
+    try {
+      await projectsApi.update(id, { field_assessment: next });
+      setProject(p => ({ ...p, field_assessment: next }));
+    } catch {}
+  };
+
+  const saveClientField = async (field, value) => {
+    if (!project.client_id) return;
+    try {
+      await contactsApi.update(project.client_id, { [field]: value || null });
+      const map = { name: 'client_name', email: 'client_email', phone: 'client_phone', notes: 'client_notes' };
+      setProject(p => ({ ...p, [map[field] || `client_${field}`]: value }));
+    } catch {}
+  };
+
   useEffect(() => { load(); }, [id]);
 
   useEffect(() => {
@@ -1172,62 +1189,70 @@ export default function ProjectDetail() {
 
       {/* ── Hero ── */}
       {(() => {
-        const healthStatus = (() => {
-          const overdue = projectInvoices.some(inv => inv.status === 'overdue');
-          if (overdue || ['brouillon','estimation'].includes(project.status)) return 'red';
-          if (['accepte','planifie','en_chantier','paye','clos'].includes(project.status)) return 'green';
-          return 'yellow';
-        })();
-        const healthColors = { green: { bg: '#DCFCE7', dot: '#16a34a', label: 'En bonne santé' }, yellow: { bg: '#FEF9C3', dot: '#CA8A04', label: 'Attention requise' }, red: { bg: '#FEE2E2', dot: '#DC2626', label: 'Action requise' } };
-        const hc = healthColors[healthStatus];
-        const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+        const fa = project.field_assessment || {};
+        const startLabel = fa.start_label || (project.start_date ? project.start_date.slice(0,10) : '');
+        const endLabel   = fa.end_label   || (project.end_date   ? project.end_date.slice(0,10)   : '');
+        const workType   = project.type || '';
+        const addr       = project.address || '';
+
+        const overdue = projectInvoices.some(inv => inv.status === 'overdue');
+        const healthStatus = (overdue || ['brouillon','estimation'].includes(project.status)) ? 'red'
+          : ['accepte','planifie','en_chantier','paye','clos'].includes(project.status) ? 'green' : 'yellow';
+        const HC = { green: { bg:'#DCFCE7', dot:'#16a34a', label:'En bonne santé' }, yellow: { bg:'#FEF9C3', dot:'#CA8A04', label:'Attention requise' }, red: { bg:'#FEE2E2', dot:'#DC2626', label:'Action requise' } };
+        const hc = HC[healthStatus];
+
+        const IFS = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
+        const IFD = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
+
         return (
           <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
-            {/* Statut badge */}
+
+            {/* Statut */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px', marginBottom: 16 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
               Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
             </div>
 
-            {/* Titre : type de travaux */}
-            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C', margin: '0 0 8px' }}>
-              <InlineField value={project.type || project.name} onSave={v => saveField('type', v)} placeholder="Type de travaux"
-                style={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }}
-                displayStyle={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }} />
+            {/* Titre composé — chaque segment est inline-éditable */}
+            <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.1, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 6px' }}>
+              <InlineField value={workType} onSave={v => saveField('type', v)} placeholder="Type de travaux"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {(workType || addr) && addr && <span style={{ color:'#C8CACD', fontWeight:400 }}> —</span>}
+              <InlineField value={addr} onSave={v => saveField('address', v)} placeholder="Adresse"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {(startLabel || endLabel) && <span style={{ color:'#C8CACD', fontWeight:400 }}> </span>}
+              <InlineField value={startLabel} onSave={v => saveAssessmentField('start_label', v)} placeholder="Début"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {startLabel && endLabel && <span style={{ color:'#C8CACD', fontWeight:400 }}> —</span>}
+              <InlineField value={endLabel} onSave={v => saveAssessmentField('end_label', v)} placeholder="Fin"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
             </h1>
 
-            {/* Adresse · Dates */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 14.5, color: '#4B5563', marginBottom: 16 }}>
-              <InlineField value={project.address} onSave={v => saveField('address', v)} placeholder="Adresse du chantier"
-                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
-              {(project.address || project.start_date) && <span style={{ color: '#D1D5DB' }}>·</span>}
-              <InlineField value={project.start_date ? project.start_date.slice(0,10) : ''} onSave={v => saveField('start_date', v)} placeholder="Début"
-                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
-              {project.start_date && <span style={{ color: '#D1D5DB' }}>→</span>}
-              <InlineField value={project.end_date ? project.end_date.slice(0,10) : ''} onSave={v => saveField('end_date', v)} placeholder="Fin"
-                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
+            {/* Client — entièrement éditable */}
+            <div style={{ marginBottom: 20, padding: '12px 16px', background: 'rgba(255,255,255,.6)', borderRadius: 10, border: '1px solid rgba(255,255,255,.85)', display: 'flex', flexWrap: 'wrap', gap: '10px 24px', alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 140 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Client</p>
+                <InlineField value={project.client_name} onSave={v => saveClientField('name', v)} placeholder="Nom du client" style={IFS} displayStyle={IFD} />
+              </div>
+              <div style={{ minWidth: 130 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Téléphone</p>
+                <InlineField value={project.client_phone} onSave={v => saveClientField('phone', v)} placeholder="—" style={IFS} displayStyle={IFD} />
+              </div>
+              <div style={{ minWidth: 180 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Courriel</p>
+                <InlineField value={project.client_email} onSave={v => saveClientField('email', v)} placeholder="—" style={IFS} displayStyle={IFD} />
+              </div>
+              <div style={{ minWidth: 200, flex: 1 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Remarque contact</p>
+                <InlineField value={fa.client_note} onSave={v => saveAssessmentField('client_note', v)} placeholder="ex : meilleur moment, mode de contact préféré…" style={IFS} displayStyle={{ ...IFD, color: fa.client_note ? '#15171C' : '#9CA3AF' }} />
+              </div>
             </div>
 
-            {/* Client contact */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13.5, color: '#374151', marginBottom: 20, padding: '10px 14px', background: 'rgba(255,255,255,.55)', borderRadius: 10, border: '1px solid rgba(255,255,255,.8)' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Client</span>
-              <span style={{ fontWeight: 600, color: '#15171C' }}>{project.client_name || <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>Sans client</span>}</span>
-              {project.client_phone && (
-                <a href={`tel:${project.client_phone}`} style={{ color: '#4B5563', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 12 }}>📞</span> {project.client_phone}
-                </a>
-              )}
-              {project.client_email && (
-                <a href={`mailto:${project.client_email}`} style={{ color: '#4B5563', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 12 }}>✉️</span> {project.client_email}
-                </a>
-              )}
-              {!project.client_phone && !project.client_email && (
-                <span style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Aucun contact — modifier la fiche client</span>
-              )}
-            </div>
-
-            {/* Métriques non-éditables + feu de circulation */}
+            {/* Métriques non-éditables */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
               {contractValue > 0 && (
                 <div className="kv"><div className="kv-k">Valeur contrat</div><div className="kv-v">{money(contractValue)}</div></div>
@@ -1235,10 +1260,7 @@ export default function ProjectDetail() {
               {heroNextPaymentAmount > 0 && (
                 <div className="kv"><div className="kv-k">Prochain versement</div><div className="kv-v">{money(heroNextPaymentAmount)}</div></div>
               )}
-              {heroDueDate && (
-                <div className="kv"><div className="kv-k">Échéance</div><div className="kv-v" style={{ fontSize: 14 }}>{new Date(heroDueDate).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}</div></div>
-              )}
-              <div className="kv" style={{ background: hc.bg, border: `1px solid ${hc.dot}22` }}>
+              <div className="kv" style={{ background: hc.bg, border: `1px solid ${hc.dot}33` }}>
                 <div className="kv-k">Santé du chantier</div>
                 <div className="kv-v" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: hc.dot, display: 'inline-block', flexShrink: 0 }} />
@@ -1248,28 +1270,30 @@ export default function ProjectDetail() {
             </div>
 
             {/* Grille éditables */}
-            <div style={{ paddingTop: 18, borderTop: '1px solid rgba(0,0,0,.08)' }}>
-              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.4)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 28px' }}>
+            <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.38)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
                 {[
-                  { label: 'Termes paiement', field: 'payment_terms', value: project.payment_terms },
-                  { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
-                  { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
-                  { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
-                  { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
-                  { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
-                ].map(({ label, field, value }) => (
-                  <div key={field}>
-                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.45)', margin: 0 }}>{label}</p>
+                  { label: 'Type de travaux',     fn: v => saveField('type', v),                    value: workType },
+                  { label: 'Adresse',             fn: v => saveField('address', v),                 value: addr },
+                  { label: 'Date début',          fn: v => saveAssessmentField('start_label', v),   value: startLabel },
+                  { label: 'Date fin',            fn: v => saveAssessmentField('end_label', v),     value: endLabel },
+                  { label: 'Termes paiement',     fn: v => saveField('payment_terms', v),           value: project.payment_terms },
+                  { label: 'Chargé de projet',    fn: v => saveField('project_manager', v),         value: project.project_manager },
+                  { label: 'Acheteur matériaux',  fn: v => saveField('materials_buyer', v),         value: project.materials_buyer },
+                  { label: 'Approbateurs',        fn: v => saveField('approvers', v),               value: (project.approvers || []).join(', ') },
+                  { label: 'Responsable permis',  fn: v => saveField('permits_responsible', v),     value: project.permits_responsible },
+                  { label: 'Machines / équipements', fn: v => saveField('machines', v),             value: (project.machines || []).join(', ') },
+                ].map(({ label, fn, value }) => (
+                  <div key={label}>
+                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>{label}</p>
                     <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-                      <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
-                        style={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }}
-                        displayStyle={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }} />
+                      <InlineField value={value} onSave={fn} placeholder="—" style={IFS} displayStyle={IFD} />
                     </p>
                   </div>
                 ))}
                 <div>
-                  <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.45)', margin: 0 }}>Permis requis</p>
+                  <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>Permis requis</p>
                   <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
                     <button onClick={() => saveField('permits_required', !project.permits_required)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
