@@ -16,7 +16,6 @@ const BRAND_BORDER = '#F9D5C0';
 const DETAIL_TOC_SECTIONS = [
   { id: 's-ai', icon: '📡', label: 'Capture IA' },
   { id: 's-pipeline', icon: '🔄', label: 'Pipeline du projet' },
-  { id: 's-infos', icon: 'ℹ️', label: 'Infos projet' },
   { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
   { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
   { id: 's-payments', icon: '💳', label: 'Paiements' },
@@ -1129,10 +1128,11 @@ export default function ProjectDetail() {
 
   return (
     <Layout toc={<ProjectTOC />} noTopbar>
-      {hiddenSections.length > 0 && (
-        <style>{hiddenSections.map(sid => `#${sid}{display:none!important}`).join('')}</style>
-      )}
-      <style>{`.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`}</style>
+      <style>{
+        tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
+        hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
+        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
+      }</style>
       {/* ── Project Topbar ── */}
       <div style={{
         position: 'sticky', top: 0, height: 54,
@@ -1223,10 +1223,40 @@ export default function ProjectDetail() {
             </div>
           )}
         </div>
+        {/* ── Infos fusionnées dans l'entête ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 28px', marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+          {[
+            { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
+            { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
+            { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
+            { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
+            { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
+          ].map(({ label, field, value }) => (
+            <div key={field}>
+              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.5)', margin: 0 }}>{label}</p>
+              <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
+                  style={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }}
+                  displayStyle={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }} />
+              </p>
+            </div>
+          ))}
+          <div>
+            <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.5)', margin: 0 }}>Permis requis</p>
+            <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+              <button onClick={() => saveField('permits_required', !project.permits_required)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
+                onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+                onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+                {project.permits_required ? 'Oui' : 'Non'}
+              </button>
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* ── Doc sections ── */}
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
 
         {/* ── Capture IA ── */}
         <div id="s-ai" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -1236,7 +1266,6 @@ export default function ProjectDetail() {
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Capture IA du chantier</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Parle, photo, vidéo, document ou note — l'IA classe et propose la suite</div>
             </div>
-            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
           </div>
           <div style={{ background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff', borderRadius: 16, padding: 26, boxShadow: '0 10px 28px rgba(200,90,43,.26)' }}>
             <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
@@ -1278,8 +1307,7 @@ export default function ProjectDetail() {
                   <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
                   <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Avancement dans les 9 étapes — de la soumission à la clôture</div>
                 </div>
-                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
-              </div>
+                  </div>
               <div style={{ position: 'relative', padding: '8px 0 28px' }}>
                 <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: '#E8EAED', zIndex: 0 }} />
                 <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: activeIdx >= 0 ? `${(activeIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
@@ -1309,55 +1337,9 @@ export default function ProjectDetail() {
                   })}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
-                <div className="kv"><div className="kv-k">Phases</div><div className="kv-v">{project.phases?.length || 0}</div></div>
-                <div className="kv"><div className="kv-k">Pointés</div><div className="kv-v" style={{ color: '#16a34a' }}>{activeTs.length}</div></div>
-                <div className="kv"><div className="kv-k">Total punchs</div><div className="kv-v">{timesheets.length}</div></div>
-                <div className="kv"><div className="kv-k">Avancement</div><div className="kv-v" style={{ color: BRAND }}>{pct}%</div></div>
-              </div>
             </div>
           );
         })()}
-
-        {/* ── Infos projet ── */}
-        <div id="s-infos" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>ℹ️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Infos du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Cliquer sur une valeur pour la modifier</div>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 32px' }}>
-            {[
-              { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
-              { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
-              { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
-              { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
-              { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
-            ].map(({ label, field, value }) => (
-              <div key={field}>
-                <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>{label}</p>
-                <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-                  <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
-                    style={{ fontSize: 14, color: '#15171C', fontWeight: 500 }}
-                    displayStyle={{ fontSize: 14, color: '#15171C', fontWeight: 500 }} />
-                </p>
-              </div>
-            ))}
-            <div>
-              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>Permis requis</p>
-              <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-                <button onClick={() => saveField('permits_required', !project.permits_required)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
-                  onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
-                  onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
-                  {project.permits_required ? 'Oui' : 'Non'}
-                </button>
-              </p>
-            </div>
-          </div>
-        </div>
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -1367,7 +1349,6 @@ export default function ProjectDetail() {
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation générale</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>3 façons de recueillir les informations et générer une estimation</div>
             </div>
-            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E9F8EE', color: '#16a34a', whiteSpace: 'nowrap', marginTop: 4 }}>Maintenant</span>
           </div>
 
           {/* Onglets méthodes */}
