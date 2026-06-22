@@ -42,20 +42,27 @@ const DETAIL_TOC_SECTIONS = [
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value || '');
+  const [committed, setCommitted] = useState(value || '');
   const inputRef = useRef(null);
-  useEffect(() => { setVal(value || ''); }, [value]);
+  useEffect(() => { if (!editing) { setVal(value || ''); setCommitted(value || ''); } }, [value, editing]);
   const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
-  const cancel = () => { setVal(value || ''); setEditing(false); };
-  const save = () => { if (val !== (value || '')) onSave(val); setEditing(false); };
+  const cancel = () => { setVal(committed); setEditing(false); };
+  const save = () => {
+    const trimmed = val.trim();
+    setCommitted(trimmed);
+    setEditing(false);
+    if (trimmed !== (value || '').trim()) onSave(trimmed);
+  };
   const base = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', padding: 0, ...style };
   if (editing) return multiline
     ? <textarea ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => e.key === 'Escape' && cancel()} style={{ ...base, width: '100%', minHeight: 48, resize: 'vertical' }} />
     : <input ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%' }} />;
+  const display = committed;
   return (
     <span onClick={start} title="Cliquer pour modifier" style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', ...displayStyle }}
       onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
       onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
-      {value || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
+      {display || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
     </span>
   );
 }
@@ -631,12 +638,15 @@ export default function ProjectDetail() {
   };
 
   const saveClientField = async (field, value) => {
-    if (!project.client_id) return;
-    try {
-      await contactsApi.update(project.client_id, { [field]: value || null });
-      const map = { name: 'client_name', email: 'client_email', phone: 'client_phone', notes: 'client_notes' };
-      setProject(p => ({ ...p, [map[field] || `client_${field}`]: value }));
-    } catch {}
+    const map = { name: 'client_name', email: 'client_email', phone: 'client_phone', notes: 'client_notes' };
+    const stateKey = map[field] || `client_${field}`;
+    setProject(p => ({ ...p, [stateKey]: value }));
+    if (project.client_id) {
+      try { await contactsApi.update(project.client_id, { [field]: value || null }); } catch {}
+    } else {
+      const next = { ...(project.field_assessment || {}), [stateKey]: value };
+      try { await projectsApi.update(id, { field_assessment: next }); setProject(p => ({ ...p, field_assessment: next })); } catch {}
+    }
   };
 
   useEffect(() => { load(); }, [id]);
@@ -1213,43 +1223,43 @@ export default function ProjectDetail() {
               Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
             </div>
 
-            {/* Titre composé — chaque segment est inline-éditable */}
-            <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.1, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 6px' }}>
+            {/* Titre composé — format : Type de travaux | Adresse | Début - Fin */}
+            <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.2, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 4px' }}>
               <InlineField value={workType} onSave={v => saveField('type', v)} placeholder="Type de travaux"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
-              {(workType || addr) && addr && <span style={{ color:'#C8CACD', fontWeight:400 }}> —</span>}
+              {addr && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
               <InlineField value={addr} onSave={v => saveField('address', v)} placeholder="Adresse"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
-              {(startLabel || endLabel) && <span style={{ color:'#C8CACD', fontWeight:400 }}> </span>}
+              {(startLabel || endLabel) && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
               <InlineField value={startLabel} onSave={v => saveAssessmentField('start_label', v)} placeholder="Début"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
-              {startLabel && endLabel && <span style={{ color:'#C8CACD', fontWeight:400 }}> —</span>}
+              {startLabel && endLabel && <span style={{ color: '#C8CACD', fontWeight: 400 }}> -</span>}
+              {endLabel && <span> </span>}
               <InlineField value={endLabel} onSave={v => saveAssessmentField('end_label', v)} placeholder="Fin"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
             </h1>
 
-            {/* Client — entièrement éditable */}
-            <div style={{ marginBottom: 20, padding: '12px 16px', background: 'rgba(255,255,255,.6)', borderRadius: 10, border: '1px solid rgba(255,255,255,.85)', display: 'flex', flexWrap: 'wrap', gap: '10px 24px', alignItems: 'flex-start' }}>
-              <div style={{ minWidth: 140 }}>
-                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Client</p>
-                <InlineField value={project.client_name} onSave={v => saveClientField('name', v)} placeholder="Nom du client" style={IFS} displayStyle={IFD} />
-              </div>
-              <div style={{ minWidth: 130 }}>
-                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Téléphone</p>
-                <InlineField value={project.client_phone} onSave={v => saveClientField('phone', v)} placeholder="—" style={IFS} displayStyle={IFD} />
-              </div>
-              <div style={{ minWidth: 180 }}>
-                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Courriel</p>
-                <InlineField value={project.client_email} onSave={v => saveClientField('email', v)} placeholder="—" style={IFS} displayStyle={IFD} />
-              </div>
-              <div style={{ minWidth: 200, flex: 1 }}>
-                <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 3px' }}>Remarque contact</p>
-                <InlineField value={fa.client_note} onSave={v => saveAssessmentField('client_note', v)} placeholder="ex : meilleur moment, mode de contact préféré…" style={IFS} displayStyle={{ ...IFD, color: fa.client_note ? '#15171C' : '#9CA3AF' }} />
-              </div>
+            {/* Client — sans fond, mise en valeur typographique */}
+            <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: '12px 32px', alignItems: 'flex-start' }}>
+              {[
+                { label: 'Client', value: project.client_name, field: 'name', save: v => saveClientField('name', v), placeholder: 'Nom du client', w: 160 },
+                { label: 'Téléphone', value: project.client_phone, field: 'phone', save: v => saveClientField('phone', v), placeholder: '—', w: 130 },
+                { label: 'Courriel', value: project.client_email, field: 'email', save: v => saveClientField('email', v), placeholder: '—', w: 190 },
+                { label: 'Remarque contact', value: fa.client_note, field: 'note', save: v => saveAssessmentField('client_note', v), placeholder: 'meilleur moment, mode de contact…', w: 220 },
+              ].map(({ label, value, save, placeholder, w }) => (
+                <div key={label} style={{ minWidth: w }}>
+                  <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 3px' }}>{label}</p>
+                  <p style={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C', margin: 0 }}>
+                    <InlineField value={value} onSave={save} placeholder={placeholder}
+                      style={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C' }}
+                      displayStyle={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C' }} />
+                  </p>
+                </div>
+              ))}
             </div>
 
             {/* Métriques non-éditables */}
@@ -1269,21 +1279,20 @@ export default function ProjectDetail() {
               </div>
             </div>
 
-            {/* Grille éditables */}
+            {/* Grille éditables — ordre optimisé, responsable permis conditionnel */}
             <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
-              <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.38)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
+              <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.35)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
                 {[
-                  { label: 'Type de travaux',     fn: v => saveField('type', v),                    value: workType },
-                  { label: 'Adresse',             fn: v => saveField('address', v),                 value: addr },
-                  { label: 'Date début',          fn: v => saveAssessmentField('start_label', v),   value: startLabel },
-                  { label: 'Date fin',            fn: v => saveAssessmentField('end_label', v),     value: endLabel },
-                  { label: 'Termes paiement',     fn: v => saveField('payment_terms', v),           value: project.payment_terms },
-                  { label: 'Chargé de projet',    fn: v => saveField('project_manager', v),         value: project.project_manager },
-                  { label: 'Acheteur matériaux',  fn: v => saveField('materials_buyer', v),         value: project.materials_buyer },
-                  { label: 'Approbateurs',        fn: v => saveField('approvers', v),               value: (project.approvers || []).join(', ') },
-                  { label: 'Responsable permis',  fn: v => saveField('permits_responsible', v),     value: project.permits_responsible },
-                  { label: 'Machines / équipements', fn: v => saveField('machines', v),             value: (project.machines || []).join(', ') },
+                  { label: 'Type de travaux',       fn: v => saveField('type', v),                  value: workType },
+                  { label: 'Adresse',               fn: v => saveField('address', v),               value: addr },
+                  { label: 'Date début',            fn: v => saveAssessmentField('start_label', v), value: startLabel },
+                  { label: 'Date fin',              fn: v => saveAssessmentField('end_label', v),   value: endLabel },
+                  { label: 'Termes paiement',       fn: v => saveField('payment_terms', v),         value: project.payment_terms },
+                  { label: 'Chargé de projet',      fn: v => saveField('project_manager', v),       value: project.project_manager },
+                  { label: 'Acheteur matériaux',    fn: v => saveField('materials_buyer', v),       value: project.materials_buyer },
+                  { label: 'Approbateurs',          fn: v => saveField('approvers', v),             value: (project.approvers || []).join(', ') },
+                  { label: 'Machines / équipements',fn: v => saveField('machines', v),              value: (project.machines || []).join(', ') },
                 ].map(({ label, fn, value }) => (
                   <div key={label}>
                     <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>{label}</p>
@@ -1292,6 +1301,7 @@ export default function ProjectDetail() {
                     </p>
                   </div>
                 ))}
+                {/* Permis requis — toggle */}
                 <div>
                   <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>Permis requis</p>
                   <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
@@ -1303,6 +1313,15 @@ export default function ProjectDetail() {
                     </button>
                   </p>
                 </div>
+                {/* Responsable permis — visible seulement si permis requis */}
+                {project.permits_required && (
+                  <div>
+                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>Responsable permis</p>
+                    <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                      <InlineField value={project.permits_responsible} onSave={v => saveField('permits_responsible', v)} placeholder="—" style={IFS} displayStyle={IFD} />
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
