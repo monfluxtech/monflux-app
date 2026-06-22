@@ -3,7 +3,7 @@ import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -39,6 +39,27 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-comms', icon: '✉', label: 'Courriels & comms', badge: 'B9' },
   { id: 's-co', icon: '📝', label: 'Avenants' },
 ];
+
+function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || '');
+  const inputRef = useRef(null);
+  useEffect(() => { setVal(value || ''); }, [value]);
+  const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
+  const cancel = () => { setVal(value || ''); setEditing(false); };
+  const save = () => { if (val !== (value || '')) onSave(val); setEditing(false); };
+  const base = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', padding: 0, ...style };
+  if (editing) return multiline
+    ? <textarea ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => e.key === 'Escape' && cancel()} style={{ ...base, width: '100%', minHeight: 48, resize: 'vertical' }} />
+    : <input ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%' }} />;
+  return (
+    <span onClick={start} title="Cliquer pour modifier" style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', ...displayStyle }}
+      onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+      {value || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
+    </span>
+  );
+}
 
 function parsePaymentTerms(terms) {
   if (!terms) return [];
@@ -471,6 +492,15 @@ export default function ProjectDetail() {
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [tocSections, setTocSections] = useState(() => {
+    try { const s = localStorage.getItem(`monflux-toc-order-${id}`); if (s) return JSON.parse(s); } catch {}
+    return DETAIL_TOC_SECTIONS;
+  });
+  const [hiddenSections, setHiddenSections] = useState(() => {
+    try { const s = localStorage.getItem(`monflux-toc-hidden-${id}`); if (s) return JSON.parse(s); } catch {}
+    return [];
+  });
+  const [dragSrcIdx, setDragSrcIdx] = useState(null);
   // B4 — Vente
   const scrollToSection = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -574,12 +604,22 @@ export default function ProjectDetail() {
     notesTimer.current = setTimeout(() => saveNotes(val), 1200);
   };
 
+  const saveField = async (field, value) => {
+    try {
+      const payload = Array.isArray(project[field])
+        ? { [field]: String(value).split(',').map(s => s.trim()).filter(Boolean) }
+        : { [field]: value || null };
+      const { data } = await projectsApi.update(id, payload);
+      setProject(p => ({ ...p, ...data }));
+    } catch {}
+  };
+
   useEffect(() => { load(); }, [id]);
 
   useEffect(() => {
     if (loading) return undefined;
 
-    const sections = DETAIL_TOC_SECTIONS
+    const sections = tocSections
       .map((section) => document.getElementById(section.id))
       .filter(Boolean);
 
@@ -1003,23 +1043,78 @@ export default function ProjectDetail() {
     a_facturer: 'À facturer', paye: 'Payé', clos: 'Clos',
   };
 
+  const toggleSectionVisibility = (sectionId) => {
+    setHiddenSections(prev => {
+      const next = prev.includes(sectionId) ? prev.filter(x => x !== sectionId) : [...prev, sectionId];
+      localStorage.setItem(`monflux-toc-hidden-${id}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const onTocDragStart = (e, idx) => {
+    setDragSrcIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', idx);
+  };
+
+  const onTocDragOver = (e, idx) => {
+    e.preventDefault();
+    if (dragSrcIdx === null || dragSrcIdx === idx) return;
+    const next = [...tocSections];
+    const [item] = next.splice(dragSrcIdx, 1);
+    next.splice(idx, 0, item);
+    setTocSections(next);
+    setDragSrcIdx(idx);
+  };
+
+  const onTocDrop = (e) => {
+    e.preventDefault();
+    setDragSrcIdx(null);
+    localStorage.setItem(`monflux-toc-order-${id}`, JSON.stringify(tocSections));
+  };
+
   const ProjectTOC = () => (
     <>
       <div className="app-sidebar-section-label">Fiche projet</div>
       <div className="app-sidebar-section-title">{project.name}</div>
       <div className="project-toc-list">
-        {DETAIL_TOC_SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`project-toc-item ${activeSection === s.id ? 'active' : ''}`}
-            onClick={() => scrollToSection(s.id)}
-          >
-            <span className="project-toc-icon">{s.icon}</span>
-            <span className="project-toc-label">{s.label}</span>
-            {s.badge && <span className="project-toc-badge">{s.badge}</span>}
-          </button>
-        ))}
+        {tocSections.map((s, idx) => {
+          const isHidden = hiddenSections.includes(s.id);
+          return (
+            <div
+              key={s.id}
+              draggable
+              onDragStart={e => onTocDragStart(e, idx)}
+              onDragOver={e => onTocDragOver(e, idx)}
+              onDrop={onTocDrop}
+              style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isHidden ? 0.4 : 1 }}
+            >
+              <span style={{ cursor: 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}
+                title="Glisser pour réordonner">
+                <GripVertical size={12} />
+              </span>
+              <button
+                type="button"
+                className={`project-toc-item ${activeSection === s.id && !isHidden ? 'active' : ''}`}
+                style={{ flex: 1, opacity: isHidden ? 0.5 : 1 }}
+                onClick={() => !isHidden && scrollToSection(s.id)}
+              >
+                <span className="project-toc-icon">{s.icon}</span>
+                <span className="project-toc-label">{s.label}</span>
+                {s.badge && <span className="project-toc-badge">{s.badge}</span>}
+              </button>
+              <button
+                type="button"
+                title={isHidden ? 'Afficher la section' : 'Masquer la section'}
+                onClick={() => toggleSectionVisibility(s.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
+                className="toc-eye-btn"
+              >
+                {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
+          );
+        })}
       </div>
       <div className="app-sidebar-bottom pt-3">
         <button
@@ -1034,6 +1129,10 @@ export default function ProjectDetail() {
 
   return (
     <Layout toc={<ProjectTOC />} noTopbar>
+      {hiddenSections.length > 0 && (
+        <style>{hiddenSections.map(sid => `#${sid}{display:none!important}`).join('')}</style>
+      )}
+      <style>{`.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`}</style>
       {/* ── Project Topbar ── */}
       <div style={{
         position: 'sticky', top: 0, height: 54,
@@ -1069,18 +1168,20 @@ export default function ProjectDetail() {
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
             Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
           </div>
-          <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}>
-            ✏️ Éditer les infos
-          </button>
         </div>
         <h1 style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C', margin: 0 }}>
-          {project.name}
+          <InlineField value={project.name} onSave={v => saveField('name', v)} placeholder="Nom du projet"
+            style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }}
+            displayStyle={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }} />
         </h1>
-        {(project.address || project.client_name) && (
-          <p style={{ margin: '12px 0 0', fontSize: 15, color: '#3A3D44', lineHeight: 1.55, maxWidth: '70ch' }}>
-            {[project.client_name && `Client : ${project.client_name}`, project.address].filter(Boolean).join(' · ')}
-          </p>
-        )}
+        <p style={{ margin: '12px 0 0', fontSize: 15, color: '#3A3D44', lineHeight: 1.55, maxWidth: '70ch', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ color: '#6B7280', fontSize: 13 }}>Client :</span>
+          <InlineField value={project.client_name} onSave={v => saveField('client_name', v)} placeholder="Nom du client"
+            style={{ fontSize: 15, color: '#3A3D44' }} displayStyle={{ fontSize: 15, color: '#3A3D44' }} />
+          {(project.client_name || project.address) && <span style={{ color: '#C8CACD' }}>·</span>}
+          <InlineField value={project.address} onSave={v => saveField('address', v)} placeholder="Adresse"
+            style={{ fontSize: 15, color: '#3A3D44' }} displayStyle={{ fontSize: 15, color: '#3A3D44' }} />
+        </p>
         {/* KV chips */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
           {contractValue > 0 && (
@@ -1089,12 +1190,12 @@ export default function ProjectDetail() {
               <div className="kv-v">{money(contractValue)}</div>
             </div>
           )}
-          {project.payment_terms && (
-            <div className="kv">
-              <div className="kv-k">Termes paiement</div>
-              <div className="kv-v" style={{ fontSize: 15 }}>{project.payment_terms}</div>
+          <div className="kv">
+            <div className="kv-k">Termes paiement</div>
+            <div className="kv-v" style={{ fontSize: 15 }}>
+              <InlineField value={project.payment_terms} onSave={v => saveField('payment_terms', v)} placeholder="30-40-30 %" style={{ fontSize: 15 }} />
             </div>
-          )}
+          </div>
           {heroNextPaymentAmount > 0 && (
             <div className="kv">
               <div className="kv-k">Prochain versement</div>
@@ -1224,24 +1325,37 @@ export default function ProjectDetail() {
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>ℹ️</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Infos du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Responsabilités, permis, équipements</div>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Cliquer sur une valeur pour la modifier</div>
             </div>
-            <button className="btn-secondary text-xs" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 32px' }}>
             {[
-              ['Chargé de projet', project.project_manager],
-              ['Acheteur matériaux', project.materials_buyer],
-              ['Approbateurs', (project.approvers || []).join(', ')],
-              ['Responsable permis', project.permits_responsible],
-              ['Permis requis', project.permits_required ? 'Oui' : 'Non'],
-              ['Machines', (project.machines || []).join(', ')],
-            ].map(([label, value]) => value ? (
-              <div key={label}>
+              { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
+              { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
+              { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
+              { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
+              { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
+            ].map(({ label, field, value }) => (
+              <div key={field}>
                 <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>{label}</p>
-                <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>{value}</p>
+                <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                  <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
+                    style={{ fontSize: 14, color: '#15171C', fontWeight: 500 }}
+                    displayStyle={{ fontSize: 14, color: '#15171C', fontWeight: 500 }} />
+                </p>
               </div>
-            ) : null)}
+            ))}
+            <div>
+              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#7C8089' }}>Permis requis</p>
+              <p style={{ fontSize: 14, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                <button onClick={() => saveField('permits_required', !project.permits_required)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
+                  onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+                  onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+                  {project.permits_required ? 'Oui' : 'Non'}
+                </button>
+              </p>
+            </div>
           </div>
         </div>
 
