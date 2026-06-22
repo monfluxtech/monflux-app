@@ -1523,10 +1523,7 @@ export default function ProjectDetail() {
       <style>{
         tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
-        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}` +
-        /* Responsive section padding — overrides all hardcoded 36px 56px */
-        `@media(max-width:768px){#s-hero,[id^="s-"]{padding:20px 16px 28px!important}#s-hero{padding:20px 16px!important}.proj-cta-wrap{padding:12px 16px!important}}` +
-        `@media(min-width:769px) and (max-width:1024px){#s-hero,[id^="s-"]{padding:28px!important}}`
+        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
       }</style>
       {/* ── Project Topbar ── */}
       <div style={{
@@ -1535,11 +1532,6 @@ export default function ProjectDetail() {
         borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
         gap: 10, padding: '0 20px', zIndex: 15,
       }}>
-        {/* Hamburger mobile */}
-        <button className="mobile-hamburger" onClick={() => document.body.classList.toggle('sidebar-open')}
-          style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', borderRadius: 9, background: '#F4F5F6', cursor: 'pointer', flexShrink: 0 }}>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect width="16" height="2" rx="1" fill="#3A3D44"/><rect y="5" width="16" height="2" rx="1" fill="#3A3D44"/><rect y="10" width="16" height="2" rx="1" fill="#3A3D44"/></svg>
-        </button>
         <button
           onClick={() => navigate('/projets')}
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
@@ -1547,9 +1539,9 @@ export default function ProjectDetail() {
           Projets
         </button>
         <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
-        <b className="proj-topbar-title" style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
+        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
         <div style={{ flex: 1 }} />
-        <button className="btn-secondary text-xs topbar-search" onClick={() => window.print()} style={{ flexShrink: 0 }}>
+        <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
           📥 Exporter PDF
         </button>
         <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
