@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -63,6 +63,188 @@ function InlineField({ value, onSave, placeholder = '—', multiline = false, st
       onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
       {display || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
     </span>
+  );
+}
+
+// ── Capture multimodale : texte, dictée vocale (Web Speech API), photo, vidéo, document ──
+function CaptureModal({ projectId, projectName, onClose, onAdded }) {
+  const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
+  const MAX_BYTES = 45 * 1024 * 1024; // ~45 Mo (limite body 50 Mo côté serveur)
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState([]); // { uid, kind:'photo'|'video'|'document', name, mime, dataUrl, size }
+  const [listening, setListening] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const recogRef = useRef(null);
+  const baseTextRef = useRef('');
+  const finalRef = useRef('');
+  const uidRef = useRef(0);
+  const photoInput = useRef(null), videoInput = useRef(null), docInput = useRef(null);
+
+  useEffect(() => () => { try { recogRef.current?.stop(); } catch {} }, []);
+
+  const fmtSize = (b) => b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} Mo` : `${Math.round(b / 1024)} Ko`;
+
+  const readFiles = (fileList, kind) => {
+    setError('');
+    Array.from(fileList).forEach(file => {
+      if (file.size > MAX_BYTES) { setError(`« ${file.name} » dépasse 45 Mo — trop volumineux.`); return; }
+      const reader = new FileReader();
+      reader.onload = () => setFiles(prev => [...prev, {
+        uid: ++uidRef.current, kind, name: file.name, mime: file.type || 'application/octet-stream',
+        dataUrl: reader.result, size: file.size,
+      }]);
+      reader.onerror = () => setError(`Impossible de lire « ${file.name} ».`);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeFile = (uid) => setFiles(prev => prev.filter(f => f.uid !== uid));
+
+  const toggleDictation = () => {
+    if (listening) { try { recogRef.current?.stop(); } catch {} return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setError("La dictée vocale n'est pas supportée par ce navigateur. Essayez Chrome ou Safari, ou tapez votre texte."); return; }
+    setError('');
+    const recog = new SR();
+    recogRef.current = recog;
+    recog.lang = 'fr-CA';
+    recog.continuous = true;
+    recog.interimResults = true;
+    baseTextRef.current = text ? text.replace(/\s+$/, '') + ' ' : '';
+    finalRef.current = '';
+    recog.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const seg = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalRef.current += seg + ' ';
+        else interim += seg;
+      }
+      setText(baseTextRef.current + finalRef.current + interim);
+    };
+    recog.onerror = (e) => {
+      setError(e.error === 'not-allowed' || e.error === 'service-not-allowed'
+        ? "Accès au micro refusé. Autorisez le micro dans votre navigateur pour dicter."
+        : `Erreur de dictée : ${e.error}`);
+      setListening(false);
+    };
+    recog.onend = () => setListening(false);
+    try { recog.start(); setListening(true); } catch { setError('Impossible de démarrer la dictée.'); }
+  };
+
+  const submit = async () => {
+    if (!text.trim() && files.length === 0) { setError('Ajoutez du texte, une photo, une vidéo ou un document.'); return; }
+    if (listening) { try { recogRef.current?.stop(); } catch {} }
+    setSaving(true); setError('');
+    try {
+      const createdMedia = [];
+      if (text.trim()) {
+        const { data } = await siteMediaApi.create({
+          project_id: projectId, type: 'note',
+          transcript: text.trim(), caption: text.trim().slice(0, 90),
+        });
+        createdMedia.push(data);
+      }
+      for (const f of files) {
+        if (f.kind === 'document') {
+          await documentsApi.upload({
+            project_id: projectId, type: 'other', name: f.name,
+            file_url: f.dataUrl, mime_type: f.mime, file_size: f.size,
+          });
+        } else {
+          const { data } = await siteMediaApi.create({
+            project_id: projectId, type: f.kind,
+            url: f.dataUrl, mime_type: f.mime, caption: f.name,
+          });
+          createdMedia.push(data);
+        }
+      }
+      onAdded(createdMedia, files.some(f => f.kind === 'document'));
+      onClose();
+    } catch {
+      setError("Échec de l'enregistrement. Vérifiez votre connexion et réessayez.");
+    } finally { setSaving(false); }
+  };
+
+  const inputs = [
+    { ref: photoInput, kind: 'photo', accept: 'image/*', capture: 'environment', icon: Camera, label: 'Photo' },
+    { ref: videoInput, kind: 'video', accept: 'video/*', capture: 'environment', icon: Video, label: 'Vidéo' },
+    { ref: docInput, kind: 'document', accept: '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,application/pdf', icon: Paperclip, label: 'Document' },
+  ];
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, boxShadow: '0 24px 70px rgba(0,0,0,.3)', overflow: 'hidden' }}>
+        {/* Entête */}
+        <div style={{ background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff', padding: '18px 22px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Sparkles size={22} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>Ajouter au projet</h3>
+            <p style={{ fontSize: 12, margin: '2px 0 0', color: 'rgba(255,255,255,.9)' }}>{projectName}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.18)', border: 'none', borderRadius: 9, padding: 7, cursor: 'pointer', color: '#fff', display: 'grid', placeItems: 'center' }}><X size={16} /></button>
+        </div>
+
+        <div style={{ padding: 22 }}>
+          {/* Zone texte + dictée */}
+          <div style={{ position: 'relative' }}>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Écris ou dicte une note, une mesure, une observation… L'IA classera l'info au bon endroit."
+              rows={5}
+              style={{ width: '100%', border: '1px solid #E8EAED', borderRadius: 12, padding: '14px 14px 44px', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', boxSizing: 'border-box' }}
+            />
+            <button onClick={toggleDictation} title={listening ? 'Arrêter la dictée' : 'Dicter (micro)'}
+              style={{ position: 'absolute', left: 10, bottom: 10, display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 9, padding: '7px 12px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all .15s',
+                background: listening ? '#FEE2E2' : '#F4F4F5', color: listening ? '#DC2626' : '#52525B' }}>
+              {listening ? <><Square size={13} fill="#DC2626" /> Arrêter</> : <><Mic size={14} /> Dicter</>}
+              {listening && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#DC2626', animation: 'pulse 1s infinite' }} />}
+            </button>
+          </div>
+
+          {/* Boutons multimodaux */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            {inputs.map(({ ref, kind, accept, capture, icon: Icon, label }) => (
+              <span key={kind}>
+                <input ref={ref} type="file" accept={accept} {...(capture ? { capture } : {})} multiple={kind !== 'photo' ? false : true}
+                  style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />
+                <button onClick={() => ref.current?.click()}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid #E8EAED', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#3F3F46' }}>
+                  <Icon size={15} /> {label}
+                </button>
+              </span>
+            ))}
+          </div>
+
+          {/* Aperçu des pièces jointes */}
+          {files.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
+              {files.map(f => (
+                <div key={f.uid} style={{ position: 'relative', border: '1px solid #E8EAED', borderRadius: 10, padding: 8, width: 110, background: '#FAFAFA' }}>
+                  <button onClick={() => removeFile(f.uid)} style={{ position: 'absolute', top: -8, right: -8, background: '#15171C', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 11 }}><X size={11} /></button>
+                  {f.kind === 'photo'
+                    ? <img src={f.dataUrl} alt={f.name} style={{ width: '100%', height: 64, objectFit: 'cover', borderRadius: 6 }} />
+                    : <div style={{ width: '100%', height: 64, borderRadius: 6, background: '#EEF0F3', display: 'grid', placeItems: 'center', color: '#7C8089' }}>{f.kind === 'video' ? <Video size={26} /> : <FileText size={26} />}</div>}
+                  <p style={{ fontSize: 10.5, color: '#52525B', margin: '6px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={f.name}>{f.name}</p>
+                  <p style={{ fontSize: 9.5, color: '#A1A1AA', margin: 0 }}>{fmtSize(f.size)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <p style={{ color: '#DC2626', fontSize: 12.5, margin: '14px 0 0', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px' }}>{error}</p>}
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+            <button onClick={onClose} disabled={saving} style={{ flex: '0 0 auto', padding: '11px 18px', border: '1px solid #E8EAED', borderRadius: 11, background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6B7280' }}>Annuler</button>
+            <button onClick={submit} disabled={saving} style={{ flex: 1, padding: '11px 0', border: 'none', borderRadius: 11, background: BRAND, cursor: saving ? 'wait' : 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: saving ? .7 : 1 }}>
+              {saving ? <><Loader2 size={15} className="animate-spin" /> Enregistrement…</> : <><Upload size={15} /> Ajouter au projet</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -542,6 +724,7 @@ export default function ProjectDetail() {
   // B7 — IA chantier
   const [media, setMedia] = useState([]);
   const [showMediaForm, setShowMediaForm] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
   const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
   const [purchasePlan, setPurchasePlan] = useState(null);
@@ -1225,7 +1408,7 @@ export default function ProjectDetail() {
 
       {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
       <div style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
-        <button onClick={() => setShowMediaForm(true)}
+        <button onClick={() => setShowCapture(true)}
           style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
             background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
             boxShadow: '0 10px 28px rgba(200,90,43,.26)', display: 'flex', alignItems: 'center', gap: 18,
@@ -1416,6 +1599,19 @@ export default function ProjectDetail() {
           </div>
         );
       })()}
+
+      {/* ── Capture multimodale ── */}
+      {showCapture && (
+        <CaptureModal
+          projectId={id}
+          projectName={project.name}
+          onClose={() => setShowCapture(false)}
+          onAdded={(createdMedia, hadDocs) => {
+            if (createdMedia.length) setMedia(prev => [...createdMedia, ...prev]);
+            if (hadDocs) load();
+          }}
+        />
+      )}
 
       {/* ── QR Modal ── */}
       {showQrModal && qrData && (
