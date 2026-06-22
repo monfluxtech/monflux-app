@@ -167,8 +167,8 @@ function CaptureModal({ projectId, projectName, onClose, onAdded }) {
   };
 
   const inputs = [
-    { ref: photoInput, kind: 'photo', accept: 'image/*', capture: 'environment', icon: Camera, label: 'Photo' },
-    { ref: videoInput, kind: 'video', accept: 'video/*', capture: 'environment', icon: Video, label: 'Vidéo' },
+    { ref: photoInput, kind: 'photo', accept: 'image/*', icon: Camera, label: 'Photo' },
+    { ref: videoInput, kind: 'video', accept: 'video/*', icon: Video, label: 'Vidéo' },
     { ref: docInput, kind: 'document', accept: '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,application/pdf', icon: Paperclip, label: 'Document' },
   ];
 
@@ -205,10 +205,12 @@ function CaptureModal({ projectId, projectName, onClose, onAdded }) {
 
           {/* Boutons multimodaux */}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            {inputs.map(({ ref, kind, accept, capture, icon: Icon, label }) => (
+            {inputs.map(({ ref, kind, accept, icon: Icon, label }) => (
               <span key={kind}>
-                <input ref={ref} type="file" accept={accept} {...(capture ? { capture } : {})} multiple={kind !== 'photo' ? false : true}
-                  style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />
+                {/* capture="environment" on photo/video opens rear camera on mobile; no multiple (breaks capture on iOS) */}
+                {kind === 'photo' && <input ref={ref} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
+                {kind === 'video' && <input ref={ref} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
+                {kind === 'document' && <input ref={ref} type="file" accept={accept} multiple style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
                 <button onClick={() => ref.current?.click()}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid #E8EAED', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#3F3F46' }}>
                   <Icon size={15} /> {label}
@@ -245,6 +247,150 @@ function CaptureModal({ projectId, projectName, onClose, onAdded }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Chat IA contextuel du projet (streaming SSE) ──
+const PROJ_API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+
+function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
+  const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: `Bonjour! Je suis l'assistant IA de ce projet. Je peux t'aider à suivre l'avancement de **${projectName}**, répondre à tes questions, rédiger des notes ou prendre des actions. Comment puis-je t'aider?` }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recogRef = useRef(null);
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => () => { try { recogRef.current?.stop(); } catch {} }, []);
+
+  const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const toggleVoice = () => {
+    if (!SpeechRec) { alert("Dictée non supportée sur ce navigateur. Essayez Chrome."); return; }
+    if (listening) { recogRef.current?.stop(); return; }
+    const rec = new SpeechRec();
+    recogRef.current = rec;
+    rec.lang = 'fr-CA'; rec.interimResults = true; rec.continuous = false;
+    let final = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t; else interim += t;
+      }
+      setInput((final + interim).trim());
+    };
+    rec.onend = () => { setListening(false); if (final.trim()) setTimeout(() => inputRef.current?.focus(), 50); };
+    rec.onerror = () => setListening(false);
+    rec.start(); setListening(true);
+  };
+
+  const send = async (text) => {
+    const typed = (text || input).trim();
+    if (!typed || loading) return;
+    setInput('');
+    const userMsg = { role: 'user', content: typed };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setLoading(true);
+    const aiMsg = { role: 'assistant', content: '' };
+    setMessages(m => [...m, aiMsg]);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: next, context_type: 'project', project_id: projectId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:d.error||"Erreur. Réessayez."}; return c; });
+        return;
+      }
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.type === 'text') setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:c[c.length-1].content+evt.text}; return c; });
+          } catch {}
+        }
+      }
+    } catch {
+      setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:"Erreur de connexion. Réessayez."}; return c; });
+    } finally { setLoading(false); }
+  };
+
+  const SUGGESTIONS = ['Résume l\'état du projet', 'Quelles sont les prochaines étapes?', 'Rédige une note de chantier', 'Quel est le budget restant?'];
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 299 }} />
+      <div className="ai-chat-drawer">
+        {/* Header */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)` }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Sparkles size={18} color="#fff" /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>Assistant IA</p>
+            <p style={{ fontSize: 11.5, color: 'rgba(255,255,255,.85)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectName}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.18)', border: 'none', borderRadius: 9, padding: 7, cursor: 'pointer', color: '#fff', display: 'grid', placeItems: 'center' }}><X size={16} /></button>
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '85%', padding: '10px 14px', borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                background: m.role === 'user' ? BRAND : '#F4F5F6',
+                color: m.role === 'user' ? '#fff' : '#15171C', fontSize: 13.5, lineHeight: 1.5,
+              }}>
+                {m.content || (loading && i === messages.length - 1 ? <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span> : '…')}
+              </div>
+            </div>
+          ))}
+          {/* Suggestions sur message vide */}
+          {messages.length === 1 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 4 }}>
+              {SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => send(s)} style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 20, padding: '6px 12px', fontSize: 12, color: '#3F3F46', cursor: 'pointer', fontWeight: 500 }}>{s}</button>
+              ))}
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: '12px 14px', borderTop: '1px solid #E8EAED', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, background: '#fff' }}>
+          <button onClick={toggleVoice} title={listening ? 'Arrêter la dictée' : 'Dicter'}
+            style={{ width: 38, height: 38, borderRadius: 10, border: 'none', background: listening ? '#FEE2E2' : '#F4F5F6', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0, color: listening ? '#DC2626' : '#52525B', position: 'relative' }}>
+            {listening ? <Square size={14} fill="#DC2626" /> : <Mic size={16} />}
+            {listening && <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#DC2626', animation: 'pulse 1s infinite' }} />}
+          </button>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Pose une question ou donne une instruction…"
+            rows={1}
+            style={{ flex: 1, border: '1px solid #E8EAED', borderRadius: 11, padding: '10px 12px', fontSize: 13.5, fontFamily: 'inherit', resize: 'none', outline: 'none', color: '#15171C', lineHeight: 1.5, minHeight: 38, maxHeight: 120, overflowY: 'auto' }}
+            onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+          />
+          <button onClick={() => send()} disabled={!input.trim() || loading}
+            style={{ width: 38, height: 38, borderRadius: 10, border: 'none', background: (!input.trim() || loading) ? '#F4F5F6' : BRAND, cursor: (!input.trim() || loading) ? 'default' : 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0, color: (!input.trim() || loading) ? '#B0B3BA' : '#fff', transition: 'all .15s' }}>
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -725,6 +871,7 @@ export default function ProjectDetail() {
   const [media, setMedia] = useState([]);
   const [showMediaForm, setShowMediaForm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
   const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
   const [purchasePlan, setPurchasePlan] = useState(null);
@@ -1376,38 +1523,46 @@ export default function ProjectDetail() {
       <style>{
         tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
-        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
+        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}` +
+        /* Responsive section padding — overrides all hardcoded 36px 56px */
+        `@media(max-width:768px){#s-hero,[id^="s-"]{padding:20px 16px 28px!important}#s-hero{padding:20px 16px!important}.proj-cta-wrap{padding:12px 16px!important}}` +
+        `@media(min-width:769px) and (max-width:1024px){#s-hero,[id^="s-"]{padding:28px!important}}`
       }</style>
       {/* ── Project Topbar ── */}
       <div style={{
         position: 'sticky', top: 0, height: 54,
         background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
-        gap: 10, padding: '0 36px', zIndex: 15,
+        gap: 10, padding: '0 20px', zIndex: 15,
       }}>
+        {/* Hamburger mobile */}
+        <button className="mobile-hamburger" onClick={() => document.body.classList.toggle('sidebar-open')}
+          style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', borderRadius: 9, background: '#F4F5F6', cursor: 'pointer', flexShrink: 0 }}>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect width="16" height="2" rx="1" fill="#3A3D44"/><rect y="5" width="16" height="2" rx="1" fill="#3A3D44"/><rect y="10" width="16" height="2" rx="1" fill="#3A3D44"/></svg>
+        </button>
         <button
           onClick={() => navigate('/projets')}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
         >
           Projets
         </button>
-        <span style={{ color: '#C8CACD', fontSize: 13 }}>›</span>
-        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
+        <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
+        <b className="proj-topbar-title" style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
         <div style={{ flex: 1 }} />
-        <button className="btn-secondary text-xs" onClick={() => window.print()}>
+        <button className="btn-secondary text-xs topbar-search" onClick={() => window.print()} style={{ flexShrink: 0 }}>
           📥 Exporter PDF
         </button>
-        <button className="btn-primary text-xs" onClick={() => {
+        <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
           if (project.portal_token) {
             navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
           }
         }}>
-          Envoyer au client →
+          Envoyer →
         </button>
       </div>
 
       {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
-      <div style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
+      <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
         <button onClick={() => setShowCapture(true)}
           style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
             background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
@@ -1611,6 +1766,22 @@ export default function ProjectDetail() {
             if (hadDocs) load();
           }}
         />
+      )}
+
+      {/* ── Chat IA du projet ── */}
+      {showAIChat && (
+        <ProjectAIChat
+          projectId={id}
+          projectName={project.name}
+          onClose={() => setShowAIChat(false)}
+        />
+      )}
+
+      {/* ── Bouton flottant Chat IA ── */}
+      {!showAIChat && (
+        <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à l'IA du projet">
+          <Sparkles size={22} />
+        </button>
       )}
 
       {/* ── QR Modal ── */}

@@ -442,3 +442,139 @@
 .dark .input              { background: #1f2937; border-color: #374151; color: #f9fafb; }
 .dark header              { background: rgba(17,24,39,0.95) !important; border-color: #1f2937 !important; }
 .dark .kv                 { background: #1f2937; border-color: #374151; }
+
+/* ── Mobile hamburger (hidden on desktop) ── */
+.mobile-hamburger { display: none !important; }
+@media (max-width: 768px) {
+  .mobile-hamburger { display: flex !important; }
+  /* Shrink search bar on mobile topbar */
+  .app-topbar .topbar-search { display: none !important; }
+}
+
+/* ── Responsive variables ── */
+:root {
+  --proj-h-pad: 56px;
+  --proj-v-pad: 36px;
+  --proj-v-pad-b: 44px;
+}
+
+/* ── Responsive: ≤ 768px (mobile) ── */
+@media (max-width: 768px) {
+  :root {
+    --proj-h-pad: 16px;
+    --proj-v-pad: 20px;
+    --proj-v-pad-b: 28px;
+    --sb: 240px;
+  }
+
+  /* Shell: sidebar hidden by default on mobile, shown via .sidebar-open on body */
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: var(--sb);
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.32,.72,0,1);
+    z-index: 200;
+    box-shadow: 4px 0 24px rgba(0,0,0,.35);
+  }
+
+  body.sidebar-open .app-sidebar {
+    transform: translateX(0);
+  }
+
+  /* Overlay behind open sidebar */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 199;
+  }
+  body.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
+  /* Mobile topbar */
+  .app-topbar {
+    padding: 0 16px;
+  }
+
+  /* Project topbar breadcrumb text */
+  .proj-topbar-title {
+    max-width: 40vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ── Responsive: 769–1024px (tablet) ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --proj-h-pad: 28px;
+    --proj-v-pad: 28px;
+    --proj-v-pad-b: 36px;
+  }
+}
+
+/* Utility class: section padding that adapts to screen */
+.proj-section { padding: var(--proj-v-pad) var(--proj-h-pad) var(--proj-v-pad-b); }
+
+/* ── AI Chat drawer ── */
+.ai-chat-drawer {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 400px;
+  background: #fff;
+  border-left: 1px solid var(--line);
+  box-shadow: -4px 0 32px rgba(0,0,0,.12);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  animation: slideOverIn .28s cubic-bezier(.32,.72,0,1);
+}
+
+@media (max-width: 768px) {
+  .ai-chat-drawer {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--line);
+    top: auto;
+    height: 85vh;
+    border-radius: 20px 20px 0 0;
+    animation: slideUpIn .28s cubic-bezier(.32,.72,0,1);
+  }
+}
+
+@keyframes slideUpIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* ── Floating AI chat button ── */
+.ai-float-btn {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--or);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 20px rgba(232,121,78,.45);
+  z-index: 150;
+  transition: transform .15s, box-shadow .15s;
+}
+.ai-float-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(232,121,78,.55);
+}
+
+@media (max-width: 768px) {
+  .ai-float-btn { bottom: 20px; right: 20px; }
+}

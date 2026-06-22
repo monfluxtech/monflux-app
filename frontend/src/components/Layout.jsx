@@ -68,9 +68,20 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
   const [onboardingDone, setOnboardingDone] = useState(null);
   const [testRole, setTestRole] = useState('');
   const [testPlan, setTestPlan] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
   const quickRef = useRef(null);
+
+  // Mobile sidebar: toggle body class for CSS-driven drawer
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.classList.add('sidebar-open');
+    } else {
+      document.body.classList.remove('sidebar-open');
+    }
+    return () => document.body.classList.remove('sidebar-open');
+  }, [sidebarOpen]);
 
   const role = company?.role;
   const coreNav = CORE_MODULES.filter((m) => roleAllows(role, m.key));
@@ -130,6 +141,9 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
 
   return (
     <div className="app-shell">
+      {/* Mobile backdrop — closes sidebar on tap */}
+      <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+
       <aside className="app-sidebar">
         <div className="app-sidebar-header">
           <button
@@ -381,6 +395,17 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
           <>
             {!noTopbar && (
               <header className="app-topbar">
+                {/* Hamburger — visible mobile only */}
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(o => !o)}
+                  style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: 'none', borderRadius: 9, background: '#F4F5F6', cursor: 'pointer', flexShrink: 0 }}
+                  className="mobile-hamburger"
+                  aria-label="Menu"
+                >
+                  <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect width="16" height="2" rx="1" fill="#3A3D44"/><rect y="5" width="16" height="2" rx="1" fill="#3A3D44"/><rect y="10" width="16" height="2" rx="1" fill="#3A3D44"/></svg>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setLanguage(lang === 'fr' ? 'en' : 'fr')}
@@ -396,6 +421,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
+                  className="topbar-search"
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: '#F4F5F6', border: '1px solid #E8EAED',
