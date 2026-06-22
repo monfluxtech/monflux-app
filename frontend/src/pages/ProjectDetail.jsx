@@ -14,8 +14,8 @@ const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
-  { id: 's-ai', icon: '📡', label: 'Capture IA' },
   { id: 's-pipeline', icon: '🔄', label: 'Pipeline du projet' },
+  { id: 's-ai', icon: '📡', label: 'Capture IA' },
   { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
   { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
   { id: 's-payments', icon: '💳', label: 'Paiements' },
@@ -492,7 +492,16 @@ export default function ProjectDetail() {
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [tocSections, setTocSections] = useState(() => {
-    try { const s = localStorage.getItem(`monflux-toc-order-${id}`); if (s) return JSON.parse(s); } catch {}
+    const validIds = new Set(DETAIL_TOC_SECTIONS.map(s => s.id));
+    try {
+      const saved = JSON.parse(localStorage.getItem(`monflux-toc-order-${id}`) || 'null');
+      if (saved) {
+        const filtered = saved.filter(s => validIds.has(s.id));
+        const savedIds = new Set(filtered.map(s => s.id));
+        const missing = DETAIL_TOC_SECTIONS.filter(s => !savedIds.has(s.id));
+        return [...filtered, ...missing];
+      }
+    } catch {}
     return DETAIL_TOC_SECTIONS;
   });
   const [hiddenSections, setHiddenSections] = useState(() => {
@@ -1162,98 +1171,119 @@ export default function ProjectDetail() {
       </div>
 
       {/* ── Hero ── */}
-      <div id="s-hero" style={{ padding: '48px 56px 36px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
-            Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
-          </div>
-        </div>
-        <h1 style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C', margin: 0 }}>
-          <InlineField value={project.name} onSave={v => saveField('name', v)} placeholder="Nom du projet"
-            style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }}
-            displayStyle={{ fontSize: 52, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }} />
-        </h1>
-        <p style={{ margin: '12px 0 0', fontSize: 15, color: '#3A3D44', lineHeight: 1.55, maxWidth: '70ch', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ color: '#6B7280', fontSize: 13 }}>Client :</span>
-          <InlineField value={project.client_name} onSave={v => saveField('client_name', v)} placeholder="Nom du client"
-            style={{ fontSize: 15, color: '#3A3D44' }} displayStyle={{ fontSize: 15, color: '#3A3D44' }} />
-          {(project.client_name || project.address) && <span style={{ color: '#C8CACD' }}>·</span>}
-          <InlineField value={project.address} onSave={v => saveField('address', v)} placeholder="Adresse"
-            style={{ fontSize: 15, color: '#3A3D44' }} displayStyle={{ fontSize: 15, color: '#3A3D44' }} />
-        </p>
-        {/* KV chips */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
-          {contractValue > 0 && (
-            <div className="kv">
-              <div className="kv-k">Valeur contrat</div>
-              <div className="kv-v">{money(contractValue)}</div>
+      {(() => {
+        const healthStatus = (() => {
+          const overdue = projectInvoices.some(inv => inv.status === 'overdue');
+          if (overdue || ['brouillon','estimation'].includes(project.status)) return 'red';
+          if (['accepte','planifie','en_chantier','paye','clos'].includes(project.status)) return 'green';
+          return 'yellow';
+        })();
+        const healthColors = { green: { bg: '#DCFCE7', dot: '#16a34a', label: 'En bonne santé' }, yellow: { bg: '#FEF9C3', dot: '#CA8A04', label: 'Attention requise' }, red: { bg: '#FEE2E2', dot: '#DC2626', label: 'Action requise' } };
+        const hc = healthColors[healthStatus];
+        const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+        return (
+          <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
+            {/* Statut badge */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px', marginBottom: 16 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
+              Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
             </div>
-          )}
-          <div className="kv">
-            <div className="kv-k">Termes paiement</div>
-            <div className="kv-v" style={{ fontSize: 15 }}>
-              <InlineField value={project.payment_terms} onSave={v => saveField('payment_terms', v)} placeholder="30-40-30 %" style={{ fontSize: 15 }} />
+
+            {/* Titre : type de travaux */}
+            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C', margin: '0 0 8px' }}>
+              <InlineField value={project.type || project.name} onSave={v => saveField('type', v)} placeholder="Type de travaux"
+                style={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }}
+                displayStyle={{ fontSize: 48, fontWeight: 900, letterSpacing: '-.04em', lineHeight: 1.02, color: '#15171C' }} />
+            </h1>
+
+            {/* Adresse · Dates */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 14.5, color: '#4B5563', marginBottom: 16 }}>
+              <InlineField value={project.address} onSave={v => saveField('address', v)} placeholder="Adresse du chantier"
+                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
+              {(project.address || project.start_date) && <span style={{ color: '#D1D5DB' }}>·</span>}
+              <InlineField value={project.start_date ? project.start_date.slice(0,10) : ''} onSave={v => saveField('start_date', v)} placeholder="Début"
+                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
+              {project.start_date && <span style={{ color: '#D1D5DB' }}>→</span>}
+              <InlineField value={project.end_date ? project.end_date.slice(0,10) : ''} onSave={v => saveField('end_date', v)} placeholder="Fin"
+                style={{ fontSize: 14.5, color: '#4B5563' }} displayStyle={{ fontSize: 14.5, color: '#4B5563' }} />
             </div>
-          </div>
-          {heroNextPaymentAmount > 0 && (
-            <div className="kv">
-              <div className="kv-k">Prochain versement</div>
-              <div className="kv-v">{money(heroNextPaymentAmount)}</div>
+
+            {/* Client contact */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13.5, color: '#374151', marginBottom: 20, padding: '10px 14px', background: 'rgba(255,255,255,.55)', borderRadius: 10, border: '1px solid rgba(255,255,255,.8)' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Client</span>
+              <span style={{ fontWeight: 600, color: '#15171C' }}>{project.client_name || <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>Sans client</span>}</span>
+              {project.client_phone && (
+                <a href={`tel:${project.client_phone}`} style={{ color: '#4B5563', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 12 }}>📞</span> {project.client_phone}
+                </a>
+              )}
+              {project.client_email && (
+                <a href={`mailto:${project.client_email}`} style={{ color: '#4B5563', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 12 }}>✉️</span> {project.client_email}
+                </a>
+              )}
+              {!project.client_phone && !project.client_email && (
+                <span style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Aucun contact — modifier la fiche client</span>
+              )}
             </div>
-          )}
-          {heroDueDate && (
-            <div className="kv">
-              <div className="kv-k">Échéance</div>
-              <div className="kv-v" style={{ fontSize: 15 }}>
-                {new Date(heroDueDate).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}
+
+            {/* Métriques non-éditables + feu de circulation */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
+              {contractValue > 0 && (
+                <div className="kv"><div className="kv-k">Valeur contrat</div><div className="kv-v">{money(contractValue)}</div></div>
+              )}
+              {heroNextPaymentAmount > 0 && (
+                <div className="kv"><div className="kv-k">Prochain versement</div><div className="kv-v">{money(heroNextPaymentAmount)}</div></div>
+              )}
+              {heroDueDate && (
+                <div className="kv"><div className="kv-k">Échéance</div><div className="kv-v" style={{ fontSize: 14 }}>{new Date(heroDueDate).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}</div></div>
+              )}
+              <div className="kv" style={{ background: hc.bg, border: `1px solid ${hc.dot}22` }}>
+                <div className="kv-k">Santé du chantier</div>
+                <div className="kv-v" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: hc.dot, display: 'inline-block', flexShrink: 0 }} />
+                  {hc.label}
+                </div>
               </div>
             </div>
-          )}
-          {project.project_manager && (
-            <div className="kv">
-              <div className="kv-k">Chargé de projet</div>
-              <div className="kv-v" style={{ fontSize: 14 }}>{project.project_manager}</div>
+
+            {/* Grille éditables */}
+            <div style={{ paddingTop: 18, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.4)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 28px' }}>
+                {[
+                  { label: 'Termes paiement', field: 'payment_terms', value: project.payment_terms },
+                  { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
+                  { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
+                  { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
+                  { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
+                  { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
+                ].map(({ label, field, value }) => (
+                  <div key={field}>
+                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.45)', margin: 0 }}>{label}</p>
+                    <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                      <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
+                        style={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }}
+                        displayStyle={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }} />
+                    </p>
+                  </div>
+                ))}
+                <div>
+                  <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.45)', margin: 0 }}>Permis requis</p>
+                  <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                    <button onClick={() => saveField('permits_required', !project.permits_required)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
+                      onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+                      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+                      {project.permits_required ? 'Oui' : 'Non'}
+                    </button>
+                  </p>
+                </div>
+              </div>
             </div>
-          )}
-          {!project.project_manager && (
-            <div className="kv">
-              <div className="kv-k">Avancement</div>
-              <div className="kv-v" style={{ color: BRAND }}>{pct}%</div>
-            </div>
-          )}
-        </div>
-        {/* ── Infos fusionnées dans l'entête ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 28px', marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
-          {[
-            { label: 'Chargé de projet', field: 'project_manager', value: project.project_manager },
-            { label: 'Acheteur matériaux', field: 'materials_buyer', value: project.materials_buyer },
-            { label: 'Approbateurs', field: 'approvers', value: (project.approvers || []).join(', ') },
-            { label: 'Responsable permis', field: 'permits_responsible', value: project.permits_responsible },
-            { label: 'Machines / équipements', field: 'machines', value: (project.machines || []).join(', ') },
-          ].map(({ label, field, value }) => (
-            <div key={field}>
-              <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.5)', margin: 0 }}>{label}</p>
-              <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-                <InlineField value={value} onSave={v => saveField(field, v)} placeholder="—"
-                  style={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }}
-                  displayStyle={{ fontSize: 13.5, color: '#15171C', fontWeight: 500 }} />
-              </p>
-            </div>
-          ))}
-          <div>
-            <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.5)', margin: 0 }}>Permis requis</p>
-            <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-              <button onClick={() => saveField('permits_required', !project.permits_required)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
-                onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
-                onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
-                {project.permits_required ? 'Oui' : 'Non'}
-              </button>
-            </p>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
