@@ -14,7 +14,6 @@ const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
-  { id: 's-ai', icon: '📡', label: 'Capture IA' },
   { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
   { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
   { id: 's-payments', icon: '💳', label: 'Paiements' },
@@ -1224,6 +1223,30 @@ export default function ProjectDetail() {
         </button>
       </div>
 
+      {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
+      <div style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
+        <button onClick={() => setShowMediaForm(true)}
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
+            background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
+            boxShadow: '0 10px 28px rgba(200,90,43,.26)', display: 'flex', alignItems: 'center', gap: 18,
+            transition: 'transform .15s, box-shadow .15s' }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 14px 34px rgba(200,90,43,.32)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(200,90,43,.26)'; }}>
+          <div style={{ width: 52, height: 52, borderRadius: 15, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <Sparkles size={26} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Ajoute n'importe quoi au projet</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'rgba(255,255,255,.92)', lineHeight: 1.5 }}>
+              Écris, dicte, parle, prends une photo ou une vidéo, dépose un document — l'IA analyse, classe au bon endroit et propose la suite.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, color: 'rgba(255,255,255,.8)' }}>
+            <Mic size={18} /><Camera size={18} /><FileText size={18} /><Pencil size={18} />
+          </div>
+        </button>
+      </div>
+
       {/* ── Hero ── */}
       {(() => {
         const fa = project.field_assessment || {};
@@ -1412,37 +1435,6 @@ export default function ProjectDetail() {
 
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-
-        {/* ── Capture IA ── */}
-        <div id="s-ai" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📡</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Capture IA du chantier</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Parle, photo, vidéo, document ou note — l'IA classe et propose la suite</div>
-            </div>
-          </div>
-          <div style={{ background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff', borderRadius: 16, padding: 26, boxShadow: '0 10px 28px rgba(200,90,43,.26)' }}>
-            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-              <div style={{ width: 58, height: 58, borderRadius: 16, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', fontSize: 32, flexShrink: 0 }}>+</div>
-              <div>
-                <h3 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Ajoute n'importe quoi au projet</h3>
-                <p style={{ margin: '6px 0 0', fontSize: 13, color: 'rgba(255,255,255,.9)', lineHeight: 1.5, maxWidth: '54ch' }}>L'IA analyse, classe dans la bonne section et te propose la prochaine étape concrète.</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 18 }}>
-              {[['🎤','Parler'],['📷','Photo'],['📄','Document'],['✍️','Écrire']].map(([ic,lbl]) => (
-                <button key={lbl} onClick={() => setShowMediaForm(true)} style={{ background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{ic} {lbl}</button>
-              ))}
-              <button onClick={() => setShowMediaForm(true)} style={{ background: '#fff', border: 'none', color: BRAND_DARK, borderRadius: 10, padding: '10px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>✍️ Note</button>
-            </div>
-            {notes && (
-              <div style={{ marginTop: 15, background: 'rgba(255,255,255,.13)', border: '1px dashed rgba(255,255,255,.4)', borderRadius: 12, padding: '12px 14px', fontSize: 12.5, display: 'flex', gap: 10 }}>
-                <span>→</span><span><b>Dernière note :</b> {notes.slice(0, 120)}{notes.length > 120 ? '…' : ''}</span>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
