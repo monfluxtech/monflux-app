@@ -14,7 +14,7 @@ const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
-  { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
+  { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
   { id: 's-payments', icon: '💳', label: 'Paiements' },
   { id: 's-phases', icon: '📅', label: 'Phases & Gantt' },
@@ -882,11 +882,14 @@ export default function ProjectDetail() {
   const [activeSection, setActiveSection] = useState('s-ai');
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
-  const [estimTab, setEstimTab] = useState('ia');
+  const [estimTab, setEstimTab] = useState('voieA');
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
-  const [terrainAnswers, setTerrainAnswers] = useState({});
   const [searchingPrices, setSearchingPrices] = useState(false);
   const [supplierPrices, setSupplierPrices] = useState(null);
+  const [sqUnit, setSqUnit] = useState('sqft');
+  const [sqRate, setSqRate] = useState('');
+  const [sqArea, setSqArea] = useState('');
+  const clientMsgRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
@@ -1431,6 +1434,162 @@ export default function ProjectDetail() {
     addition: 'Agrandissement', new_build: 'Construction neuve', roofing: 'Toiture',
     exterior: 'Extérieur', commercial: 'Commercial', interior: 'Intérieur', other: '',
   };
+
+  const WORK_TYPE_OPTIONS = [
+    { group: 'Résidentiel — Intérieur', value: 'Cuisine', label: 'Cuisine' },
+    { group: 'Résidentiel — Intérieur', value: 'Salle de bain', label: 'Salle de bain' },
+    { group: 'Résidentiel — Intérieur', value: 'Sous-sol', label: 'Sous-sol' },
+    { group: 'Résidentiel — Intérieur', value: 'Planchers', label: 'Planchers' },
+    { group: 'Résidentiel — Intérieur', value: 'Peinture intérieure', label: 'Peinture intérieure' },
+    { group: 'Résidentiel — Intérieur', value: 'Rénovation complète', label: 'Rénovation complète' },
+    { group: 'Résidentiel — Intérieur', value: 'Fenêtres et portes', label: 'Fenêtres et portes' },
+    { group: 'Résidentiel — Intérieur', value: 'Escaliers', label: 'Escaliers' },
+    { group: 'Résidentiel — Intérieur', value: 'Armoires / cuisines', label: 'Armoires / cuisines' },
+    { group: 'Résidentiel — Extérieur', value: 'Toiture', label: 'Toiture / couverture' },
+    { group: 'Résidentiel — Extérieur', value: 'Agrandissement', label: 'Agrandissement' },
+    { group: 'Résidentiel — Extérieur', value: 'Terrasse / balcon', label: 'Terrasse / balcon / patio' },
+    { group: 'Résidentiel — Extérieur', value: 'Paysagement', label: 'Paysagement / aménagement extérieur' },
+    { group: 'Résidentiel — Extérieur', value: 'Fondation', label: 'Fondation / imperméabilisation' },
+    { group: 'Résidentiel — Extérieur', value: 'Piscine / spa', label: 'Piscine / spa' },
+    { group: 'Résidentiel — Extérieur', value: 'Revêtement extérieur', label: 'Revêtement extérieur' },
+    { group: 'Résidentiel — Extérieur', value: 'Clôture', label: 'Clôture / portail' },
+    { group: 'Systèmes du bâtiment', value: 'Électricité', label: 'Électricité' },
+    { group: 'Systèmes du bâtiment', value: 'Plomberie', label: 'Plomberie' },
+    { group: 'Systèmes du bâtiment', value: 'Chauffage / climatisation (CVC)', label: 'Chauffage / Climatisation (CVC / HVAC)' },
+    { group: 'Systèmes du bâtiment', value: 'Isolation', label: 'Isolation thermique' },
+    { group: 'Systèmes du bâtiment', value: 'Domotique / sécurité', label: 'Domotique / sécurité / caméras' },
+    { group: 'Travaux spécialisés', value: 'Démolition', label: 'Démolition' },
+    { group: 'Travaux spécialisés', value: 'Excavation', label: 'Excavation / terrassement' },
+    { group: 'Travaux spécialisés', value: 'Maçonnerie / béton', label: 'Maçonnerie / béton' },
+    { group: 'Travaux spécialisés', value: 'Construction neuve', label: 'Construction neuve' },
+    { group: 'Travaux spécialisés', value: 'Ingénierie structurelle', label: 'Ingénierie structurelle' },
+    { group: 'Commercial / Institutionnel', value: 'Commercial', label: 'Commercial / bureaux / retail' },
+    { group: 'Commercial / Institutionnel', value: 'Industriel', label: 'Industriel / entrepôt' },
+    { group: 'Commercial / Institutionnel', value: 'Institutionnel', label: 'Institutionnel (école, clinique)' },
+    { group: 'Autre', value: 'Autre', label: 'Autre' },
+  ];
+
+  const ALL_TRADES = [
+    { key: 'charpenterie', label: 'Charpenterie', emoji: '🪵' },
+    { key: 'electricite', label: 'Électricité', emoji: '⚡' },
+    { key: 'plomberie', label: 'Plomberie', emoji: '🔧' },
+    { key: 'hvac', label: 'Chauffage / CVC', emoji: '🌡️' },
+    { key: 'peinture', label: 'Peinture', emoji: '🎨' },
+    { key: 'gypse', label: 'Gypse / cloisons', emoji: '📐' },
+    { key: 'ceramique', label: 'Céramique', emoji: '🏠' },
+    { key: 'plancher', label: 'Planchers', emoji: '🪵' },
+    { key: 'couverture', label: 'Couverture / toiture', emoji: '🏚️' },
+    { key: 'isolation', label: 'Isolation', emoji: '🧱' },
+    { key: 'fenetres', label: 'Fenêtres / portes', emoji: '🪟' },
+    { key: 'demolition', label: 'Démolition', emoji: '💥' },
+    { key: 'excavation', label: 'Excavation', emoji: '🚜' },
+    { key: 'fondation', label: 'Fondation / maçonnerie', emoji: '🏗️' },
+    { key: 'paysagement', label: 'Paysagement', emoji: '🌿' },
+    { key: 'ebenisterie', label: 'Ébénisterie / armoires', emoji: '🪑' },
+    { key: 'escaliers', label: 'Escaliers / rampes', emoji: '🔼' },
+    { key: 'securite', label: 'Sécurité / domotique', emoji: '🔒' },
+    { key: 'gicleurs', label: 'Gicleurs / incendie', emoji: '🚒' },
+    { key: 'impermeabilisation', label: 'Imperméabilisation', emoji: '💧' },
+    { key: 'piscine', label: 'Piscine / spa', emoji: '🏊' },
+    { key: 'ingenierie', label: 'Ingénierie structurelle', emoji: '📐' },
+    { key: 'autre', label: 'Autre spécialité', emoji: '➕' },
+  ];
+
+  /* Questions universelles + banques par type de travaux */
+  const VISITE_QUESTIONS_UNIVERSAL = [
+    { id: 'occupied', q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — résidents/locataires présents', 'Non — vacant', 'Partiellement occupé'] },
+    { id: 'permit', q: 'Un permis municipal est-il requis ?', opts: ['Oui — en cours', 'Oui — à demander', 'Non requis', 'À vérifier avec la ville'] },
+    { id: 'hazmat', q: 'Présence suspectée de matériaux dangereux ?', opts: ['Amiante (bâtiment avant 1980)', 'Peinture au plomb', 'Aucun à ma connaissance', 'Test requis avant démarrage'] },
+    { id: 'access', q: 'Accessibilité du chantier', opts: ['Facile — accès direct rue', 'Stationnement limité', 'Accès arrière seulement', 'Contraintes importantes (escaliers, ruelle)'] },
+  ];
+
+  const VISITE_QUESTIONS_BY_TYPE = {
+    'Cuisine': [
+      { id: 'cabinet_type', q: 'Type d\'armoires souhaitées', opts: ['Stock standard (IKEA, Home Dépot)', 'Semi-custom', 'Sur mesure / ébénisterie', 'À conseiller'] },
+      { id: 'island', q: 'Îlot de cuisine ?', opts: ['Oui — nouveau', 'Modifier l\'existant', 'Non'] },
+      { id: 'plumbing_relocate', q: 'Déplacement de l\'évier ou drain ?', opts: ['Oui', 'Non', 'À confirmer'] },
+      { id: 'ventilation_k', q: 'Hotte raccordée vers l\'extérieur ?', opts: ['Conduit existant à utiliser', 'Nouveau conduit à percer', 'Recirculation (sans conduit)'] },
+      { id: 'appliances', q: 'Électroménagers inclus dans la commande ?', opts: ['Fourniture + installation', 'Installation seulement', 'Non inclus'] },
+      { id: 'countertop', q: 'Comptoir souhaité', opts: ['Quartz engineered', 'Granit naturel', 'Stratifié / Formica', 'Béton / autre', 'À conseiller'] },
+    ],
+    'Salle de bain': [
+      { id: 'shower_type', q: 'Type de douche', opts: ['Bain-douche standard', 'Douche à l\'italienne (plancher nivelant)', 'Baignoire séparée', 'Les deux (bain + douche séparée)'] },
+      { id: 'plumbing_relocate_bath', q: 'Déplacement de plomberie ?', opts: ['Oui — déplacement majeur', 'Légère modification', 'Non — même position'] },
+      { id: 'tile_format', q: 'Format de céramique', opts: ['Grand format (60×120 cm+)', 'Standard (30×60 cm)', 'Mosaïque', 'Pierre naturelle'] },
+      { id: 'vanity_type', q: 'Type de vanité', opts: ['Au mur (suspendue)', 'Avec pieds', 'Meuble-lavabo standard', 'Double lavabo'] },
+      { id: 'ventilation_bath', q: 'Ventilation (VRC / VMC)', opts: ['Existante conforme', 'À remplacer', 'À installer'] },
+    ],
+    'Sous-sol': [
+      { id: 'basement_height', q: 'Hauteur libre actuelle', opts: ['Moins de 7 pi (bas)', '7–7,5 pi (borderline)', '7,5 pi et + (correct)', 'Plus de 8 pi (excellent)'] },
+      { id: 'humidity', q: 'Problèmes d\'humidité ou infiltration ?', opts: ['Oui — à corriger avant tout', 'Traces légères', 'Aucun problème apparent'] },
+      { id: 'bathroom_basement', q: 'Salle de bain à ajouter ?', opts: ['Oui — complet', 'Oui — demi-bain seulement', 'Non'] },
+      { id: 'ceiling_type', q: 'Type de plafond souhaité', opts: ['Gyproc / plafond plein', 'Plafond suspendu (T-bar)', 'Plafond exposé / industriel', 'À conseiller'] },
+    ],
+    'Toiture': [
+      { id: 'roof_slope', q: 'Type de pente', opts: ['Toiture plate (< 2/12)', 'Faible pente (2–4/12)', 'Standard (4–8/12)', 'Abrupte (8/12+)'] },
+      { id: 'roof_material', q: 'Matériau souhaité', opts: ['Bardeau d\'asphalte', 'Tôle à la baguette (métal)', 'Tôle plate / standing seam', 'EPDM/TPO (toiture plate)', 'À conseiller'] },
+      { id: 'layers', q: 'Nombre de couches existantes', opts: ['1 couche', '2 couches', '3+ couches (dépose totale)', 'Inconnue'] },
+      { id: 'insulation_roof', q: 'Isolation à améliorer ?', opts: ['Oui — insuffisante', 'Non — conforme', 'À évaluer'] },
+      { id: 'gutters', q: 'Gouttières à inclure', opts: ['Oui — remplacement complet', 'Oui — partiel', 'Non'] },
+    ],
+    'Électricité': [
+      { id: 'panel_amp', q: 'Ampérage du panneau actuel', opts: ['100A (vieux)', '150A', '200A (standard)', '400A (gros bâtiment)', 'Inconnu'] },
+      { id: 'panel_replace', q: 'Remplacement du panneau ?', opts: ['Oui', 'Non — ajout de circuits', 'À évaluer'] },
+      { id: 'old_wiring', q: 'Type de câblage existant', opts: ['Knob-and-tube (avant 1960)', 'Aluminium (1965–1980)', 'Cuivre conforme', 'Inconnu'] },
+      { id: 'ev_charger', q: 'Borne de recharge VE', opts: ['Niveau 2 — 240V résidentiel', 'Niveau 3 — rapide commercial', 'Non requis'] },
+      { id: 'smart_home', q: 'Domotique / éclairage intelligent', opts: ['Oui — étendu', 'Partiel (quelques pièces)', 'Non'] },
+    ],
+    'Plomberie': [
+      { id: 'pipe_material', q: 'Matériau des conduites existantes', opts: ['Cuivre (bon état)', 'PEX (moderne)', 'Galvanisé (vieux)', 'Polybutylène / Kitec (urgent!)', 'Inconnu'] },
+      { id: 'pipe_scope', q: 'Étendue des travaux', opts: ['Remplacement complet', 'Remplacement partiel', 'Raccordement / ajout seulement'] },
+      { id: 'water_heater', q: 'Chauffe-eau', opts: ['À remplacer — réservoir', 'Thermopompe eau chaude', 'Sans réservoir (tankless)', 'À conserver'] },
+      { id: 'sewer_issue', q: 'Problème d\'égout ou drain', opts: ['Drain obstrué régulièrement', 'Backwater valve requise', 'Aucun problème connu'] },
+    ],
+    'Chauffage / climatisation (CVC)': [
+      { id: 'current_system', q: 'Système de chauffage actuel', opts: ['Plinthes électriques', 'Fournaise au gaz', 'Fournaise à l\'huile', 'Thermopompe centrale', 'Thermopompe murale (split)', 'Géothermie'] },
+      { id: 'desired_system', q: 'Système souhaité', opts: ['Thermopompe centrale', 'Thermopompe murale (mini-split)', 'Fournaise + CA', 'Géothermie', 'Maintenir existant'] },
+      { id: 'ductwork', q: 'Conduits existants', opts: ['En bon état — à utiliser', 'À remplacer', 'Aucun conduit (nouveau)'] },
+      { id: 'vrc', q: 'VRC / Ventilateur récupérateur de chaleur', opts: ['À installer', 'Existant — OK', 'À remplacer'] },
+    ],
+    'Démolition': [
+      { id: 'demo_scope', q: 'Étendue de la démolition', opts: ['Partielle — intérieure ciblée', 'Complète — vider le bâtiment', 'Démolition totale du bâtiment'] },
+      { id: 'hazmat_test', q: 'Test amiante/plomb effectué ?', opts: ['Oui — rapport disponible', 'Non — à faire avant démarrage', 'Bâtiment après 1990 (faible risque)'] },
+      { id: 'waste_mgmt', q: 'Gestion des débris', opts: ['Benne sur place à coordonner', 'Service inclus dans le prix', 'Client gère lui-même'] },
+    ],
+    'Paysagement': [
+      { id: 'landscape_area', q: 'Superficie approximative', opts: ['Petit (<100 m²)', 'Moyen (100–300 m²)', 'Grand (300+ m²)', 'À mesurer'] },
+      { id: 'lawn_type', q: 'Type de pelouse', opts: ['Gazon naturel ensemencement', 'Gazon en rouleau', 'Gazon artificiel', 'Couvre-sol / prairie', 'Pas de gazon'] },
+      { id: 'irrigation_sys', q: 'Système d\'irrigation ?', opts: ['Oui — nouveau', 'Existant à modifier', 'Non requis'] },
+      { id: 'hardscape', q: 'Pavage / entrée / patio', opts: ['Béton', 'Pavé uni', 'Asphalte', 'Gravier', 'Non inclus'] },
+    ],
+    'Fondation': [
+      { id: 'foundation_type', q: 'Type de fondation', opts: ['Béton coulé (moderne)', 'Blocs de béton (parpaings)', 'Pierre (vieux bâtiment)', 'Radier / dalle sur sol'] },
+      { id: 'crack_severity', q: 'Fissures observées', opts: ['Aucune', 'Fissures fines (cosmétiques)', 'Fissures horizontales (préoccupant)', 'Importantes — ingénieur requis'] },
+      { id: 'waterproof_type', q: 'Type d\'imperméabilisation souhaitée', opts: ['Intérieure (drain français)', 'Extérieure (excavation)', 'Les deux', 'À évaluer'] },
+    ],
+    'Agrandissement': [
+      { id: 'addition_type', q: 'Type d\'agrandissement', opts: ['Horizontal — expansion latérale', 'Vertical — ajout d\'étage', 'Surélévation', 'Annexe détachée (garage/suite)'] },
+      { id: 'engineer_required', q: 'Ingénieur structurel requis ?', opts: ['Oui — travaux majeurs', 'Probablement', 'Non — agrandissement simple'] },
+      { id: 'foundation_addition', q: 'Nouvelle fondation requise ?', opts: ['Oui — sous-sol inclus', 'Oui — dalle seulement', 'Non'] },
+    ],
+    'Construction neuve': [
+      { id: 'build_type', q: 'Type de construction', opts: ['Maison unifamiliale', 'Duplex / triplex', 'Multiplex / condo', 'Commercial / industriel'] },
+      { id: 'lot_status', q: 'État du terrain', opts: ['Lot vierge', 'Démolition préalable requise', 'Infrastructure partielle existante'] },
+      { id: 'foundation_new', q: 'Type de fondation prévu', opts: ['Sous-sol complet', 'Vide sanitaire', 'Dalle sur sol (radier)', 'Pieux vissés'] },
+      { id: 'plans_available', q: 'Plans architecturaux disponibles ?', opts: ['Oui — approuvés par la ville', 'Oui — en cours d\'approbation', 'Non — à préparer', 'Croquis seulement'] },
+    ],
+    'Commercial': [
+      { id: 'commercial_use', q: 'Type d\'usage', opts: ['Bureau / coworking', 'Restaurant / bar', 'Commerce de détail', 'Clinique / médical', 'Entrepôt / industriel léger', 'Hôtel / hébergement'] },
+      { id: 'fire_code', q: 'Gicleurs / alarme incendie', opts: ['Conformes', 'À mettre à niveau', 'À installer'] },
+      { id: 'accessibility', q: 'Accessibilité PMR (handicapés)', opts: ['Conforme', 'À améliorer', 'Non applicable'] },
+    ],
+    'Ingénierie structurelle': [
+      { id: 'structural_issue', q: 'Nature du problème', opts: ['Mur porteur à modifier', 'Poutre/colonne à remplacer', 'Plancher affaissé', 'Fondation endommagée', 'Évaluation préventive'] },
+      { id: 'stamps', q: 'Sceau d\'ingénieur requis par la ville ?', opts: ['Oui — exigé', 'Oui — par prudence', 'Non', 'À confirmer'] },
+      { id: 'urgency', q: 'Niveau d\'urgence', opts: ['Urgent — sécurité compromise', 'Modéré — corriger sous peu', 'Planifié — rénovation future'] },
+    ],
+  };
+
   const PIPE = [
     { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
     { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
@@ -1688,7 +1847,7 @@ export default function ProjectDetail() {
             <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
                 {[
-                  { label: 'Type de travaux',       fn: v => saveAssessmentField('work_type', v),   value: workType },
+                  { label: 'Type de travaux', fn: null, value: workType, isWorkType: true },
                   { label: 'Adresse',               fn: v => saveField('address', v),               value: addr },
                   { label: 'Date début',            fn: v => saveAssessmentField('start_label', v), value: startLabel },
                   { label: 'Date fin',              fn: v => saveAssessmentField('end_label', v),   value: endLabel },
@@ -1697,12 +1856,30 @@ export default function ProjectDetail() {
                   { label: 'Acheteur matériaux',    fn: v => saveField('materials_buyer', v),       value: project.materials_buyer },
                   { label: 'Approbateurs',          fn: v => saveField('approvers', v),             value: (project.approvers || []).join(', ') },
                   { label: 'Machines / équipements',fn: v => saveField('machines', v),              value: (project.machines || []).join(', ') },
-                ].map(({ label, fn, value }) => (
+                ].map(({ label, fn, value, isWorkType }) => (
                   <div key={label}>
                     <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>{label}</p>
-                    <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
-                      <InlineField value={value} onSave={fn} placeholder="—" style={IFS} displayStyle={IFD} />
-                    </p>
+                    {isWorkType ? (
+                      <select value={value || ''} onChange={e => saveAssessmentField('work_type', e.target.value)}
+                        style={{ fontSize: 13.5, color: value ? '#15171C' : '#B0B3BA', fontWeight: 500, background: 'none', border: 'none', padding: '3px 0', cursor: 'pointer', outline: 'none', fontFamily: 'inherit', width: '100%', marginTop: 3 }}>
+                        <option value="">— Choisir —</option>
+                        {WORK_TYPE_OPTIONS.reduce((acc, opt) => {
+                          const last = acc[acc.length - 1];
+                          if (!last || last.group !== opt.group) acc.push({ group: opt.group, items: [opt] });
+                          else last.items.push(opt);
+                          return acc;
+                        }, []).map(g => (
+                          <optgroup key={g.group} label={g.group}>
+                            {g.items.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </optgroup>
+                        ))}
+                        <option value="Autre">Autre…</option>
+                      </select>
+                    ) : (
+                      <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                        <InlineField value={value} onSave={fn} placeholder="—" style={IFS} displayStyle={IFD} />
+                      </p>
+                    )}
                   </div>
                 ))}
                 {/* Permis requis — toggle */}
@@ -1830,148 +2007,348 @@ export default function ProjectDetail() {
       <div style={{ display: 'flex', flexDirection: 'column' }}>
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
-        <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation générale</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>3 façons de recueillir les informations et générer une estimation</div>
-            </div>
-          </div>
+        {/* ── Estimation approximative ── */}
+        {(() => {
+          const fa = project.field_assessment || {};
+          const visiteAnswers = fa.visite_answers || {};
+          const selectedTrades = fa.selected_trades || [];
+          const approxLines = fa.approx_lines || [];
+          const workTypeVal = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
 
-          {/* Onglets méthodes */}
-          <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,.7)', borderRadius: 10, padding: 3, marginBottom: 20, gap: 2 }}>
-            {[
-              { k: 'ia', icon: '✨', label: 'L\'IA estime (projets similaires)' },
-              { k: 'photos', icon: '📷', label: 'Demander les photos au client' },
-              { k: 'terrain', icon: '🏗', label: 'Visite terrain' },
-            ].map(({ k, icon, label }) => (
-              <button key={k} type="button"
-                onClick={() => setEstimTab(k)}
-                style={{
-                  border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
-                  background: estimTab === k ? '#fff' : 'transparent',
-                  color: estimTab === k ? '#15171C' : '#7C8089',
-                  boxShadow: estimTab === k ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-                }}
-              >{icon} {label}</button>
-            ))}
-          </div>
+          const saveVisite = async (patch) => {
+            const next = { ...fa, visite_answers: { ...visiteAnswers, ...patch } };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const saveTrades = async (trades) => {
+            const next = { ...fa, selected_trades: trades };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const saveLines = async (lines) => {
+            const next = { ...fa, approx_lines: lines };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const addLine = () => saveLines([...approxLines, { id: Date.now(), poste: '', source: '', inclus: '', non_inclus: '', duree: '', cout: '', prix_vente: '' }]);
+          const updateLine = (lid, field, value) => saveLines(approxLines.map(l => l.id === lid ? { ...l, [field]: value } : l));
+          const removeLine = (lid) => saveLines(approxLines.filter(l => l.id !== lid));
 
-          {/* Méthode 1 — IA estime à partir de projets similaires */}
-          {estimTab === 'ia' && (
-            <div>
-              <FieldEstimation project={project} onUpdated={load} />
-              <div style={{ marginTop: 20, padding: 16, background: 'rgba(255,255,255,.8)', borderRadius: 12, border: '1px solid rgba(232,121,78,.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <span style={{ fontSize: 16 }}>💰</span>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>Prix des matériaux en ligne</p>
-                    <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>L'IA consulte les sites Rona, Canac, Home Depot, BMR et Richelieu pour estimer les coûts matériaux de ce projet.</p>
-                  </div>
-                  <button
-                    className="btn-primary text-xs flex-shrink-0"
-                    style={{ marginLeft: 'auto' }}
-                    onClick={searchMaterialPrices}
-                    disabled={searchingPrices}
-                  >
-                    {searchingPrices ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
-                    {searchingPrices ? 'Recherche…' : 'Chercher les prix'}
-                  </button>
+          const totalCout = approxLines.reduce((s, l) => s + (Number(l.cout) || 0), 0);
+          const totalVente = approxLines.reduce((s, l) => s + (Number(l.prix_vente) || 0), 0);
+          const totalMarkup = totalCout > 0 ? Math.round((totalVente - totalCout) / totalCout * 100) : 0;
+
+          /* Questions pertinentes = universelles + celles du type de travaux */
+          const typeQs = VISITE_QUESTIONS_BY_TYPE[workTypeVal] || [];
+          const allVisiteQs = [...VISITE_QUESTIONS_UNIVERSAL, ...typeQs];
+
+          const visiteAnswered = Object.keys(visiteAnswers).length;
+
+          return (
+            <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+              {/* En-tête */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
+                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>3 voies disponibles · avant le devis précis · toutes les cellules sont éditables</div>
                 </div>
-                {supplierPrices && (
-                  <div style={{ background: '#fff', borderRadius: 8, padding: 12, fontSize: 12.5, color: '#3A3D44', lineHeight: 1.7, whiteSpace: 'pre-wrap', border: '1px solid #E8EAED', marginTop: 4 }}>
-                    {supplierPrices}
-                  </div>
-                )}
               </div>
-            </div>
-          )}
 
-          {/* Méthode 2 — Demander des photos et infos au client */}
-          {estimTab === 'photos' && (
-            <div style={{ background: 'rgba(255,255,255,.8)', borderRadius: 12, padding: 20, border: '1px solid #E8EAED' }}>
-              <p style={{ fontSize: 13, color: '#7C8089', marginBottom: 14 }}>Envoyez ce message au client pour lui demander les informations nécessaires à l'estimation.</p>
-              <textarea
-                style={{ width: '100%', minHeight: 220, padding: 14, borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit', background: '#FAFAFA' }}
-                defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.name || 'votre projet'}.\n\nPour préparer une estimation précise, pourriez-vous nous envoyer :\n\n1. Des photos d'ensemble de chaque pièce (4 angles)\n2. Une courte vidéo (30–60 s) en décrivant les travaux souhaités\n3. Des photos rapprochées des éléments à modifier\n4. Les dimensions approximatives des espaces\n5. L'âge du bâtiment, votre budget visé, l'échéancier souhaité\n\nN'hésitez pas si vous avez des questions.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
-              />
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <button className="btn-primary text-xs" onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(document.querySelector('#client-msg-ta')?.value || ''); }}>
-                  {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
-                </button>
-                <button className="btn-secondary text-xs" onClick={() => window.open(`https://wa.me/${project.client_phone?.replace(/\D/g,'')}`, '_blank')} disabled={!project.client_phone}>
-                  <MessageCircle size={13}/> Envoyer par WhatsApp
-                </button>
+              {/* Bannière profil métier */}
+              <div style={{ padding: '10px 16px', background: 'rgba(232,121,78,.08)', border: '1px solid rgba(232,121,78,.2)', borderRadius: 10, marginBottom: 20, fontSize: 13, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Sparkles size={14} color={BRAND}/>
+                <span>Adapté à ton profil :</span>
+                <b style={{ color: BRAND }}>Entrepreneur général</b>
+                <span style={{ color: '#9CA3AF' }}>—</span>
+                <span>les lignes, photos et questions varient selon le métier.</span>
               </div>
-              <div style={{ marginTop: 16, padding: '12px 14px', background: '#EEF1FD', borderRadius: 10 }}>
-                <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>📋 Checklist photos à demander</p>
-                {['Vue d\'ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, toilette)', 'Panneau électrique (ouvert)', 'Sous-sol ou vide sanitaire', 'Toiture et gouttières (extérieur)'].map((item, i) => (
-                  <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#3A3D44', marginBottom: 6, cursor: 'pointer' }}>
-                    <input type="checkbox" style={{ accentColor: BRAND }}/>
-                    {item}
-                  </label>
+
+              {/* Onglets */}
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, marginBottom: 24, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
+                {[
+                  { k: 'voieA', label: 'Voie A — Recherche IA' },
+                  { k: 'voieB', label: 'Voie B — Message client' },
+                  { k: 'voieC', label: 'Voie C — Visite sur place' },
+                ].map(({ k, label }) => (
+                  <button key={k} type="button" onClick={() => setEstimTab(k)}
+                    style={{ flex: 1, border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+                      background: estimTab === k ? '#fff' : 'transparent',
+                      color: estimTab === k ? BRAND_DARK : '#7C8089',
+                      boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                    }}>{label}</button>
                 ))}
               </div>
-            </div>
-          )}
 
-          {/* Méthode 3 — Visite terrain */}
-          {estimTab === 'terrain' && (
-            <div style={{ background: 'rgba(255,255,255,.8)', borderRadius: 12, padding: 20, border: '1px solid #E8EAED' }}>
-              <div style={{ padding: '10px 14px', background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 9, marginBottom: 16, fontSize: 12.5, color: '#9A3412' }}>
-                Répondez à ces questions sur place. Vos réponses permettent à l'IA de préremplir l'estimation automatiquement.
-              </div>
-              {[
-                { id: 'trades', q: 'Quels corps de métier sont impliqués ?', opts: ['Électricité', 'Plomberie', 'Charpenterie', 'Peinture', 'Couverture', 'Excavation'] },
-                { id: 'bearing_walls', q: 'Des murs porteurs sont-ils touchés ?', opts: ['Oui', 'Non', 'À vérifier'] },
-                { id: 'occupied', q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — locataires présents', 'Non — vacant', 'Partiellement'] },
-                { id: 'permit', q: 'Un permis municipal est-il requis ?', opts: ['Oui — en cours', 'Oui — à demander', 'Non requis'] },
-                { id: 'hazmat', q: 'Présence de matériaux dangereux ?', opts: ['Amiante suspectée', 'Peinture au plomb', 'Aucun à ma connaissance'] },
-              ].map(({ id, q, opts }) => (
-                <div key={id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #F0F2F4' }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>{q}</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {opts.map(opt => (
-                      <button key={opt} type="button"
-                        onClick={() => setTerrainAnswers(a => ({ ...a, [id]: opt }))}
-                        style={{
-                          padding: '5px 12px', borderRadius: 8, fontSize: 12.5, border: '1px solid', cursor: 'pointer', fontWeight: 600, transition: 'all .12s',
-                          background: terrainAnswers[id] === opt ? BRAND : '#fff',
-                          borderColor: terrainAnswers[id] === opt ? BRAND : '#E8EAED',
-                          color: terrainAnswers[id] === opt ? '#fff' : '#3A3D44',
-                        }}
-                      >{opt}</button>
+              {/* ── Voie A — Tableau d'estimation + IA ── */}
+              {estimTab === 'voieA' && (
+                <div>
+                  <div style={{ background: 'rgba(255,255,255,.9)', borderRadius: 12, border: '1px solid #E8EAED', overflow: 'auto' }}>
+                    {/* Entêtes tableau */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, background: '#F8FAFB', borderBottom: '1px solid #E8EAED', padding: '8px 14px', minWidth: 700 }}>
+                      {['POSTE','SOURCE','INCLUS','NON INCLUS','DURÉE','COÛT','PRIX VENTE','MARKUP',''].map((h, i) => (
+                        <span key={i} style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#9CA3AF', textTransform: 'uppercase' }}>{h}</span>
+                      ))}
+                    </div>
+
+                    {approxLines.length === 0 && (
+                      <div style={{ padding: '24px 14px', textAlign: 'center', color: '#B0B3BA', fontSize: 13 }}>
+                        Aucune ligne — ajoutez-en ou utilisez l'IA ci-dessous pour remplir automatiquement
+                      </div>
+                    )}
+
+                    {approxLines.map(line => {
+                      const markup = (Number(line.cout) > 0 && Number(line.prix_vente) > 0)
+                        ? Math.round((Number(line.prix_vente) - Number(line.cout)) / Number(line.cout) * 100) : null;
+                      return (
+                        <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, borderBottom: '1px solid #F4F5F6', padding: '5px 14px', alignItems: 'center', minWidth: 700 }}>
+                          {[
+                            { field:'poste', ph:'Démolition…' },
+                            { field:'source', ph:'Historique / fournisseur' },
+                            { field:'inclus', ph:'Ce qui est inclus' },
+                            { field:'non_inclus', ph:'Non inclus' },
+                            { field:'duree', ph:'3 j' },
+                            { field:'cout', ph:'0', t:'number' },
+                            { field:'prix_vente', ph:'0', t:'number' },
+                          ].map(({ field, ph, t }) => (
+                            <input key={field} type={t||'text'} value={line[field]||''} onChange={e=>updateLine(line.id,field,e.target.value)} placeholder={ph}
+                              style={{ border:'none', background:'transparent', fontSize:12.5, color:'#15171C', padding:'3px 4px 3px 0', outline:'none', width:'100%', minWidth:0, fontFamily:'inherit' }}/>
+                          ))}
+                          <span style={{ fontSize:11.5, fontWeight:700, color: markup > 0 ? '#16a34a' : '#9CA3AF' }}>{markup !== null ? `+${markup}%` : '—'}</span>
+                          <button onClick={() => removeLine(line.id)} style={{ border:'none', background:'none', cursor:'pointer', color:'#C8CACD', padding:0, display:'flex', alignItems:'center' }}><X size={13}/></button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Ligne total */}
+                    {approxLines.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, padding: '10px 14px', background: '#F8FAFB', borderTop: '2px solid #E0E4E8', alignItems: 'center', minWidth: 700 }}>
+                        <span style={{ fontSize:12, fontWeight:800, color:'#15171C', gridColumn:'1/6' }}>TOTAL · Fourchette : {money(Math.round(totalVente * 0.87))} – {money(Math.round(totalVente * 1.13))}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalCout)}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalVente)}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color: totalMarkup > 0 ? '#16a34a' : '#9CA3AF' }}>+{totalMarkup}%</span>
+                        <span/>
+                      </div>
+                    )}
+
+                    {/* Ajouter une ligne */}
+                    <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4' }}>
+                      <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
+                        + Ajouter une ligne
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bouton IA */}
+                  <div style={{ marginTop:14, padding:'14px 18px', background:'rgba(255,255,255,.85)', borderRadius:12, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:12 }}>
+                    <Sparkles size={16} color={BRAND}/>
+                    <div style={{ flex:1 }}>
+                      <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>Remplir avec l'IA</p>
+                      <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>L'IA analyse les projets similaires et les prix des fournisseurs (Rona, Canac, Home Dépot, BMR).</p>
+                    </div>
+                    <button className="btn-primary text-xs" style={{ flexShrink:0 }} onClick={searchMaterialPrices} disabled={searchingPrices}>
+                      {searchingPrices ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
+                      {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
+                    </button>
+                  </div>
+                  {supplierPrices && (
+                    <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:14, fontSize:12.5, color:'#3A3D44', lineHeight:1.7, whiteSpace:'pre-wrap', border:'1px solid #E8EAED' }}>
+                      {supplierPrices}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Voie B — Message client + calculateur au pi²/m² ── */}
+              {estimTab === 'voieB' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                  {/* Message prérempli */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
+                    <textarea ref={clientMsgRef}
+                      style={{ width:'100%', minHeight:220, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
+                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+                    />
+                    <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(clientMsgRef.current?.value || ''); }}>
+                        {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { const body = encodeURIComponent(clientMsgRef.current?.value || ''); window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent('Demande d\'informations — ' + project.name)}&body=${body}`,'_blank'); }}
+                        disabled={!project.client_email}>
+                        ✉️ Envoyer par courriel
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => window.open(`sms:${project.client_phone?.replace(/\D/g,'')}?body=${encodeURIComponent(clientMsgRef.current?.value||'')}`, '_blank')}
+                        disabled={!project.client_phone}>
+                        📱 Par SMS
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Calculateur au pi²/m² */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
+                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
+                      📐 Calculateur de prix approximatif
+                    </p>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
+                      {/* Toggle pi²/m² */}
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
+                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
+                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                            <button key={u} onClick={() => setSqUnit(u)}
+                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
+                                background: sqUnit===u ? '#fff' : 'transparent',
+                                color: sqUnit===u ? '#15171C' : '#9CA3AF',
+                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Tarif */}
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
+                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
+                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
+                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                        </div>
+                      </div>
+                      {/* Superficie */}
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
+                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
+                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                      </div>
+                      {/* Résultat */}
+                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
+                        const base = Number(sqRate) * Number(sqArea);
+                        const low = money(Math.round(base * 0.85));
+                        const high = money(Math.round(base * 1.15));
+                        const mid = money(Math.round(base));
+                        return (
+                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
+                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
+                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{mid}</p>
+                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {low} – {high}</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Checklist photos */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <p style={{ fontSize:12.5, fontWeight:800, color:'#15171C', margin:'0 0 12px', display:'flex', alignItems:'center', gap:8 }}>📷 CHECKLIST PHOTOS DEMANDÉES</p>
+                    {['Ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, WC)', 'Panneau électrique ouvert', 'Sous-sol ou vide sanitaire', 'Toiture / gouttières (de l\'extérieur)'].map((item, i) => (
+                      <label key={i} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#3A3D44', marginBottom:8, cursor:'pointer' }}>
+                        <input type="checkbox" style={{ accentColor:BRAND, width:15, height:15 }}/> {item}
+                      </label>
                     ))}
                   </div>
                 </div>
-              ))}
-              <div style={{ marginBottom: 12 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>Superficie totale à rénover (pi²)</p>
-                <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth: 160 }}
-                  value={terrainAnswers.area || ''} onChange={e => setTerrainAnswers(a => ({ ...a, area: e.target.value }))}/>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 8 }}>Observations sur place</p>
-                <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
-                  value={terrainAnswers.notes || ''} onChange={e => setTerrainAnswers(a => ({ ...a, notes: e.target.value }))}/>
-              </div>
-              {Object.keys(terrainAnswers).length >= 3 && (
-                <div style={{ padding: '8px 14px', background: '#E9F8EE', borderRadius: 8, fontSize: 12.5, color: '#16a34a', fontWeight: 700, marginBottom: 12 }}>
-                  ✓ {Object.keys(terrainAnswers).length} éléments renseignés — cliquez ci-dessous pour générer l'estimation.
+              )}
+
+              {/* ── Voie C — Visite sur place ── */}
+              {estimTab === 'voieC' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  <p style={{ fontSize:13, color:'#7C8089', margin:0 }}>
+                    Questions guidées pour <b style={{ color:'#15171C' }}>Entrepreneur général</b>. Répondez sur place — les réponses préremplissent la Voie A automatiquement.
+                  </p>
+
+                  {/* Question 1 — Corps de métier (multi-select) */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>1</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Quels corps de métier sont impliqués ?</p>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                      {ALL_TRADES.map(t => {
+                        const isSelected = selectedTrades.includes(t.key);
+                        return (
+                          <button key={t.key} type="button"
+                            onClick={() => saveTrades(isSelected ? selectedTrades.filter(k=>k!==t.key) : [...selectedTrades, t.key])}
+                            style={{ padding:'6px 13px', borderRadius:20, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: isSelected ? BRAND : '#fff',
+                              borderColor: isSelected ? BRAND : '#E0E4E8',
+                              color: isSelected ? '#fff' : '#3A3D44' }}>
+                            {t.emoji} {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Questions universelles + spécifiques au type de travaux */}
+                  {allVisiteQs.map((q, qi) => (
+                    <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                        <span style={{ width:24, height:24, borderRadius:8, background: visiteAnswers[q.id] ? '#DCFCE7' : `${BRAND}22`, color: visiteAnswers[q.id] ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                          {visiteAnswers[q.id] ? '✓' : qi + 2}
+                        </span>
+                        <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
+                      </div>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                        {q.opts.map(opt => (
+                          <button key={opt} type="button"
+                            onClick={() => saveVisite({ [q.id]: visiteAnswers[q.id] === opt ? null : opt })}
+                            style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: visiteAnswers[q.id] === opt ? BRAND : '#fff',
+                              borderColor: visiteAnswers[q.id] === opt ? BRAND : '#E0E4E8',
+                              color: visiteAnswers[q.id] === opt ? '#fff' : '#3A3D44' }}>
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Superficie + observations */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>{allVisiteQs.length + 2}</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Superficie totale à rénover</p>
+                    </div>
+                    <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:12 }}>
+                      <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth:130 }}
+                        value={visiteAnswers.area || ''} onChange={e => saveVisite({ area: e.target.value })}/>
+                      <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2 }}>
+                        {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                          <button key={u} onClick={() => saveVisite({ area_unit: u })}
+                            style={{ border:'none', borderRadius:6, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+                              background: (visiteAnswers.area_unit||'sqft')===u ? '#fff' : 'transparent',
+                              color: (visiteAnswers.area_unit||'sqft')===u ? '#15171C' : '#9CA3AF',
+                              boxShadow: (visiteAnswers.area_unit||'sqft')===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:'0 0 6px' }}>Observations sur place</p>
+                    <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
+                      value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
+                  </div>
+
+                  {/* Barre de progression + action */}
+                  {visiteAnswered > 0 && (
+                    <div style={{ padding:'12px 16px', background:'#E9F8EE', borderRadius:10, display:'flex', alignItems:'center', gap:12 }}>
+                      <span style={{ fontSize:20 }}>✅</span>
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>{visiteAnswered} élément{visiteAnswered>1?'s':''} renseigné{visiteAnswered>1?'s':''}</p>
+                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à la Voie A pour générer l'estimation avec ces données.</p>
+                      </div>
+                      <button className="btn-primary text-xs" onClick={() => setEstimTab('voieA')}>
+                        <Sparkles size={13}/> Générer l'estimation
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-primary text-xs" onClick={() => { setEstimTab('ia'); }} disabled={Object.keys(terrainAnswers).length < 3}>
-                  <Sparkles size={13}/> Générer l'estimation (IA)
-                </button>
-                <button className="btn-secondary text-xs">
-                  <FileText size={13}/> Rapport de visite PDF (bientôt)
-                </button>
-              </div>
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* ── Rentabilité ── (violet) */}
         {profit && (
