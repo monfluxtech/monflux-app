@@ -14,7 +14,6 @@ const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
-  { id: 's-pipeline', icon: '🔄', label: 'Pipeline du projet' },
   { id: 's-ai', icon: '📡', label: 'Capture IA' },
   { id: 's-estimation', icon: '📊', label: 'Estimation terrain' },
   { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
@@ -44,7 +43,8 @@ function InlineField({ value, onSave, placeholder = '—', multiline = false, st
   const [val, setVal] = useState(value || '');
   const [committed, setCommitted] = useState(value || '');
   const inputRef = useRef(null);
-  useEffect(() => { if (!editing) { setVal(value || ''); setCommitted(value || ''); } }, [value, editing]);
+  // Sync from parent only when value prop changes — NOT when editing toggles (prevents committed reset before API responds)
+  useEffect(() => { if (!editing) { setVal(value || ''); setCommitted(value || ''); } }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
   const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
   const cancel = () => { setVal(committed); setEditing(false); };
   const save = () => {
@@ -467,6 +467,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
   const [genQr, setGenQr] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [timesheets, setTimesheets] = useState([]);
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
@@ -600,6 +601,19 @@ export default function ProjectDetail() {
       const impacts = {};
       (cos || []).forEach(co => { if (co.ai_impact) impacts[co.id] = co.ai_impact; });
       setCoImpact(impacts);
+      // QR punch — restore from field_assessment (permanent) or generate once
+      const fa = proj.field_assessment || {};
+      if (fa.qr_image) {
+        setQrData({ qr_image: fa.qr_image, url: fa.qr_url });
+      } else {
+        try {
+          const { data: qr } = await punchApi.generate({ project_id: id, label: proj.name });
+          setQrData(qr);
+          const nextFa = { ...fa, qr_image: qr.qr_image, qr_url: qr.url };
+          await projectsApi.update(id, { field_assessment: nextFa });
+          setProject(p => ({ ...p, field_assessment: nextFa }));
+        } catch {}
+      }
     } catch {} finally { setLoading(false); }
   };
 
@@ -1077,6 +1091,19 @@ export default function ProjectDetail() {
     accepte: 'Accepté', planifie: 'Planifié', en_chantier: 'En chantier',
     a_facturer: 'À facturer', paye: 'Payé', clos: 'Clos',
   };
+  const WORK_TYPE_LABELS = {
+    kitchen: 'Cuisine', bathroom: 'Salle de bain', basement: 'Sous-sol',
+    addition: 'Agrandissement', new_build: 'Construction neuve', roofing: 'Toiture',
+    exterior: 'Extérieur', commercial: 'Commercial', interior: 'Intérieur', other: '',
+  };
+  const PIPE = [
+    { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
+    { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
+    { key: 'planifie', label: 'Planifié' }, { key: 'en_chantier', label: 'En chantier' },
+    { key: 'a_facturer', label: 'À facturer' }, { key: 'paye', label: 'Payé' },
+    { key: 'clos', label: 'Clos' },
+  ];
+  const pipeActiveIdx = PIPE.findIndex(s => s.key === project.status);
 
   const toggleSectionVisibility = (sectionId) => {
     setHiddenSections(prev => {
@@ -1202,7 +1229,7 @@ export default function ProjectDetail() {
         const fa = project.field_assessment || {};
         const startLabel = fa.start_label || (project.start_date ? project.start_date.slice(0,10) : '');
         const endLabel   = fa.end_label   || (project.end_date   ? project.end_date.slice(0,10)   : '');
-        const workType   = project.type || '';
+        const workType   = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
         const addr       = project.address || '';
 
         const overdue = projectInvoices.some(inv => inv.status === 'overdue');
@@ -1225,7 +1252,7 @@ export default function ProjectDetail() {
 
             {/* Titre composé — format : Type de travaux | Adresse | Début - Fin */}
             <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.2, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 4px' }}>
-              <InlineField value={workType} onSave={v => saveField('type', v)} placeholder="Type de travaux"
+              <InlineField value={workType} onSave={v => saveAssessmentField('work_type', v)} placeholder="Type de travaux"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
               {addr && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
@@ -1262,8 +1289,8 @@ export default function ProjectDetail() {
               ))}
             </div>
 
-            {/* Métriques non-éditables */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
+            {/* Métriques non-éditables + QR */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24, alignItems: 'center' }}>
               {contractValue > 0 && (
                 <div className="kv"><div className="kv-k">Valeur contrat</div><div className="kv-v">{money(contractValue)}</div></div>
               )}
@@ -1277,14 +1304,19 @@ export default function ProjectDetail() {
                   {hc.label}
                 </div>
               </div>
+              {qrData && (
+                <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
+                  style={{ marginLeft: 'auto', background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)', flexShrink: 0 }}>
+                  <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
+                </button>
+              )}
             </div>
 
             {/* Grille éditables — ordre optimisé, responsable permis conditionnel */}
             <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
-              <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'rgba(21,23,28,.35)', margin: '0 0 12px' }}>Infos du projet — cliquer pour modifier</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
                 {[
-                  { label: 'Type de travaux',       fn: v => saveField('type', v),                  value: workType },
+                  { label: 'Type de travaux',       fn: v => saveAssessmentField('work_type', v),   value: workType },
                   { label: 'Adresse',               fn: v => saveField('address', v),               value: addr },
                   { label: 'Date début',            fn: v => saveAssessmentField('start_label', v), value: startLabel },
                   { label: 'Date fin',              fn: v => saveAssessmentField('end_label', v),   value: endLabel },
@@ -1324,9 +1356,59 @@ export default function ProjectDetail() {
                 )}
               </div>
             </div>
+
+            {/* ── Pipeline — fusionné dans l'entête ── */}
+            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+              <div style={{ position: 'relative', padding: '8px 0 8px' }}>
+                <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: 'rgba(0,0,0,.1)', zIndex: 0 }} />
+                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
+                  {PIPE.map((s, i) => {
+                    const isDone = i < pipeActiveIdx;
+                    const isActive = i === pipeActiveIdx;
+                    return (
+                      <div key={s.key}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
+                        onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
+                        title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
+                      >
+                        <div style={{
+                          width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
+                          border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : 'rgba(0,0,0,.15)'}`,
+                          background: isDone ? '#16a34a' : isActive ? BRAND : 'rgba(255,255,255,.7)',
+                          display: 'grid', placeItems: 'center', transition: '.2s',
+                          boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
+                        }}>
+                          {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                          {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.55)', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
           </div>
         );
       })()}
+
+      {/* ── QR Modal ── */}
+      {showQrModal && qrData && (
+        <div onClick={() => setShowQrModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, padding: '32px 36px', maxWidth: 380, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 8px' }}>QR Punch</p>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#15171C', margin: '0 0 20px', lineHeight: 1.3 }}>{project.name}</h3>
+            <img src={qrData.qr_image} alt="QR Punch" style={{ width: 220, height: 220, borderRadius: 12, border: '1px solid #E8EAED', display: 'block', margin: '0 auto 20px' }} />
+            <p style={{ fontSize: 12, color: '#7C8089', margin: '0 0 20px' }}>Affichez ce QR à l'entrée du chantier. Les travailleurs scannent pour pointer entrée/sortie.</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowQrModal(false)} style={{ flex: 1, padding: '10px 0', border: '1px solid #E8EAED', borderRadius: 10, background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6B7280' }}>Fermer</button>
+              <button onClick={printQR} style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: BRAND, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>🖨 Imprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1361,58 +1443,6 @@ export default function ProjectDetail() {
             )}
           </div>
         </div>
-
-        {/* ── Pipeline ── (cream) */}
-        {(() => {
-          const PIPE = [
-            { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
-            { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
-            { key: 'planifie', label: 'Planifié' }, { key: 'en_chantier', label: 'En chantier' },
-            { key: 'a_facturer', label: 'À facturer' }, { key: 'paye', label: 'Payé' },
-            { key: 'clos', label: 'Clos' },
-          ];
-          const activeIdx = PIPE.findIndex(s => s.key === project.status);
-          return (
-            <div id="s-pipeline" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔄</div>
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
-                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Avancement dans les 9 étapes — de la soumission à la clôture</div>
-                </div>
-                  </div>
-              <div style={{ position: 'relative', padding: '8px 0 28px' }}>
-                <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: '#E8EAED', zIndex: 0 }} />
-                <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: activeIdx >= 0 ? `${(activeIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
-                  {PIPE.map((s, i) => {
-                    const isDone = i < activeIdx;
-                    const isActive = i === activeIdx;
-                    return (
-                      <div key={s.key}
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
-                        onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
-                        title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
-                      >
-                        <div style={{
-                          width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
-                          border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : '#E8EAED'}`,
-                          background: isDone ? '#16a34a' : isActive ? BRAND : '#fff',
-                          display: 'grid', placeItems: 'center', transition: '.2s',
-                          boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
-                        }}>
-                          {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                          {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
-                        </div>
-                        <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : '#7C8089', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -2232,32 +2262,6 @@ export default function ProjectDetail() {
             </div>
           ) : !showOrderForm && (
             <p className="text-sm text-gray-400 text-center py-4">Aucune commande. Ajoutez des commandes pour suivre vos approvisionnements.</p>
-          )}
-        </div>
-
-        {/* ── QR Punch ── (blue) */}
-        <div id="s-qr" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔲</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>QR Punch</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Code QR chantier pour pointer entrée/sortie</div>
-            </div>
-            <button className="btn-secondary text-xs" onClick={generateQR} disabled={genQr}>
-              {genQr ? <Loader2 size={13} className="animate-spin"/> : <QrCode size={13}/>} Générer QR
-            </button>
-          </div>
-          {qrData ? (
-            <div className="flex items-start gap-4">
-              <img src={qrData.qr_image} alt="QR" className="w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0"/>
-              <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">Affichez ce QR à l'entrée du chantier</p>
-                <p className="text-xs text-gray-400 mb-2">Les travailleurs scannent avec leur téléphone pour pointer entrée/sortie.</p>
-                <button className="btn-primary text-xs py-1.5" onClick={printQR}><QrCode size={13}/> Imprimer le QR</button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 text-center py-4">Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier.</p>
           )}
         </div>
 
