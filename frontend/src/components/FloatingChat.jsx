@@ -153,7 +153,7 @@ export default function FloatingChat() {
         onClick={() => setOpen(o => !o)}
         className="fixed bottom-5 right-5 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-50 transition-all hover:scale-105 active:scale-95"
         style={{ background: '#F26522' }}
-        title="Assistant IA MONFLUX"
+        title="Florence — assistante IA MONFLUX"
       >
         {open
           ? <X size={20} className="text-white" />
@@ -176,8 +176,8 @@ export default function FloatingChat() {
               <Sparkles size={14} className="text-white" />
             </div>
             <div className="flex-1">
-              <p className="text-white font-semibold text-sm">Assistant IA</p>
-              <p className="text-white/70 text-xs">Crée leads · Planifie · Répond</p>
+              <p className="text-white font-semibold text-sm">Florence ✦ Flo</p>
+              <p className="text-white/70 text-xs">Assistante IA · Crée leads · Planifie</p>
             </div>
             <button
               onClick={() => { setOpen(false); navigate('/chat'); }}

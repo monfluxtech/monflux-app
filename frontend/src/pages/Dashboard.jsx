@@ -351,7 +351,7 @@ export default function Dashboard() {
               <Sparkles size={15} className="text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900 leading-tight">Assistant IA MONFLUX</p>
+              <p className="text-sm font-semibold text-gray-900 leading-tight">Florence ✦ Assistante IA</p>
               <p className="text-xs text-gray-500 leading-tight truncate">
                 {summary
                   ? `${summary.active_projects ?? 0} chantier(s) actif(s) · ${summary.to_invoice ?? 0} à facturer · ${summary.outstanding > 0 ? `${Math.round(summary.outstanding/1000)}k$ à encaisser` : 'rien à encaisser'}${summary.overdue_count > 0 ? ` · ${summary.overdue_count} en retard` : ''}`
@@ -364,7 +364,7 @@ export default function Dashboard() {
           <div className="flex gap-2 mb-3">
             <input
               className="input flex-1 bg-white"
-              placeholder="Demandez à l'IA : « Résume mes chantiers » ou « Crée un lead… »"
+              placeholder="Demandez à Florence : « Résume mes chantiers » ou « Crée un lead… »"
               value={askInput}
               onChange={e => setAskInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && askAI()}

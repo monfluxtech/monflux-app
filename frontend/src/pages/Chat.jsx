@@ -182,7 +182,7 @@ export default function Chat() {
           {/* Header */}
           <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
             <Sparkles size={15} className="text-brand" />
-            <span className="text-sm font-semibold text-gray-900">Assistant IA MONFLUX</span>
+            <span className="text-sm font-semibold text-gray-900">Florence — assistante IA MONFLUX</span>
             {usage && (
               <span className="ml-auto flex items-center gap-2">
                 <span className={`text-xs ${usage.remaining <= 5 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>

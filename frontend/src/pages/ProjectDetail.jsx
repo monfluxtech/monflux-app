@@ -256,7 +256,7 @@ const PROJ_API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/a
 function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
   const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: `Bonjour! Je suis l'assistant IA de ce projet. Je peux t'aider à suivre l'avancement de **${projectName}**, répondre à tes questions, rédiger des notes ou prendre des actions. Comment puis-je t'aider?` }
+    { role: 'assistant', content: `Bonjour! Je suis **Florence**, l'assistante IA de MONFLUX. Je suis là pour t'aider avec le projet **${projectName}** — questions, résumés, notes, actions. Comment puis-je t'aider?` }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -337,7 +337,7 @@ function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)` }}>
           <div style={{ width: 36, height: 36, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Sparkles size={18} color="#fff" /></div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>Assistant IA</p>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>Florence ✦ Flo</p>
             <p style={{ fontSize: 11.5, color: 'rgba(255,255,255,.85)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectName}</p>
           </div>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,.18)', border: 'none', borderRadius: 9, padding: 7, cursor: 'pointer', color: '#fff', display: 'grid', placeItems: 'center' }}><X size={16} /></button>
@@ -1273,6 +1273,9 @@ export default function ProjectDetail() {
     setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
   };
 
+  /* Constante API pour les appels fetch directs (SSE) */
+  const PROJ_CHAT_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+
   const changeProjectStatus = async () => {
     if (!statusPopup) return;
     setChangingStatus(true);
@@ -1292,14 +1295,28 @@ export default function ProjectDetail() {
   const searchMaterialPrices = async () => {
     if (!project) return;
     setSearchingPrices(true);
+    setSupplierPrices('');
     try {
-      const trades = (project.trades || []).map(t => t.trade).join(', ') || 'rénovation générale';
-      const { data } = await aiApi.ask({
-        project_id: id,
-        message: `Recherche les prix courants des matériaux de construction au Québec pour ce type de projet : ${project.name}. Corps de métier impliqués : ${trades}. Fais une liste des principaux matériaux avec le prix moyen estimé chez les fournisseurs québécois (Rona, Canac, Home Depot, BMR). Format : tableau avec colonnes Matériau, Prix estimé, Fournisseur suggéré.`,
+      const fa = project.field_assessment || {};
+      const workType = fa.work_type || project.name || 'rénovation générale';
+      const trades = (project.trades || []).map(t => t.trade).join(', ') || workType;
+      const prompt = `Tu es Florence, l'assistante IA de MONFLUX. Génère une estimation approximative des coûts matériaux au Québec pour ce projet de construction : ${workType} — ${project.name}${project.address ? ` (${project.address})` : ''}. Corps de métier : ${trades}. \n\nFais un tableau court avec 6 à 10 lignes : | Poste | Coût approximatif | Source suggérée |\nUtilise les prix québécois courants (Rona, Canac, Home Dépôt, BMR, Patrick Morin). Indique une fourchette réaliste par ligne. À la fin, donne le total estimé.`;
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context_type: 'project', project_id: id }),
       });
-      setSupplierPrices(data?.response || data?.message || null);
-    } catch { setSupplierPrices('Impossible de récupérer les prix. Réessayez plus tard.'); }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let text = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const e = JSON.parse(line.slice(6)); if (e.type === 'text') { text += e.text; setSupplierPrices(text); } } catch {}
+        }
+      }
+    } catch { setSupplierPrices('Impossible de récupérer les prix. Vérifie ta connexion et réessaie.'); }
     finally { setSearchingPrices(false); }
   };
 
@@ -1590,6 +1607,93 @@ export default function ProjectDetail() {
     ],
   };
 
+  /* Lignes pré-remplies suggérées par type de travaux */
+  const SUGGESTED_LINES = {
+    'Cuisine': [
+      { poste:'Démolition cuisine', inclus:'Armoires, comptoir, revêtement sol', non_inclus:'Désamiantage', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Armoires', inclus:'Fourniture + pose', non_inclus:'Électroménagers', duree:'3-5 j', cout:'', prix_vente:'' },
+      { poste:'Comptoir', inclus:'Fourniture + pose + dosseret', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie cuisine', inclus:'Évier, robinetterie, branchements', non_inclus:'Déplacement drain', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Électricité cuisine', inclus:'Circuits sous-comptoir, hotte', non_inclus:'Panneau', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Revêtement de sol', inclus:'Fourniture + pose', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Peinture', inclus:'Murs, plafond', non_inclus:'Portes', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Salle de bain': [
+      { poste:'Démolition SDB', inclus:'Céramique, bain, vanité', non_inclus:'Amiante', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie', inclus:'Tuyauterie, branchements', non_inclus:'Déplacement drain', duree:'2 j', cout:'', prix_vente:'' },
+      { poste:'Douche / bain', inclus:'Fourniture + installation', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Céramique murs + plancher', inclus:'Fourniture + pose', non_inclus:'Pierre naturelle', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Vanité + miroir', inclus:'Fourniture + installation', non_inclus:'Éclairage encastré', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Électricité SDB', inclus:'Éclairage, ventilateur, prises GFCI', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Gypse / plafond', inclus:'Cloisons humides, mastic, peinture', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Sous-sol': [
+      { poste:'Ossature / cloisons', inclus:'Montants acier ou bois, seuils', non_inclus:'', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Isolation périmètre', inclus:'Murs extérieurs', non_inclus:'Plancher', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Gypse', inclus:'Pose, mastic, sablage', non_inclus:'Peinture', duree:'3-4 j', cout:'', prix_vente:'' },
+      { poste:'Plafond suspendu', inclus:'Grille T-bar + tuiles', non_inclus:'Luminaires encastrés', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Revêtement de sol', inclus:'LVP ou céramique, sous-plancher', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Électricité', inclus:'Circuits, sorties, éclairage', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Peinture', inclus:'Murs, plafond', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+    ],
+    'Toiture': [
+      { poste:'Dépose ancienne couverture', inclus:'Retrait + disposition débris', non_inclus:'Décontamination', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Réparation pontage/OSB', inclus:'Sections endommagées', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Membrane sous-toiture', inclus:'Ice & Water, feutre', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'Couverture', inclus:'Bardeaux ou tôle, pose', non_inclus:'Puits de lumière', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Solins', inclus:'Cheminée, lucarnes — aluminium', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'Gouttières', inclus:'Fourniture + installation + descentes', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+    ],
+    'Rénovation complète': [
+      { poste:'Démolition sélective', inclus:'Finitions, cloisons ciblées', non_inclus:'Décontamination', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie — rough-in + finition', inclus:'Tuyauterie complète', non_inclus:'Déplacement majeur', duree:'', cout:'', prix_vente:'' },
+      { poste:'Électricité — rough-in + finition', inclus:'Circuits + finition', non_inclus:'Panneau principal', duree:'', cout:'', prix_vente:'' },
+      { poste:'Gypse / cloisons', inclus:'Pose, mastic, sablage', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Revêtements de sol', inclus:'Toutes pièces — fourniture + pose', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Peinture complète', inclus:'Murs, plafonds, boiseries', non_inclus:'Extérieur', duree:'', cout:'', prix_vente:'' },
+      { poste:'Cuisine (armoires + comptoir)', inclus:'Fourniture + pose', non_inclus:'Électroménagers', duree:'', cout:'', prix_vente:'' },
+      { poste:'Main-d\'œuvre & coordination', inclus:'Supervision, nettoyage final', non_inclus:'Heures supp.', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Électricité': [
+      { poste:'Remplacement panneau électrique', inclus:'Panneau + fils + branchements', non_inclus:'Entrée Hydro-Québec', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Câblage — nouveaux circuits', inclus:'Romex, conduits, prises, interrupteurs', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Éclairage encastré LED', inclus:'Fourniture + installation', non_inclus:'Luminaires décoratifs', duree:'', cout:'', prix_vente:'' },
+      { poste:'Borne VE 240V', inclus:'Circuit dédié + prise NEMA 14-50', non_inclus:'Mise à niveau entrée', duree:'0.5 j', cout:'', prix_vente:'' },
+    ],
+    'Plomberie': [
+      { poste:'Remplacement tuyauterie', inclus:'PEX ou cuivre, eau froide/chaude', non_inclus:'Égout principal', duree:'', cout:'', prix_vente:'' },
+      { poste:'Chauffe-eau', inclus:'Fourniture + installation', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'SDB — rough-in plomberie', inclus:'Rough-in + raccordements', non_inclus:'Accessoires', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Démolition': [
+      { poste:'Démolition intérieure', inclus:'Cloisons, revêtements, plafonds', non_inclus:'Structure portante', duree:'', cout:'', prix_vente:'' },
+      { poste:'Disposition des débris (benne)', inclus:'Location benne + transport', non_inclus:'Matériaux dangereux', duree:'', cout:'', prix_vente:'' },
+      { poste:'Décontamination amiante/plomb', inclus:'Selon rapport environnemental', non_inclus:'Tests de laboratoire', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Paysagement': [
+      { poste:'Nivellement / terrassement', inclus:'Machinerie légère', non_inclus:'Excavation profonde', duree:'', cout:'', prix_vente:'' },
+      { poste:'Gazon en rouleau', inclus:'Pose, terreautage', non_inclus:'Ensemencement', duree:'', cout:'', prix_vente:'' },
+      { poste:'Plantation (arbres, arbustes)', inclus:'Fourniture + installation', non_inclus:'Entretien annuel', duree:'', cout:'', prix_vente:'' },
+      { poste:'Pavé uni / entrée', inclus:'Fourniture + pose', non_inclus:'Excavation', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Chauffage / climatisation': [
+      { poste:'Thermopompe centrale', inclus:'Fourniture + installation + réfrigérant', non_inclus:'Remplacement conduits', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Thermopompettes (mini-split)', inclus:'Unités intérieures + extérieure', non_inclus:'Raccordement électrique', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Conduits / grilles', inclus:'Remplacement ou ajout', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Fondation': [
+      { poste:'Excavation extérieure', inclus:'Machinerie, terre excavée', non_inclus:'Remblayage', duree:'', cout:'', prix_vente:'' },
+      { poste:'Imperméabilisation fondation', inclus:'Membrane + drain agricole', non_inclus:'Injection fissures', duree:'', cout:'', prix_vente:'' },
+      { poste:'Coulée béton / réparation', inclus:'Matériaux + main-d\'œuvre', non_inclus:'Ingénierie', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Agrandissement': [
+      { poste:'Fondation agrandissement', inclus:'Excavation + coulée', non_inclus:'Ingénierie structurelle', duree:'', cout:'', prix_vente:'' },
+      { poste:'Charpente (ossature bois)', inclus:'Murs, plancher, toit', non_inclus:'Dessins d\'architecte', duree:'', cout:'', prix_vente:'' },
+      { poste:'Revêtement extérieur', inclus:'Bardage, fenêtres, porte', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Isolation + gypse intérieur', inclus:'Murs + plafond', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+    ],
+  };
+
   const PIPE = [
     { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
     { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
@@ -1740,19 +1844,6 @@ export default function ProjectDetail() {
             <Mic size={18} /><Camera size={18} /><FileText size={18} /><Pencil size={18} />
           </div>
         </button>
-      </div>
-
-      {/* ── Résumé de la demande ── */}
-      <div style={{ padding: '16px 56px 20px', background: '#fff', borderBottom: '1px solid #E8EAED' }}>
-        <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 6px' }}>Résumé de la demande</p>
-        <InlineField
-          value={project.description || ''}
-          onSave={v => saveField('description', v)}
-          placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
-          multiline
-          style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-          displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-        />
       </div>
 
       {/* ── Hero ── */}
@@ -1982,7 +2073,7 @@ export default function ProjectDetail() {
 
       {/* ── Bouton flottant Chat IA ── */}
       {!showAIChat && (
-        <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à l'IA du projet">
+        <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à Florence — assistante IA">
           <Sparkles size={22} />
         </button>
       )}
@@ -2005,6 +2096,19 @@ export default function ProjectDetail() {
 
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
+
+        {/* ── Résumé de la demande ── */}
+        <div style={{ padding: '18px 56px 22px', background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+          <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 6px' }}>Résumé de la demande</p>
+          <InlineField
+            value={project.description || ''}
+            onSave={v => saveField('description', v)}
+            placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
+            multiline
+            style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+            displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+          />
+        </div>
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         {/* ── Estimation approximative ── */}
@@ -2031,6 +2135,13 @@ export default function ProjectDetail() {
             setProject(p => ({ ...p, field_assessment: next }));
           };
           const addLine = () => saveLines([...approxLines, { id: Date.now(), poste: '', source: '', inclus: '', non_inclus: '', duree: '', cout: '', prix_vente: '' }]);
+          const addSuggestedLines = () => {
+            const tpls = SUGGESTED_LINES[workTypeVal] || [];
+            if (!tpls.length) return;
+            const newLines = tpls.map((t, i) => ({ ...t, id: Date.now() + i, source: t.source || '' }));
+            saveLines([...approxLines, ...newLines]);
+          };
+          const hasSuggested = !!(SUGGESTED_LINES[workTypeVal] || []).length;
           const updateLine = (lid, field, value) => saveLines(approxLines.map(l => l.id === lid ? { ...l, [field]: value } : l));
           const removeLine = (lid) => saveLines(approxLines.filter(l => l.id !== lid));
 
@@ -2092,8 +2203,27 @@ export default function ProjectDetail() {
                     </div>
 
                     {approxLines.length === 0 && (
-                      <div style={{ padding: '24px 14px', textAlign: 'center', color: '#B0B3BA', fontSize: 13 }}>
-                        Aucune ligne — ajoutez-en ou utilisez l'IA ci-dessous pour remplir automatiquement
+                      <div style={{ padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, background: 'rgba(248,250,251,.6)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#fff', borderRadius: 11, border: `1px solid rgba(232,121,78,.25)`, width: '100%', maxWidth: 520, boxSizing: 'border-box' }}>
+                          <Sparkles size={16} color={BRAND}/>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Laisser Florence remplir automatiquement</p>
+                            <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>Florence analyse les projets similaires et les prix Rona, Canac, Home Dépôt, BMR.</p>
+                          </div>
+                          <button className="btn-primary text-xs" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={searchMaterialPrices} disabled={searchingPrices}>
+                            {searchingPrices ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                            {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
+                          </button>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>— ou —</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={addLine} style={{ background: '#fff', border: '1px solid #E0E4E8', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: BRAND, fontWeight: 700, padding: '7px 14px' }}>+ Ajouter une ligne vide</button>
+                          {hasSuggested && (
+                            <button onClick={addSuggestedLines} style={{ background: BRAND, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#fff', fontWeight: 700, padding: '7px 14px' }}>
+                              ✦ Lignes types — {workTypeVal || 'projet'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -2131,28 +2261,28 @@ export default function ProjectDetail() {
                       </div>
                     )}
 
-                    {/* Ajouter une ligne */}
-                    <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4' }}>
-                      <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
-                        + Ajouter une ligne
-                      </button>
-                    </div>
+                    {/* Footer tableau */}
+                    {approxLines.length > 0 && (
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
+                          + Ajouter une ligne
+                        </button>
+                        {hasSuggested && (
+                          <button onClick={addSuggestedLines} style={{ background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                            ✦ Lignes types {workTypeVal ? `— ${workTypeVal}` : ''}
+                          </button>
+                        )}
+                        <button onClick={searchMaterialPrices} disabled={searchingPrices} style={{ marginLeft:'auto', background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                          {searchingPrices ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                          {searchingPrices ? 'Florence analyse…' : 'Demander à Florence'}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Bouton IA */}
-                  <div style={{ marginTop:14, padding:'14px 18px', background:'rgba(255,255,255,.85)', borderRadius:12, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:12 }}>
-                    <Sparkles size={16} color={BRAND}/>
-                    <div style={{ flex:1 }}>
-                      <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>Remplir avec l'IA</p>
-                      <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>L'IA analyse les projets similaires et les prix des fournisseurs (Rona, Canac, Home Dépot, BMR).</p>
-                    </div>
-                    <button className="btn-primary text-xs" style={{ flexShrink:0 }} onClick={searchMaterialPrices} disabled={searchingPrices}>
-                      {searchingPrices ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
-                      {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
-                    </button>
-                  </div>
                   {supplierPrices && (
                     <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:14, fontSize:12.5, color:'#3A3D44', lineHeight:1.7, whiteSpace:'pre-wrap', border:'1px solid #E8EAED' }}>
+                      {searchingPrices && <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, color:BRAND, fontSize:12 }}><Loader2 size={12} className="animate-spin"/> Florence analyse les prix en temps réel…</div>}
                       {supplierPrices}
                     </div>
                   )}

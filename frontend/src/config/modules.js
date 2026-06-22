@@ -19,7 +19,7 @@ export const DEFAULT_PIPELINE = [
 export const CORE_MODULES = [
   { key: 'dashboard', label: 'Tableau de bord', path: '/dashboard', icon: 'LayoutDashboard' },
   { key: 'projets',   label: 'Projets',         path: '/projets',   icon: 'FolderKanban' },
-  { key: 'chat',      label: 'Assistant IA',    path: '/chat',      icon: 'Sparkles', highlight: true },
+  { key: 'chat',      label: 'Florence — Flo',  path: '/chat',      icon: 'Sparkles', highlight: true },
 ];
 
 // Onglets SECONDAIRES — activables par compagnie, dans l'ordre du cycle d'affaires.
