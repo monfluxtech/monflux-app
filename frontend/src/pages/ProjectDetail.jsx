@@ -1402,7 +1402,6 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
     }
     setProject(p => ({ ...p, phases: [] }));
 
-    const fa = project.field_assessment || {};
     const tradeList = [
       ...(fa.selected_trades || []),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
