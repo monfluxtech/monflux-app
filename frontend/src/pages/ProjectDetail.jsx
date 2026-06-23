@@ -481,11 +481,12 @@ function GanttChart({ phases, projectStart, projectEnd }) {
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
   const barWidth = (s, e) => Math.max(0.5, pct(e) - pct(s));
   const todayPct = pct(new Date());
-  const LW = 148;
+  const LW = 148; // Phase name col
+  const TW = 120; // Corps de métier col
 
   return (
     <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid #E8EAED', background: '#fff' }}>
-      <div style={{ minWidth: 560, fontFamily: 'inherit' }}>
+      <div style={{ minWidth: 580, fontFamily: 'inherit' }}>
         {/* Header */}
         <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#F9FAFB' }}>
           <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 14px' }}>Phase</div>
@@ -500,6 +501,7 @@ function GanttChart({ phases, projectStart, projectEnd }) {
               );
             })}
           </div>
+          <div style={{ width: TW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 12px', borderLeft: '1px solid #E8EAED' }}>Corps de métier</div>
         </div>
         {/* Phase rows */}
         {phases.map((ph, i) => {
@@ -514,19 +516,21 @@ function GanttChart({ phases, projectStart, projectEnd }) {
                 {ph.name}
               </div>
               <div style={{ flex: 1, position: 'relative', height: 38, borderLeft: '1px solid #E8EAED' }}>
-                {/* Today line */}
                 <div style={{ position: 'absolute', top: 0, bottom: 0, left:`${todayPct}%`, width: 2, background: BRAND, opacity: .55, zIndex: 3 }}/>
-                {/* Progress bar */}
                 <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left:`${pL}%`, width:`${pW}%`, minWidth: 6, height: 24, borderRadius: 6, background: color+'22', border:`1.5px solid ${color}`, overflow: 'hidden', zIndex: 2 }}>
                   {(ph.progress_pct||0) > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width:`${ph.progress_pct}%`, background: color+'55' }}/>}
                   {pW > 4 && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 7, overflow: 'hidden' }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 800, color, whiteSpace: 'nowrap', position: 'relative', zIndex: 1 }}>
-                        {ph.trade_name || `${ph.progress_pct||0}%`}
-                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 800, color, whiteSpace: 'nowrap', position: 'relative', zIndex: 1 }}>{ph.name}</span>
                     </div>
                   )}
                 </div>
+              </div>
+              {/* Corps de métier column */}
+              <div style={{ width: TW, flexShrink: 0, padding: '0 12px', borderLeft: '1px solid #F4F5F6' }}>
+                {ph.trade_name
+                  ? <span style={{ fontSize: 11.5, fontWeight: 700, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.trade_name}</span>
+                  : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
               </div>
             </div>
           );
@@ -3319,102 +3323,115 @@ Règles :
             </div>
           )}
 
-          {/* ── Tableau corps de métier ── */}
+          {/* ── Tableau corps de métier (conduit par les phases) ── */}
           {(() => {
-            const trades = project.trades || [];
+            const phases = project.phases || [];
             const STATUS_COLOR = { to_find: '#9CA3AF', contacted: '#3b82f6', quoted: '#f59e0b', confirmed: '#16a34a', done: '#16a34a', relanced: '#f97316' };
             const STATUS_LABEL = { to_find: 'À trouver', contacted: 'Contacté', quoted: 'Soumissionné', confirmed: 'Confirmé', done: 'Terminé', relanced: 'Relancé' };
 
-            const toggleCertif = (tradeId, key) => {
-              const next = { ...tradeCertifs, [tradeId]: { ...(tradeCertifs[tradeId] || {}), [key]: !(tradeCertifs[tradeId]?.[key]) } };
+            // Clé de certif par phase.id
+            const toggleCertif = (phaseId, key) => {
+              const next = { ...tradeCertifs, [phaseId]: { ...(tradeCertifs[phaseId] || {}), [key]: !(tradeCertifs[phaseId]?.[key]) } };
               setTradeCertifs(next);
               localStorage.setItem(`monflux-trade-certifs-${id}`, JSON.stringify(next));
             };
 
-            if (!trades.length) return (
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center' }}>
-                <HardHat size={26} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
-                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Aucun corps de métier. Utilise "Générer" depuis l'estimation ou ajoute manuellement.</p>
+            // Statut de la phase dans le tableau: on stocke dans localStorage par phase.id
+            const getPhaseTradeStatus = (phaseId) => {
+              try { return JSON.parse(localStorage.getItem(`monflux-phase-status-${id}`) || '{}')[phaseId] || 'to_find'; } catch { return 'to_find'; }
+            };
+            const setPhaseTradeStatus = (phaseId, status) => {
+              try {
+                const all = JSON.parse(localStorage.getItem(`monflux-phase-status-${id}`) || '{}');
+                localStorage.setItem(`monflux-phase-status-${id}`, JSON.stringify({ ...all, [phaseId]: status }));
+                setProject(p => ({ ...p, _phaseStatusTs: Date.now() })); // force re-render
+              } catch {}
+            };
+
+            if (!phases.length) return null;
+
+            // On ne montre que les phases qui ont un corps de métier assigné
+            const rows = phases.filter(ph => ph.trade_name);
+            if (!rows.length) return (
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '20px', textAlign: 'center', marginTop: 0 }}>
+                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Les phases générées n'ont pas de corps de métier assigné. Modifie les phases pour ajouter les corps de métier.</p>
               </div>
             );
 
             return (
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
-                {/* Table header */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 120px 160px 60px 60px 110px 36px', gap: 0, background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 14px' }}>
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
+                {/* Header */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 32px', background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 16px', alignItems: 'center' }}>
                   {['Corps de métier', 'Phase', 'Contact', 'Téléphone', 'Courriel', 'RBQ', 'CCQ', 'Statut', ''].map((h, i) => (
-                    <div key={i} style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', paddingRight: 8 }}>{h}</div>
+                    <div key={i} style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF' }}>{h}</div>
                   ))}
                 </div>
-                {/* Rows */}
-                {trades.map((t, idx) => {
-                  const sub = subs.find(s => s.id === t.chosen_subcontractor_id);
-                  const phase = (project.phases || []).find(p => p.trade_name?.toLowerCase() === t.trade?.toLowerCase());
-                  const sc = STATUS_COLOR[t.status] || '#9CA3AF';
-                  const sl = STATUS_LABEL[t.status] || t.status;
-                  const certif = tradeCertifs[t.id] || {};
+                {/* Rows — une par phase avec trade_name */}
+                {rows.map((ph, idx) => {
+                  const color = ph.color || PHASE_COLORS[idx % PHASE_COLORS.length];
+                  // Cherche un sous-traitant assigné via project.trades
+                  const matchedTrade = (project.trades || []).find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase());
+                  const sub = matchedTrade ? subs.find(s => s.id === matchedTrade.chosen_subcontractor_id) : null;
+                  const certif = tradeCertifs[ph.id] || {};
+                  const tradeStatus = getPhaseTradeStatus(ph.id);
+                  const sc = STATUS_COLOR[tradeStatus] || '#9CA3AF';
                   const isEven = idx % 2 === 0;
                   return (
-                    <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 120px 160px 60px 60px 110px 36px', gap: 0, padding: '11px 14px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < trades.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
+                    <div key={ph.id} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 32px', padding: '11px 16px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < rows.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
                       {/* Corps de métier */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, overflow: 'hidden' }}>
-                        <HardHat size={13} color={sc} style={{ flexShrink: 0 }}/>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.trade}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ph.trade_name}</span>
                       </div>
                       {/* Phase */}
-                      <div style={{ paddingRight: 8 }}>
-                        {phase
-                          ? <span style={{ fontSize: 11.5, fontWeight: 600, color: phase.color || PHASE_COLORS[0], background: (phase.color || PHASE_COLORS[0])+'18', padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap', overflow: 'hidden', display: 'block', textOverflow: 'ellipsis' }}>{phase.name}</span>
-                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                      <div>
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.name}</span>
                       </div>
                       {/* Contact */}
-                      <div style={{ paddingRight: 8, overflow: 'hidden' }}>
+                      <div style={{ overflow: 'hidden' }}>
                         {sub
                           ? <div>
                               <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</p>
                               {sub.company_name && <p style={{ fontSize: 10.5, color: '#9CA3AF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.company_name}</p>}
                             </div>
-                          : <select className="input py-0.5 text-xs" style={{ fontSize: 11 }} value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}>
-                              <option value="">— Assigner —</option>
-                              {subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>}
+                          : <span style={{ fontSize: 11.5, color: '#C8CACD', fontStyle: 'italic' }}>Non assigné</span>}
                       </div>
                       {/* Téléphone */}
-                      <div style={{ paddingRight: 8 }}>
+                      <div>
                         {sub?.phone
                           ? <a href={`tel:${sub.phone}`} style={{ fontSize: 12, color: '#3b82f6', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{sub.phone}</a>
-                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                          : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
                       </div>
                       {/* Courriel */}
-                      <div style={{ paddingRight: 8, overflow: 'hidden' }}>
+                      <div style={{ overflow: 'hidden' }}>
                         {sub?.email
                           ? <a href={`mailto:${sub.email}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{sub.email}</a>
-                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                          : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
                       </div>
                       {/* RBQ */}
                       <div>
-                        <button onClick={() => toggleCertif(t.id, 'rbq')}
-                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 7px', borderRadius: 6, border: `1.5px solid ${certif.rbq ? '#16a34a' : '#E0E4E8'}`, background: certif.rbq ? '#DCFCE7' : '#F9FAFB', color: certif.rbq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                          {certif.rbq ? <CheckCircle size={10}/> : <span>✗</span>} RBQ
+                        <button onClick={() => toggleCertif(ph.id, 'rbq')}
+                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 6px', borderRadius: 6, border: `1.5px solid ${certif.rbq ? '#16a34a' : '#E0E4E8'}`, background: certif.rbq ? '#DCFCE7' : '#F9FAFB', color: certif.rbq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {certif.rbq ? <CheckCircle size={10}/> : <span style={{ fontSize: 9 }}>✗</span>} RBQ
                         </button>
                       </div>
                       {/* CCQ */}
                       <div>
-                        <button onClick={() => toggleCertif(t.id, 'ccq')}
-                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 7px', borderRadius: 6, border: `1.5px solid ${certif.ccq ? '#16a34a' : '#E0E4E8'}`, background: certif.ccq ? '#DCFCE7' : '#F9FAFB', color: certif.ccq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                          {certif.ccq ? <CheckCircle size={10}/> : <span>✗</span>} CCQ
+                        <button onClick={() => toggleCertif(ph.id, 'ccq')}
+                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 6px', borderRadius: 6, border: `1.5px solid ${certif.ccq ? '#16a34a' : '#E0E4E8'}`, background: certif.ccq ? '#DCFCE7' : '#F9FAFB', color: certif.ccq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {certif.ccq ? <CheckCircle size={10}/> : <span style={{ fontSize: 9 }}>✗</span>} CCQ
                         </button>
                       </div>
                       {/* Statut */}
                       <div>
-                        <select value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}
-                          style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 6px', borderRadius: 7, border: `1.5px solid ${sc}30`, background: sc+'12', color: sc, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%' }}>
+                        <select value={tradeStatus} onChange={e => setPhaseTradeStatus(ph.id, e.target.value)}
+                          style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 5px', borderRadius: 7, border: `1.5px solid ${sc}40`, background: sc+'14', color: sc, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%' }}>
                           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                       </div>
-                      {/* Supprimer */}
+                      {/* Modifier */}
                       <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={12}/></button>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" onClick={() => setEditPhase(ph)}><Pencil size={12}/></button>
                       </div>
                     </div>
                   );
