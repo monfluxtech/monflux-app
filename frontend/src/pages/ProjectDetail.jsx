@@ -885,7 +885,7 @@ export default function ProjectDetail() {
   const [estimTab, setEstimTab] = useState('voieA');
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
   const [searchingPrices, setSearchingPrices] = useState(false);
-  const [supplierPrices, setSupplierPrices] = useState(null);
+  const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
   const [sqUnit, setSqUnit] = useState('sqft');
   const [sqRate, setSqRate] = useState('');
   const [sqArea, setSqArea] = useState('');
@@ -1295,28 +1295,84 @@ export default function ProjectDetail() {
   const searchMaterialPrices = async () => {
     if (!project) return;
     setSearchingPrices(true);
-    setSupplierPrices('');
+    setAiPriceResult(null);
     try {
       const fa = project.field_assessment || {};
       const workType = fa.work_type || project.name || 'rénovation générale';
-      const trades = (project.trades || []).map(t => t.trade).join(', ') || workType;
-      const prompt = `Tu es Florence, l'assistante IA de MONFLUX. Génère une estimation approximative des coûts matériaux au Québec pour ce projet de construction : ${workType} — ${project.name}${project.address ? ` (${project.address})` : ''}. Corps de métier : ${trades}. \n\nFais un tableau court avec 6 à 10 lignes : | Poste | Coût approximatif | Source suggérée |\nUtilise les prix québécois courants (Rona, Canac, Home Dépôt, BMR, Patrick Morin). Indique une fourchette réaliste par ligne. À la fin, donne le total estimé.`;
+      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation détaillée des coûts pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.
+
+INSTRUCTION STRICTE : Retourne UNIQUEMENT un objet JSON valide, sans markdown, sans texte avant ou après, sans balises de code. Structure exacte :
+{
+  "lignes": [
+    {
+      "poste": "Nom du poste",
+      "source": "Fournisseur (ex: Rona)",
+      "inclus": "Ce qui est inclus",
+      "non_inclus": "Ce qui n'est pas inclus",
+      "duree": "Ex: 2 j",
+      "cout": 1200,
+      "prix_vente": 1560
+    }
+  ],
+  "commentaires": "Note courte (2-3 phrases max, français québécois). Pas de prochaines étapes.",
+  "sources": [
+    { "label": "Rona — Armoires", "url": "https://www.rona.ca/fr/cuisine" }
+  ]
+}
+
+Règles :
+- 6 à 10 lignes représentatives pour ce type de projet
+- "cout" = coût de revient matériaux + main-d'œuvre (nombre entier CAD)
+- "prix_vente" = cout × (1 + marge typique construction QC, entre 20% et 35%)
+- Prix réalistes 2025-2026, marché québécois
+- Sources : URLs valides vers rona.ca, canac.ca, homedepot.ca, bmr.ca, patrickmorin.com
+- Commentaires courts, factuel, sans suggérer de prochaines étapes`;
+
       const token = localStorage.getItem('token');
       const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context_type: 'project', project_id: id }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context_type: 'estimation', project_id: id }),
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const reader = res.body.getReader(); const dec = new TextDecoder(); let text = '';
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let rawText = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
-          try { const e = JSON.parse(line.slice(6)); if (e.type === 'text') { text += e.text; setSupplierPrices(text); } } catch {}
+        for (const chunk of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const e = JSON.parse(chunk.slice(6)); if (e.type === 'text') rawText += e.text; } catch {}
         }
       }
-    } catch { setSupplierPrices('Impossible de récupérer les prix. Vérifie ta connexion et réessaie.'); }
+      /* Parse JSON — chercher le premier { ... } */
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const lignes = Array.isArray(parsed.lignes) ? parsed.lignes : [];
+        if (lignes.length > 0) {
+          const currentFa = project.field_assessment || {};
+          const currentLines = currentFa.approx_lines || [];
+          const newLines = lignes.map((l, i) => ({
+            id: Date.now() + i,
+            poste:      l.poste       || '',
+            source:     l.source      || '',
+            inclus:     l.inclus      || '',
+            non_inclus: l.non_inclus  || '',
+            duree:      l.duree       || '',
+            cout:       l.cout        || '',
+            prix_vente: l.prix_vente  || '',
+          }));
+          const nextFa = { ...currentFa, approx_lines: [...currentLines, ...newLines] };
+          await projectsApi.update(id, { field_assessment: nextFa });
+          setProject(p => ({ ...p, field_assessment: nextFa }));
+        }
+        setAiPriceResult({
+          comments: parsed.commentaires || '',
+          sources:  Array.isArray(parsed.sources) ? parsed.sources : [],
+        });
+      } else {
+        setAiPriceResult({ comments: 'Florence n\'a pas pu générer une estimation structurée. Réessaie.', sources: [] });
+      }
+    } catch { setAiPriceResult({ comments: 'Impossible de récupérer les prix. Vérifie ta connexion et réessaie.', sources: [] }); }
     finally { setSearchingPrices(false); }
   };
 
@@ -2280,10 +2336,31 @@ export default function ProjectDetail() {
                     )}
                   </div>
 
-                  {supplierPrices && (
-                    <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:14, fontSize:12.5, color:'#3A3D44', lineHeight:1.7, whiteSpace:'pre-wrap', border:'1px solid #E8EAED' }}>
-                      {searchingPrices && <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, color:BRAND, fontSize:12 }}><Loader2 size={12} className="animate-spin"/> Florence analyse les prix en temps réel…</div>}
-                      {supplierPrices}
+                  {searchingPrices && (
+                    <div style={{ marginTop:10, padding:'12px 16px', background:'rgba(232,121,78,.06)', borderRadius:10, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:10, fontSize:12.5, color:BRAND }}>
+                      <Loader2 size={14} className="animate-spin"/>
+                      Florence recherche les prix du marché québécois…
+                    </div>
+                  )}
+                  {aiPriceResult && (
+                    <div style={{ marginTop:10, background:'#fff', borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden' }}>
+                      {aiPriceResult.comments && (
+                        <div style={{ padding:'12px 16px', fontSize:12.5, color:'#3A3D44', lineHeight:1.65, borderBottom: aiPriceResult.sources?.length ? '1px solid #F0F2F4' : 'none' }}>
+                          <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', display:'block', marginBottom:4 }}>Note de Florence</span>
+                          {aiPriceResult.comments}
+                        </div>
+                      )}
+                      {aiPriceResult.sources?.length > 0 && (
+                        <div style={{ padding:'10px 16px', display:'flex', flexWrap:'wrap', gap:6 }}>
+                          <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', width:'100%', marginBottom:2 }}>Sources</span>
+                          {aiPriceResult.sources.map((s, i) => (
+                            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'3px 10px', background:'rgba(232,121,78,.08)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.2)`, display:'inline-flex', alignItems:'center', gap:4 }}>
+                              🔗 {s.label}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
