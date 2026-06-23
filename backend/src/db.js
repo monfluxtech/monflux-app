@@ -42,6 +42,15 @@ async function applyMigrations() {
     }
   };
 
+  // ── Core users columns — ensure all columns exist regardless of schema version ─
+  await run('users: name',         `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`);
+  await run('users: phone',        `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await run('users: avatar_url',   `ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
+  await run('users: language',     `ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'fr'`);
+  await run('users: landing_pref', `ALTER TABLE users ADD COLUMN IF NOT EXISTS landing_pref TEXT DEFAULT 'dashboard'`);
+  await run('users: is_verified',  `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE`);
+  await run('users: last_login_at',`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
+
   // ── Portal messages — client feedback from project portal (2026-06) ────────
   await run('portal_messages create',
     `CREATE TABLE IF NOT EXISTS portal_messages (
