@@ -390,6 +390,10 @@ async function applyMigrations() {
   // ── Project phases: sort order for drag-and-drop ─────────────────────────────
   await run('project_phases: sort_order',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`);
+  await run('project_phases: start_time',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS start_time VARCHAR(5)`);
+  await run('project_phases: duration_hours',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS duration_hours NUMERIC(6,2)`);
 }
 
 export async function initializeDatabase() {
