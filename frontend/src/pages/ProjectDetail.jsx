@@ -535,14 +535,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const dateDragRef = useRef(null);
   const scrollRef  = useRef(null);
   const ganttElRef = useRef(null);
+  const todayPxRef = useRef(0); // updated each render after todayPx is computed
 
-  const fixedColW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W;
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Centrer sur aujourd'hui au chargement et à chaque changement de vue
+  // (fixedColW hardcodé car LABEL_W/DATE_W etc. sont définis après le return null)
   useEffect(() => {
-    if (!scrollRef.current || todayPx <= 0) return;
+    if (!scrollRef.current || todayPxRef.current <= 0) return;
+    const FIXED = 155 + 20 + 102 + 50 + 140; // LABEL_W+20+DATE_W+DUR_W+ASSIGN_W
     const viewW = scrollRef.current.clientWidth;
-    scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - fixedColW) * 0.3);
+    scrollRef.current.scrollLeft = Math.max(0, todayPxRef.current - (viewW - FIXED) * 0.3);
   }, [scale]);
 
   if (!phases || phases.length === 0) return null;
@@ -628,6 +629,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // Pixel helpers — positions within the ganttW space
   const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - refStart) / totalMs * ganttW));
   const todayPx = px(new Date());
+  todayPxRef.current = todayPx; // sync ref so the useEffect (above early return) can read it
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
   const weekNum = (d) => {
