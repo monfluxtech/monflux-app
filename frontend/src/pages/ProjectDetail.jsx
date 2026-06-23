@@ -469,14 +469,15 @@ const PHASE_TEMPLATES = [
 ];
 
 const ASSIGNEE_STATUS = {
-  to_find:   { label: 'À trouver',              bg: '#F3F4F6', border: '#D1D5DB', text: '#6B7280', dot: '#9CA3AF' },
-  contacted: { label: 'À contacter',            bg: '#EFF6FF', border: '#BFDBFE', text: '#2563EB', dot: '#3B82F6' },
-  quoted:    { label: 'Demande envoyée',         bg: '#FFFBEB', border: '#FDE68A', text: '#B45309', dot: '#F59E0B' },
-  confirmed: { label: 'Accepté',                bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#22C55E' },
-  done:      { label: 'Confirmé',               bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
+  to_find:     { label: 'À trouver',          bg: '#F3F4F6', border: '#E5E7EB', text: '#9CA3AF', dot: '#D1D5DB' },
+  contacted:   { label: 'Pré-sélectionné',    bg: '#F3F4F6', border: '#9CA3AF', text: '#4B5563', dot: '#6B7280' },
+  quoted:      { label: 'Devis demandé',       bg: '#FFFBEB', border: '#FDE68A', text: '#B45309', dot: '#F59E0B' },
+  negotiating: { label: 'En négociation',      bg: '#FFF7ED', border: '#FDBA74', text: '#C2410C', dot: '#F97316' },
+  confirmed:   { label: 'Accepté',             bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#22C55E' },
+  done:        { label: 'Relancé',             bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
 };
 
-function AssigneeChip({ trade, assignedToName, onSelfAssign }) {
+function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
   // assignedToName (self-assign stored on phase) takes priority over trade subcontractor
   const tradeName = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
   const name = assignedToName || tradeName;
@@ -489,17 +490,20 @@ function AssigneeChip({ trade, assignedToName, onSelfAssign }) {
     `Statut: ${st.label}`,
     trade?.estimated_cost && `Budget estimé: ${Number(trade.estimated_cost).toLocaleString('fr-CA')} $`,
     isUnassigned && onSelfAssign && 'Cliquer pour s\'auto-assigner',
+    !isUnassigned && onUnassign && 'Cliquer pour désassigner',
   ].filter(Boolean).join('\n');
+
+  const handleClick = isUnassigned ? (onSelfAssign || undefined) : (onUnassign || undefined);
 
   return (
     <div title={tooltip}
-      onClick={isUnassigned && onSelfAssign ? onSelfAssign : undefined}
+      onClick={handleClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5,
-        padding: '3px 8px', borderRadius: 99,
+        padding: '3px 8px', borderRadius: 6,
         background: st.bg, border: `1px solid ${st.border}`,
         fontSize: 11, fontWeight: 600, color: st.text,
-        maxWidth: 150, cursor: isUnassigned && onSelfAssign ? 'pointer' : 'default',
+        maxWidth: 150, cursor: handleClick ? 'pointer' : 'default',
       }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot, flexShrink: 0 }}/>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
@@ -741,9 +745,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     <>
       {/* ── Toolbar ── */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        <span style={{ fontSize:11.5, fontWeight:600, color:'#6B7280', flex:1 }}>
-          {phases.length} phase{phases.length !== 1 ? 's' : ''}
-        </span>
+        <span style={{ flex:1 }}/>
         {[
           [showDates,  ()=>setShowDates(v=>!v),  <Calendar size={10}/>,  'Dates'],
           [showArrows, ()=>setShowArrows(v=>!v), <GitBranch size={10}/>, 'Dépend.'],
@@ -751,7 +753,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           [cascade,    ()=>setCascade(v=>!v),    <GitBranch size={10}/>, 'Cascade'],
         ].map(([active, fn, icon, lbl], ki) => (
           <button key={ki} onClick={fn}
-            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:7,
+            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
               border:`1px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
               background: active ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
               color: active ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
@@ -762,42 +764,56 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
           Aujourd'hui
         </button>
-        <div style={{ display:'flex', background:'#F3F4F6', borderRadius:7, padding:2 }}>
+        <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
           {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
             <button key={s} onClick={() => setScale(s)}
-              style={{ padding:'4px 8px', borderRadius:5, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
+              style={{ padding:'4px 9px', borderRadius:3, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
                 background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
                 boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
           ))}
         </div>
         <button onClick={exportPdf} title="Exporter PDF"
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
+          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
           <Download size={10}/> PDF
         </button>
       </div>
 
       {/* ── Légende ── */}
       {showLegend && (
-        <div style={{ padding:'10px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6' }}>
-          <div style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Légende</div>
-          <div style={{ display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'#6B7280', fontWeight:600 }}>
-              <span style={{ fontSize:9, color:'#9CA3AF', fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em' }}>Bordure gauche = Statut</span>
+        <div style={{ padding:'10px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6', display:'flex', gap:28, flexWrap:'wrap' }}>
+          {/* Section 1 — Personnes assignées */}
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Assigné — couleur de statut</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => (
+                <div key={key} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 7px', borderRadius:5, background:st.bg, border:`1px solid ${st.border}`, fontSize:10, fontWeight:600, color:st.text }}>
+                  <span style={{ width:5, height:5, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
+                  {st.label}
+                </div>
+              ))}
             </div>
-            {Object.entries(STATUS_LABELS).map(([status, label]) => (
-              <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
-                <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
-                {label}
+          </div>
+          {/* Divider */}
+          <div style={{ width:1, background:'#E5E7EB', flexShrink:0, alignSelf:'stretch' }}/>
+          {/* Section 2 — Statut de la phase */}
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Phase — statut (bordure gauche)</div>
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+              {Object.entries(STATUS_LABELS).map(([status, label]) => (
+                <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
+                  <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
+                  {label}
+                </div>
+              ))}
+              <div style={{ width:1, height:14, background:'#E5E7EB', flexShrink:0 }}/>
+              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+                <span style={{ width:20, height:9, background:BRAND, borderRadius:3, display:'block', opacity:.6 }}/>
+                Durée planifiée
               </div>
-            ))}
-            <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
-            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-              <span style={{ width:22, height:10, background:BRAND, borderRadius:4, display:'block', opacity:.6 }}/>
-              Barre = durée planifiée
-            </div>
-            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-              <span style={{ width:22, height:10, background:'rgba(0,0,0,.22)', borderRadius:4, display:'block' }}/>
-              Zone sombre = % d'avancement
+              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+                <span style={{ width:20, height:9, background:'rgba(0,0,0,.22)', borderRadius:3, display:'block' }}/>
+                % d'avancement
+              </div>
             </div>
           </div>
         </div>
@@ -840,8 +856,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               ))}
               {/* Today marker in header */}
               {todayPx >= 0 && todayPx <= ganttW && (
-                <div style={{ position:'absolute', top:0, bottom:0, left:todayPx, width:2, background:BRAND, opacity:.7, pointerEvents:'none' }}>
-                  <span style={{ position:'absolute', top:3, left:3, fontSize:8.5, fontWeight:800, color:BRAND, background:'#FFF3EE', padding:'1px 4px', borderRadius:4, whiteSpace:'nowrap' }}>Auj.</span>
+                <div style={{ position:'absolute', top:0, bottom:0, left:todayPx, width:2, background:BRAND, zIndex:6, pointerEvents:'none' }}>
+                  <span style={{ position:'absolute', top:2, left:-1, transform:'translateX(-50%)', fontSize:9, fontWeight:900, color:'#fff', background:BRAND, padding:'2px 6px', borderRadius:3, whiteSpace:'nowrap', boxShadow:'0 1px 4px rgba(242,101,34,.5)' }}>Auj.</span>
                 </div>
               )}
             </div>
@@ -951,7 +967,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
                   <AssigneeChip trade={matchedTrade}
                     assignedToName={ph.assigned_to_name||null}
-                    onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}/>
+                    onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}
+                    onUnassign={ph.assigned_to_name ? () => onSelfAssign?.(ph.id, null) : undefined}/>
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
                 <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
@@ -985,11 +1002,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1,flexShrink:1,minWidth:0}}>
                       {ph.trade_name||ph.name}
                     </span>
-                    {showDates && (
-                      <span style={{fontSize:9,fontWeight:600,opacity:.85,marginLeft:5,flexShrink:0,position:'relative',zIndex:1,whiteSpace:'nowrap'}}>
-                        {fmtDate(sDate)}{ph.duration_hours ? ` · ${ph.duration_hours}h` : eDate ? ` → ${fmtDate(eDate)}` : ''}
-                      </span>
-                    )}
                     {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:4,opacity:.9,position:'relative',zIndex:1,flexShrink:0}}>{progress}%</span>}
                     {/* Drag delta tooltip */}
                     {isBarDrag_&&(barDrag?.delta||0)!==0&&(
@@ -1020,6 +1032,17 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
                     />
                   </div>
+                  {/* Date labels outside bar */}
+                  {showDates && ph.start_date && (
+                    <>
+                      <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',right:ganttW-left+4,fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',pointerEvents:'none',zIndex:4}}>
+                        {new Date(ph.start_date.slice(0,10)+'T'+(ph.start_time||'08:00')).toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} {ph.start_time||'08:00'}
+                      </div>
+                      <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',left:left+width+4,fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',pointerEvents:'none',zIndex:4}}>
+                        {e.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} {String(e.getHours()).padStart(2,'0')}:{String(e.getMinutes()).padStart(2,'0')}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -4241,7 +4264,7 @@ Règles :
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}</div>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants</div>
             </div>
           </div>
 
