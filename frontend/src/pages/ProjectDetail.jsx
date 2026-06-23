@@ -467,7 +467,7 @@ const PHASE_TEMPLATES = [
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
-function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeletePhase, onEditPhase }) {
+function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePhase, onDeletePhase, onEditPhase }) {
   const [editingTrade, setEditingTrade] = useState(null);
   const [tradeVal, setTradeVal] = useState('');
 
@@ -546,24 +546,34 @@ function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeleteP
                 )}
               </div>
 
-              {/* Corps de métier — inline edit */}
-              <div style={{ width: CW, flexShrink: 0, padding: '0 10px', borderLeft: '1px solid #F0F1F3' }}>
+              {/* Corps de métier — sélecteur */}
+              <div style={{ width: CW, flexShrink: 0, padding: '0 8px', borderLeft: '1px solid #F0F1F3' }}>
                 {isEditing ? (
-                  <input
-                    autoFocus
-                    value={tradeVal}
-                    onChange={e => setTradeVal(e.target.value)}
-                    onBlur={() => saveTrade(ph)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveTrade(ph); if (e.key === 'Escape') setEditingTrade(null); }}
-                    style={{ width: '100%', fontSize: 12, fontWeight: 600, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 7px', outline: 'none', background: '#fff' }}
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <select autoFocus
+                      value={tradeVal}
+                      onChange={e => { if (e.target.value === '__custom__') return; setTradeVal(e.target.value); }}
+                      onBlur={() => saveTrade(ph)}
+                      style={{ width: '100%', fontSize: 12, fontWeight: 600, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 5px', outline: 'none', background: '#fff', color: '#15171C' }}>
+                      <option value="">— Non assigné —</option>
+                      {trades.map(t => <option key={t} value={t}>{t}</option>)}
+                      <option value="__custom__" style={{ fontStyle: 'italic', color: '#9CA3AF' }}>+ Autre (saisir)</option>
+                    </select>
+                    {!trades.includes(tradeVal) && tradeVal && tradeVal !== '__custom__' && (
+                      <input value={tradeVal} onChange={e => setTradeVal(e.target.value)}
+                        onBlur={() => saveTrade(ph)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveTrade(ph); if (e.key === 'Escape') setEditingTrade(null); }}
+                        placeholder="Nom du corps de métier"
+                        style={{ width: '100%', fontSize: 12, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 7px', outline: 'none' }}/>
+                    )}
+                  </div>
                 ) : (
                   <div onClick={() => { setEditingTrade(ph.id); setTradeVal(ph.trade_name || ''); }}
-                    title="Cliquer pour modifier le corps de métier"
-                    style={{ cursor: 'text', minHeight: 24, display: 'flex', alignItems: 'center' }}>
+                    title="Cliquer pour assigner un corps de métier"
+                    style={{ cursor: 'pointer', minHeight: 24, display: 'flex', alignItems: 'center' }}>
                     {ph.trade_name
                       ? <span style={{ fontSize: 11.5, fontWeight: 700, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: '100%' }}>{ph.trade_name}</span>
-                      : <span style={{ fontSize: 11, color: '#C8CACD', fontStyle: 'italic' }}>+ Corps de métier</span>}
+                      : <span style={{ fontSize: 11, color: '#C8CACD' }}>+ Assigner</span>}
                   </div>
                 )}
               </div>
@@ -3400,6 +3410,12 @@ Règles :
                 phases={project.phases}
                 projectStart={project.start_date}
                 projectEnd={project.end_date}
+                trades={(() => {
+                  const fa = project.field_assessment || {};
+                  const fromTrades = (project.trades || []).map(t => t.trade).filter(Boolean);
+                  const fromEstim = fa.selected_trades || [];
+                  return [...new Set([...fromTrades, ...fromEstim])];
+                })()}
                 onUpdatePhase={async (phId, patch) => {
                   try {
                     const { data } = await projectsApi.updatePhase(id, phId, patch);
