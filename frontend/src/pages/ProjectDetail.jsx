@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../store';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download } from 'lucide-react';
@@ -475,25 +476,31 @@ const ASSIGNEE_STATUS = {
   done:      { label: 'Confirmé',               bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
 };
 
-function AssigneeChip({ trade }) {
+function AssigneeChip({ trade, onSelfAssign }) {
   const st = ASSIGNEE_STATUS[trade?.status] || ASSIGNEE_STATUS.to_find;
   const name = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
+  const isUnassigned = !name && (!trade?.status || trade.status === 'to_find');
+  // When self-assigned, show confirmed style regardless of trade status
+  const displaySt = name && isUnassigned ? ASSIGNEE_STATUS.confirmed : st;
   const displayName = name || st.label;
   const tooltip = [
-    name && `Entreprise: ${name}`,
+    name && `Assigné: ${name}`,
     trade?.trade && `Corps de métier: ${trade.trade}`,
     `Statut: ${st.label}`,
     trade?.estimated_cost && `Budget estimé: ${Number(trade.estimated_cost).toLocaleString('fr-CA')} $`,
+    isUnassigned && onSelfAssign && 'Cliquer pour s\'auto-assigner',
   ].filter(Boolean).join('\n');
 
   return (
-    <div title={tooltip} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 8px', borderRadius: 99,
-      background: st.bg, border: `1px solid ${st.border}`,
-      fontSize: 11, fontWeight: 600, color: st.text,
-      maxWidth: 150, cursor: 'default',
-    }}>
+    <div title={tooltip}
+      onClick={isUnassigned && onSelfAssign ? onSelfAssign : undefined}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        padding: '3px 8px', borderRadius: 99,
+        background: st.bg, border: `1px solid ${st.border}`,
+        fontSize: 11, fontWeight: 600, color: st.text,
+        maxWidth: 150, cursor: isUnassigned && onSelfAssign ? 'pointer' : 'default',
+      }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot, flexShrink: 0 }}/>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
     </div>
@@ -504,7 +511,7 @@ const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
 const SCALE_COL_W    = { month:120, week:72, day:36, hour:32 };
 
-function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase }) {
+function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
   const [scale, setScale]         = useState('week');
   const [editCell, setEditCell]   = useState(null); // { id, field: 'datetime'|'duration' }
   const [cascade, setCascade]     = useState(true);
@@ -581,9 +588,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   })();
 
   const LABEL_W  = 155;
-  const DATE_W   = 126;
-  const DUR_W    = 58;
-  const ASSIGN_W = 132;
+  const DATE_W   = 102;
+  const DUR_W    = 50;
+  const ASSIGN_W = 140;
   const ganttW   = Math.max(columns.length * colW, 400);
   const totalMinW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
 
@@ -733,28 +740,31 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
           <Download size={10}/> PDF
         </button>
-        <button onClick={onAddPhase}
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 12px', borderRadius:8, border:'none', background:BRAND, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-          <Plus size={12}/> Phase
-        </button>
       </div>
 
       {/* ── Légende ── */}
       {showLegend && (
-        <div style={{ display:'flex', gap:14, padding:'8px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6', flexWrap:'wrap', alignItems:'center' }}>
-          {Object.entries(STATUS_LABELS).map(([status, label]) => (
-            <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
-              <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
-              {label}
+        <div style={{ padding:'10px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6' }}>
+          <div style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Légende</div>
+          <div style={{ display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'#6B7280', fontWeight:600 }}>
+              <span style={{ fontSize:9, color:'#9CA3AF', fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em' }}>Bordure gauche = Statut</span>
             </div>
-          ))}
-          <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-            <span style={{ width:18, height:8, background:BRAND, borderRadius:4, display:'block', opacity:.5 }}/>
-            Durée estimée
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-            <span style={{ width:18, height:8, background:'rgba(0,0,0,.22)', borderRadius:4, display:'block' }}/>
-            Avancement
+            {Object.entries(STATUS_LABELS).map(([status, label]) => (
+              <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
+                <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
+                {label}
+              </div>
+            ))}
+            <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
+            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+              <span style={{ width:22, height:10, background:BRAND, borderRadius:4, display:'block', opacity:.6 }}/>
+              Barre = durée planifiée
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+              <span style={{ width:22, height:10, background:'rgba(0,0,0,.22)', borderRadius:4, display:'block' }}/>
+              Zone sombre = % d'avancement
+            </div>
           </div>
         </div>
       )}
@@ -900,8 +910,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   )}
                 </div>
                 {/* Assignee */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 8px 0 0',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
-                  <AssigneeChip trade={matchedTrade}/>
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
+                  <AssigneeChip trade={matchedTrade}
+                    onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}/>
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
                 <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
@@ -969,6 +980,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               </div>
             );
           })}
+
+          {/* ── + Phase en bas du tableau ── */}
+          <div style={{ padding:'8px 16px', borderTop:'1px solid #F0F2F4' }}>
+            <button onClick={onAddPhase}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, border:`1.5px dashed ${BRAND_BORDER}`, background:'transparent', color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+              <Plus size={12}/> Ajouter une phase
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1315,6 +1334,7 @@ export default function ProjectDetail() {
   const t = useT();
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuthStore();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
@@ -1695,6 +1715,16 @@ export default function ProjectDetail() {
   const handleUpdatePhase = async (phaseId, fields) => {
     setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id===phaseId ? {...ph,...fields} : ph) }));
     await projectsApi.updatePhase(id, phaseId, fields).catch(err => console.error('updatePhase', err));
+  };
+
+  const handleSelfAssign = async (phaseId, userName) => {
+    const ph = project.phases?.find(p => p.id === phaseId);
+    if (!ph?.trade_name) return;
+    const trade = project.trades?.find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase());
+    if (!trade) return;
+    const updates = { subcontractor_name: userName, status: 'confirmed' };
+    setProject(p => ({ ...p, trades: (p.trades||[]).map(t => t.id===trade.id ? {...t,...updates} : t) }));
+    await projectsApi.updateTrade(id, trade.id, updates).catch(err => console.error('selfAssign', err));
   };
 
   const printQR = () => {
@@ -4197,6 +4227,8 @@ Règles :
                 onDatesChange={handleDatesChange}
                 onAddPhase={() => setShowPhase(true)}
                 onUpdatePhase={handleUpdatePhase}
+                currentUserName={currentUser?.name || currentUser?.email || null}
+                onSelfAssign={handleSelfAssign}
               />
             ) : (
               <div style={{ padding: '22px 20px', textAlign: 'center' }}>
