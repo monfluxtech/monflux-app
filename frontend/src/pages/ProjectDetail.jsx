@@ -3,7 +3,7 @@ import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -882,7 +882,9 @@ export default function ProjectDetail() {
   const [activeSection, setActiveSection] = useState('s-ai');
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
-  const [estimTab, setEstimTab] = useState('voieA');
+  const [estimTab, setEstimTab] = useState('voieB');
+  const [showClientReply, setShowClientReply] = useState(false);
+  const [clientReplyText, setClientReplyText] = useState('');
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
   const [searchingPrices, setSearchingPrices] = useState(false);
   const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
@@ -2176,17 +2178,98 @@ Règles :
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Résumé de la demande ── */}
-        <div style={{ padding: '18px 56px 22px', background: '#fff', borderBottom: '1px solid #E8EAED' }}>
-          <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 6px' }}>Résumé de la demande</p>
-          <InlineField
-            value={project.description || ''}
-            onSave={v => saveField('description', v)}
-            placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
-            multiline
-            style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-            displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-          />
+        {/* ── Résumé de la demande + médias client ── */}
+        <div style={{ background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+          {/* Zone description */}
+          <div style={{ padding: '18px 56px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: 0 }}>Résumé de la demande</p>
+              <button
+                onClick={() => { setShowClientReply(s => !s); setClientReplyText(''); }}
+                style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: BRAND, background: 'rgba(232,121,78,.08)', border: `1px solid rgba(232,121,78,.25)`, borderRadius: 20, padding: '3px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                {showClientReply ? <X size={11}/> : <MessageSquare size={11}/>}
+                {showClientReply ? 'Annuler' : 'Coller réponse client'}
+              </button>
+            </div>
+            <InlineField
+              value={project.description || ''}
+              onSave={v => saveField('description', v)}
+              placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
+              multiline
+              style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+              displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+            />
+
+            {/* Zone coller réponse client */}
+            {showClientReply && (
+              <div style={{ marginTop: 12, padding: 14, background: '#F8FAFB', borderRadius: 10, border: '1px solid #E8EAED' }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: '#4B5563', margin: '0 0 8px' }}>Colle ici la réponse reçue du client — elle remplacera le résumé actuel.</p>
+                <textarea
+                  value={clientReplyText}
+                  onChange={e => setClientReplyText(e.target.value)}
+                  placeholder="Copie-colle le courriel ou message du client ici…"
+                  style={{ width: '100%', minHeight: 100, padding: '10px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 13, lineHeight: 1.6, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#15171C' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    disabled={!clientReplyText.trim()}
+                    onClick={async () => { await saveField('description', clientReplyText.trim()); setShowClientReply(false); setClientReplyText(''); }}
+                    className="btn-primary text-xs">
+                    Enregistrer comme résumé
+                  </button>
+                  <button onClick={() => { setShowClientReply(false); setClientReplyText(''); }} className="btn-secondary text-xs">Annuler</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Galerie horizontale — photos & documents du client */}
+          {(media.length > 0 || (project.documents || []).length > 0) && (
+            <div style={{ padding: '0 56px 18px' }}>
+              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 8px' }}>
+                Photos & documents reçus · {media.length + (project.documents || []).length}
+              </p>
+              <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
+                {/* Photos / vidéos */}
+                {media.map(m => (
+                  <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
+                    onClick={() => m.url && window.open(m.url, '_blank')}>
+                    {m.type === 'photo' && m.url ? (
+                      <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                    ) : m.type === 'video' ? (
+                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>
+                    )}
+                    {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
+                  </div>
+                ))}
+                {/* Documents */}
+                {(project.documents || []).map(d => (
+                  <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
+                    onClick={() => d.url && window.open(d.url, '_blank')}>
+                    <span style={{ fontSize: 28 }}>📄</span>
+                    <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
+                  </div>
+                ))}
+                {/* Bouton ajouter */}
+                <div style={{ flexShrink: 0, width: 90, height: 90, borderRadius: 10, border: `2px dashed rgba(232,121,78,.35)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', color: BRAND, background: 'rgba(232,121,78,.04)' }}
+                  onClick={() => setShowCapture(true)}>
+                  <span style={{ fontSize: 22 }}>+</span>
+                  <span style={{ fontSize: 10, fontWeight: 700 }}>Ajouter</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Ajouter le premier média si aucun */}
+          {media.length === 0 && (project.documents || []).length === 0 && (
+            <div style={{ padding: '0 56px 16px' }}>
+              <button onClick={() => setShowCapture(true)}
+                style={{ fontSize: 11.5, color: BRAND, fontWeight: 700, background: 'rgba(232,121,78,.06)', border: `1px dashed rgba(232,121,78,.3)`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Camera size={13}/> Ajouter photos ou documents du client
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
@@ -2241,7 +2324,7 @@ Règles :
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
                 <div style={{ flex: 1 }}>
                   <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
-                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>3 voies disponibles · avant le devis précis · toutes les cellules sont éditables</div>
+                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Estimation approximative en 3 étapes</div>
                 </div>
               </div>
 
@@ -2250,16 +2333,14 @@ Règles :
                 <Sparkles size={14} color={BRAND}/>
                 <span>Adapté à ton profil :</span>
                 <b style={{ color: BRAND }}>Entrepreneur général</b>
-                <span style={{ color: '#9CA3AF' }}>—</span>
-                <span>les lignes, photos et questions varient selon le métier.</span>
               </div>
 
               {/* Onglets */}
               <div style={{ display: 'flex', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, marginBottom: 24, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
                 {[
-                  { k: 'voieA', label: 'Voie A — Recherche IA' },
-                  { k: 'voieB', label: 'Voie B — Message client' },
-                  { k: 'voieC', label: 'Voie C — Visite sur place' },
+                  { k: 'voieB', label: 'Étape 1 — Message client' },
+                  { k: 'voieA', label: 'Étape 2 — Recherche IA' },
+                  { k: 'voieC', label: 'Étape 3 — Visite sur place' },
                 ].map(({ k, label }) => (
                   <button key={k} type="button" onClick={() => setEstimTab(k)}
                     style={{ flex: 1, border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
@@ -2431,14 +2512,14 @@ Règles :
                 </div>
               )}
 
-              {/* ── Voie B — Message client + calculateur au pi²/m² ── */}
+              {/* ── Étape 1 — Message client + calculateur au pi²/m² ── */}
               {estimTab === 'voieB' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
                   {/* Message prérempli */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
                     <textarea ref={clientMsgRef}
-                      style={{ width:'100%', minHeight:220, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
-                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+                      style={{ width:'100%', minHeight:240, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
+                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez aussi suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
                     />
                     <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
                       <button className="btn-secondary text-xs"
@@ -2523,11 +2604,11 @@ Règles :
                 </div>
               )}
 
-              {/* ── Voie C — Visite sur place ── */}
+              {/* ── Étape 3 — Visite sur place ── */}
               {estimTab === 'voieC' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                   <p style={{ fontSize:13, color:'#7C8089', margin:0 }}>
-                    Questions guidées pour <b style={{ color:'#15171C' }}>Entrepreneur général</b>. Répondez sur place — les réponses préremplissent la Voie A automatiquement.
+                    Questions guidées pour <b style={{ color:'#15171C' }}>Entrepreneur général</b>. Répondez sur place — les réponses préremplissent l'Étape 2 automatiquement.
                   </p>
 
                   {/* Question 1 — Corps de métier (multi-select) */}
@@ -2609,7 +2690,7 @@ Règles :
                       <span style={{ fontSize:20 }}>✅</span>
                       <div style={{ flex:1 }}>
                         <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>{visiteAnswered} élément{visiteAnswered>1?'s':''} renseigné{visiteAnswered>1?'s':''}</p>
-                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à la Voie A pour générer l'estimation avec ces données.</p>
+                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à l'Étape 2 pour générer l'estimation avec ces données.</p>
                       </div>
                       <button className="btn-primary text-xs" onClick={() => setEstimTab('voieA')}>
                         <Sparkles size={13}/> Générer l'estimation
