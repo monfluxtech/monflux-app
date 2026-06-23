@@ -1292,6 +1292,19 @@ export default function ProjectDetail() {
     } catch {} finally { setChangingStatus(false); }
   };
 
+  /* Construction d'URL de recherche garantie sans 404 */
+  const buildSourceUrl = (fournisseur, mots_cles) => {
+    const q = encodeURIComponent(mots_cles + ' prix Québec');
+    const siteMap = {
+      'Rona':          `https://www.rona.ca/fr/recherche?q=${encodeURIComponent(mots_cles)}`,
+      'Canac':         `https://www.canac.ca/catalogsearch/result/?q=${encodeURIComponent(mots_cles)}`,
+      'Home Dépôt':    `https://www.homedepot.ca/recherche#${encodeURIComponent(mots_cles)}`,
+      'BMR':           `https://www.bmr.qc.ca/recherche?q=${encodeURIComponent(mots_cles)}`,
+      'Patrick Morin': `https://www.patrickmorin.com/recherche?q=${encodeURIComponent(mots_cles)}`,
+    };
+    return siteMap[fournisseur] || `https://www.google.ca/search?q=${q}`;
+  };
+
   const searchMaterialPrices = async () => {
     if (!project) return;
     setSearchingPrices(true);
@@ -1299,34 +1312,40 @@ export default function ProjectDetail() {
     try {
       const fa = project.field_assessment || {};
       const workType = fa.work_type || project.name || 'rénovation générale';
-      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation détaillée des coûts pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.
+      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.
 
-INSTRUCTION STRICTE : Retourne UNIQUEMENT un objet JSON valide, sans markdown, sans texte avant ou après, sans balises de code. Structure exacte :
+INSTRUCTION STRICTE : Retourne UNIQUEMENT un objet JSON valide. Aucun texte avant ou après. Aucune balise markdown. Structure exacte :
 {
   "lignes": [
     {
       "poste": "Nom du poste",
-      "source": "Fournisseur (ex: Rona)",
+      "source": "Rona",
       "inclus": "Ce qui est inclus",
       "non_inclus": "Ce qui n'est pas inclus",
-      "duree": "Ex: 2 j",
+      "duree": "2 j",
       "cout": 1200,
       "prix_vente": 1560
     }
   ],
-  "commentaires": "Note courte (2-3 phrases max, français québécois). Pas de prochaines étapes.",
-  "sources": [
-    { "label": "Rona — Armoires", "url": "https://www.rona.ca/fr/cuisine" }
+  "scenarios": [
+    { "nom": "Économique", "description": "Matériaux de base, pose simple", "cout": 8000, "prix_vente": 10400 },
+    { "nom": "Standard", "description": "Rapport qualité-prix optimal, finitions soignées", "cout": 15000, "prix_vente": 19500 },
+    { "nom": "Haut de gamme", "description": "Matériaux premium, finitions haut de gamme", "cout": 28000, "prix_vente": 36400 }
+  ],
+  "commentaires": "2-3 phrases sur la fiabilité de l'estimation, variations possibles. Factuel, pas de prochaines étapes.",
+  "source_refs": [
+    { "label": "Armoires de cuisine", "fournisseur": "Rona", "mots_cles": "armoires cuisine" },
+    { "label": "Comptoir quartz", "fournisseur": "Home Dépôt", "mots_cles": "comptoir cuisine quartz" }
   ]
 }
 
 Règles :
-- 6 à 10 lignes représentatives pour ce type de projet
-- "cout" = coût de revient matériaux + main-d'œuvre (nombre entier CAD)
-- "prix_vente" = cout × (1 + marge typique construction QC, entre 20% et 35%)
-- Prix réalistes 2025-2026, marché québécois
-- Sources : URLs valides vers rona.ca, canac.ca, homedepot.ca, bmr.ca, patrickmorin.com
-- Commentaires courts, factuel, sans suggérer de prochaines étapes`;
+- 6 à 10 lignes pour ce projet
+- "cout" = coût de revient total (matériaux + main-d'œuvre), entier CAD
+- "prix_vente" = cout × marge (20–35% selon le corps de métier)
+- Prix réalistes marché québécois 2025-2026
+- "source" dans chaque ligne : uniquement parmi Rona / Canac / Home Dépôt / BMR / Patrick Morin
+- "source_refs" : 3 à 5 références de recherche, mots-clés courts en français`;
 
       const token = localStorage.getItem('token');
       const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
@@ -1343,36 +1362,40 @@ Règles :
           try { const e = JSON.parse(chunk.slice(6)); if (e.type === 'text') rawText += e.text; } catch {}
         }
       }
-      /* Parse JSON — chercher le premier { ... } */
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
+        /* Ajouter les lignes dans le tableau */
         const lignes = Array.isArray(parsed.lignes) ? parsed.lignes : [];
         if (lignes.length > 0) {
           const currentFa = project.field_assessment || {};
           const currentLines = currentFa.approx_lines || [];
           const newLines = lignes.map((l, i) => ({
             id: Date.now() + i,
-            poste:      l.poste       || '',
-            source:     l.source      || '',
-            inclus:     l.inclus      || '',
-            non_inclus: l.non_inclus  || '',
-            duree:      l.duree       || '',
-            cout:       l.cout        || '',
-            prix_vente: l.prix_vente  || '',
+            poste: l.poste || '', source: l.source || '',
+            inclus: l.inclus || '', non_inclus: l.non_inclus || '',
+            duree: l.duree || '', cout: l.cout || '', prix_vente: l.prix_vente || '',
           }));
           const nextFa = { ...currentFa, approx_lines: [...currentLines, ...newLines] };
           await projectsApi.update(id, { field_assessment: nextFa });
           setProject(p => ({ ...p, field_assessment: nextFa }));
         }
+        /* Construire les sources avec URLs garanties */
+        const sourceRefs = Array.isArray(parsed.source_refs) ? parsed.source_refs : [];
+        const sources = sourceRefs.map(s => ({
+          label: s.label,
+          fournisseur: s.fournisseur,
+          url: buildSourceUrl(s.fournisseur, s.mots_cles),
+        }));
         setAiPriceResult({
-          comments: parsed.commentaires || '',
-          sources:  Array.isArray(parsed.sources) ? parsed.sources : [],
+          comments:  parsed.commentaires || '',
+          scenarios: Array.isArray(parsed.scenarios) ? parsed.scenarios : [],
+          sources,
         });
       } else {
-        setAiPriceResult({ comments: 'Florence n\'a pas pu générer une estimation structurée. Réessaie.', sources: [] });
+        setAiPriceResult({ comments: 'Florence n\'a pas pu générer une estimation structurée. Réessaie.', scenarios: [], sources: [] });
       }
-    } catch { setAiPriceResult({ comments: 'Impossible de récupérer les prix. Vérifie ta connexion et réessaie.', sources: [] }); }
+    } catch { setAiPriceResult({ comments: 'Impossible de récupérer les prix. Vérifie ta connexion et réessaie.', scenarios: [], sources: [] }); }
     finally { setSearchingPrices(false); }
   };
 
@@ -2343,22 +2366,64 @@ Règles :
                     </div>
                   )}
                   {aiPriceResult && (
-                    <div style={{ marginTop:10, background:'#fff', borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden' }}>
+                    <div style={{ marginTop:12, background:'#fff', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden', fontSize:12.5 }}>
+
+                      {/* Note de Florence */}
                       {aiPriceResult.comments && (
-                        <div style={{ padding:'12px 16px', fontSize:12.5, color:'#3A3D44', lineHeight:1.65, borderBottom: aiPriceResult.sources?.length ? '1px solid #F0F2F4' : 'none' }}>
-                          <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', display:'block', marginBottom:4 }}>Note de Florence</span>
+                        <div style={{ padding:'12px 18px', color:'#3A3D44', lineHeight:1.65, borderBottom:'1px solid #F0F2F4' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:5 }}>Note de Florence</span>
                           {aiPriceResult.comments}
                         </div>
                       )}
+
+                      {/* Tableau 3 scénarios */}
+                      {aiPriceResult.scenarios?.length > 0 && (
+                        <div style={{ borderBottom:'1px solid #F0F2F4' }}>
+                          <div style={{ padding:'10px 18px 6px', display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF' }}>3 scénarios de prix</span>
+                          </div>
+                          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                            <thead>
+                              <tr style={{ background:'#F8FAFB', borderBottom:'1px solid #E8EAED' }}>
+                                {['Scénario','Description','Coût de revient','Prix de vente','Marge'].map(h => (
+                                  <th key={h} style={{ padding:'7px 14px', fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {aiPriceResult.scenarios.map((s, i) => {
+                                const marge = s.cout > 0 ? Math.round((s.prix_vente - s.cout) / s.cout * 100) : 0;
+                                const rowBg = i === 1 ? 'rgba(232,121,78,.04)' : '#fff';
+                                const nomColor = i === 0 ? '#6B7280' : i === 1 ? BRAND : '#7C3AED';
+                                return (
+                                  <tr key={s.nom} style={{ background: rowBg, borderBottom:'1px solid #F4F5F6' }}>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color: nomColor, whiteSpace:'nowrap' }}>{s.nom}</td>
+                                    <td style={{ padding:'9px 14px', color:'#4B5563', lineHeight:1.4 }}>{s.description}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.cout)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.prix_vente)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#16a34a', whiteSpace:'nowrap' }}>+{marge}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Sources cliquables (URLs construites côté client) */}
                       {aiPriceResult.sources?.length > 0 && (
-                        <div style={{ padding:'10px 16px', display:'flex', flexWrap:'wrap', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', width:'100%', marginBottom:2 }}>Sources</span>
-                          {aiPriceResult.sources.map((s, i) => (
-                            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                              style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'3px 10px', background:'rgba(232,121,78,.08)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.2)`, display:'inline-flex', alignItems:'center', gap:4 }}>
-                              🔗 {s.label}
-                            </a>
-                          ))}
+                        <div style={{ padding:'10px 18px 12px' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:7 }}>Références de prix</span>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                            {aiPriceResult.sources.map((s, i) => (
+                              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'4px 11px', background:'rgba(232,121,78,.07)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.22)`, display:'inline-flex', alignItems:'center', gap:5, transition:'background .15s' }}
+                                onMouseEnter={e => e.currentTarget.style.background='rgba(232,121,78,.15)'}
+                                onMouseLeave={e => e.currentTarget.style.background='rgba(232,121,78,.07)'}>
+                                🔗 {s.label} <span style={{ fontWeight:400, color:'#9CA3AF', fontSize:10.5 }}>· {s.fournisseur}</span>
+                              </a>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
