@@ -500,19 +500,29 @@ function AssigneeChip({ trade }) {
   );
 }
 
+const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
+const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
+const SCALE_COL_W    = { month:120, week:72, day:36 };
+
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase }) {
-  const [scale, setScale] = useState('month'); // 'month' | 'week'
-  const [cascade, setCascade] = useState(true);
-  const [dragIdx, setDragIdx] = useState(null);
+  const [scale, setScale]         = useState('week');
+  const [cascade, setCascade]     = useState(true);
+  const [showDates, setShowDates] = useState(false);
+  const [showArrows, setShowArrows] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [dragIdx, setDragIdx]     = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
-  const [barDrag, setBarDrag] = useState(null); // { phId, startX, origStart, origEnd, pixelsPerDay, currentDeltaDays }
-  const scrollRef = useRef(null);
-  const ganttColRef = useRef(null);
+  const [barDrag, setBarDrag]     = useState(null); // {phId,startX,origStart,origEnd,delta,pxPerDay}
+  const [resize, setResize]       = useState(null); // {phId,side,startX,origStart,origEnd,delta,pxPerDay}
+  const [tooltip, setTooltip]     = useState(null); // {ph,trade,x,y}
+  const scrollRef  = useRef(null);
+  const ganttElRef = useRef(null);
 
   if (!phases || phases.length === 0) return null;
 
+  // Date range
   const datedStarts = phases.map(ph => ph.start_date).filter(Boolean).map(d => new Date(d));
   const datedEnds   = phases.map(ph => ph.end_date).filter(Boolean).map(d => new Date(d));
   const fallbackStart = datedStarts.length ? new Date(Math.min(...datedStarts)) : new Date();
@@ -523,7 +533,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const totalMs  = Math.max(refEnd - refStart, 1);
   const totalDays = totalMs / 86400000;
 
-  // Build column headers based on scale
+  // Fixed-width columns (this is what makes scale switching actually "zoom")
+  const colW = SCALE_COL_W[scale] || 72;
   const columns = (() => {
     if (scale === 'week') {
       const cols = [];
@@ -537,62 +548,88 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       }
       return cols;
     }
+    if (scale === 'day') {
+      const cols = [];
+      const cur = new Date(refStart); cur.setHours(0,0,0,0);
+      while (cur <= refEnd) {
+        const end = new Date(cur); end.setHours(23,59,59,999);
+        cols.push({ start: new Date(cur), end });
+        cur.setDate(cur.getDate() + 1);
+      }
+      return cols;
+    }
     const cols = [];
     const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
-    while (cur <= refEnd) { cols.push({ start: new Date(cur), end: new Date(cur.getFullYear(), cur.getMonth()+1, 0) }); cur.setMonth(cur.getMonth()+1); }
+    while (cur <= refEnd) {
+      cols.push({ start: new Date(cur), end: new Date(cur.getFullYear(), cur.getMonth()+1, 0) });
+      cur.setMonth(cur.getMonth()+1);
+    }
     return cols;
   })();
 
-  const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const barW = (s, e) => Math.max(0.5, pct(e) - pct(s));
-  const todayPct = pct(new Date());
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
+  const LABEL_W  = 175;
+  const ASSIGN_W = 140;
+  const ganttW   = Math.max(columns.length * colW, 400);
+  const totalMinW = LABEL_W + 20 + ASSIGN_W + ganttW;
 
+  // Pixel helpers — positions within the ganttW space
+  const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - refStart) / totalMs * ganttW));
+  const todayPx = px(new Date());
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
   const weekNum = (d) => {
     const dt = new Date(d); dt.setHours(0,0,0,0); dt.setDate(dt.getDate() + 4 - (dt.getDay()||7));
     return Math.ceil(((dt - new Date(dt.getFullYear(),0,1)) / 86400000 + 1) / 7);
   };
 
-  // Live bar position with drag preview
-  const effStart = (ph) => {
+  // Effective bar bounds (accounting for drag and resize previews)
+  const getBarBounds = (ph) => {
+    let sDate = ph.start_date, eDate = ph.end_date;
+    const pxPerDay = ganttW / totalDays;
     if (barDrag?.phId === ph.id) {
-      const d = new Date(barDrag.origStart); d.setDate(d.getDate() + barDrag.delta); return d.toISOString();
+      const d = barDrag.delta || 0;
+      const ns = new Date(barDrag.origStart); ns.setDate(ns.getDate() + d);
+      const ne = new Date(barDrag.origEnd || barDrag.origStart); ne.setDate(ne.getDate() + d);
+      sDate = ns.toISOString(); eDate = ne.toISOString();
+    } else if (resize?.phId === ph.id) {
+      if (resize.side === 'left') {
+        const ns = new Date(resize.origStart); ns.setDate(ns.getDate() + (resize.delta||0));
+        sDate = ns.toISOString();
+      } else {
+        const ne = new Date(resize.origEnd || resize.origStart); ne.setDate(ne.getDate() + (resize.delta||0));
+        eDate = ne.toISOString();
+      }
     }
-    return ph.start_date;
-  };
-  const effEnd = (ph) => {
-    if (barDrag?.phId === ph.id) {
-      const d = new Date(barDrag.origEnd || barDrag.origStart); d.setDate(d.getDate() + barDrag.delta); return d.toISOString();
-    }
-    return ph.end_date;
+    const s = sDate ? new Date(sDate) : refStart;
+    const e = eDate ? new Date(eDate) : new Date(s.getTime() + 7*86400000);
+    return { left: px(s), width: Math.max(8, px(e) - px(s)), s, e, sDate, eDate };
   };
 
   const tradesByName = {};
   (trades || []).forEach(t => { if (t.trade) tradesByName[t.trade.toLowerCase()] = t; });
 
-  // Row drag (reorder)
-  const onDragStart = (e, i) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; };
-  const onDragOver  = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
-  const onDrop      = (e, i) => {
+  // Row reorder drag
+  const onRowDragStart = (e, i) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; };
+  const onRowDragOver  = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
+  const onRowDrop      = (e, i) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDragOverIdx(null); return; }
     const next = [...phases]; const [moved] = next.splice(dragIdx, 1); next.splice(i, 0, moved);
     onReorderPhases?.(next); setDragIdx(null); setDragOverIdx(null);
   };
 
-  // Bar drag (shift dates)
-  const handleBarPointerDown = (e, ph) => {
+  // Bar drag (shift all dates)
+  const handleBarDown = (e, ph) => {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const ganttW = ganttColRef.current?.getBoundingClientRect().width || 1;
     setBarDrag({ phId: ph.id, startX: e.clientX, origStart: ph.start_date, origEnd: ph.end_date, pxPerDay: ganttW / totalDays, delta: 0 });
   };
-  const handleBarPointerMove = (e) => {
+  const handleBarMove = (e) => {
     if (!barDrag) return;
     const delta = Math.round((e.clientX - barDrag.startX) / barDrag.pxPerDay);
-    if (delta !== barDrag.delta) setBarDrag(prev => ({ ...prev, delta }));
+    if (delta !== barDrag.delta) setBarDrag(p => ({ ...p, delta }));
   };
-  const handleBarPointerUp = (e, ph) => {
+  const handleBarUp = (e, ph) => {
     if (!barDrag || barDrag.phId !== ph.id) return;
     if (barDrag.delta !== 0) {
       const ns = new Date(barDrag.origStart); ns.setDate(ns.getDate() + barDrag.delta);
@@ -600,6 +637,32 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       onDatesChange?.(ph.id, ns.toISOString().slice(0,10), ne.toISOString().slice(0,10), cascade);
     }
     setBarDrag(null);
+  };
+
+  // Resize handles (change duration)
+  const handleResizeDown = (e, ph, side) => {
+    e.preventDefault(); e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setResize({ phId: ph.id, side, startX: e.clientX, origStart: ph.start_date, origEnd: ph.end_date, pxPerDay: ganttW / totalDays, delta: 0 });
+  };
+  const handleResizeMove = (e) => {
+    if (!resize) return;
+    const delta = Math.round((e.clientX - resize.startX) / resize.pxPerDay);
+    if (delta !== resize.delta) setResize(p => ({ ...p, delta }));
+  };
+  const handleResizeUp = (e, ph) => {
+    if (!resize || resize.phId !== ph.id) return;
+    const d = resize.delta || 0;
+    if (d !== 0) {
+      if (resize.side === 'left') {
+        const ns = new Date(resize.origStart); ns.setDate(ns.getDate() + d);
+        onDatesChange?.(ph.id, ns.toISOString().slice(0,10), resize.origEnd, false);
+      } else {
+        const ne = new Date(resize.origEnd || resize.origStart); ne.setDate(ne.getDate() + d);
+        onDatesChange?.(ph.id, resize.origStart, ne.toISOString().slice(0,10), false);
+      }
+    }
+    setResize(null);
   };
 
   // Inline name edit
@@ -611,81 +674,104 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   };
 
   const scrollToToday = () => {
-    if (!scrollRef.current || !ganttColRef.current) return;
-    const w = ganttColRef.current.scrollWidth;
-    scrollRef.current.scrollLeft = Math.max(0, w * todayPct / 100 - 200);
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollLeft = Math.max(0, todayPx + LABEL_W + 20 + ASSIGN_W - 320);
   };
 
-  const labelWidth   = 175;
-  const assigneeWidth = 148;
-  const colMinW = scale === 'week' ? 56 : 80;
-
-  const STATUS_BORDER = { not_started: '#E5E7EB', in_progress: BRAND, done: '#22C55E', delayed: '#EF4444', on_hold: '#9CA3AF' };
+  const exportPdf = () => window.print();
 
   return (
-    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
-
+    <>
       {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #F4F5F6', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280', flex: 1 }}>
+      <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
+        <span style={{ fontSize:11.5, fontWeight:600, color:'#6B7280', flex:1 }}>
           {phases.length} phase{phases.length !== 1 ? 's' : ''}
         </span>
-        {/* Cascade toggle */}
-        <button onClick={() => setCascade(c => !c)} title={cascade ? 'Cascade activée — les phases suivantes bougent aussi' : 'Cascade désactivée'}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 7, border: `1px solid ${cascade ? BRAND_BORDER : '#E5E7EB'}`, background: cascade ? BRAND_SOFT : '#fff', fontSize: 11, fontWeight: 700, color: cascade ? BRAND_DARK : '#9CA3AF', cursor: 'pointer' }}>
-          <GitBranch size={11}/> Cascade
-        </button>
-        {/* Scroll to today */}
+        {[
+          [showDates,  ()=>setShowDates(v=>!v),  <Calendar size={10}/>,  'Dates'],
+          [showArrows, ()=>setShowArrows(v=>!v), <GitBranch size={10}/>, 'Dépend.'],
+          [showLegend, ()=>setShowLegend(v=>!v), null,                   'Légende'],
+          [cascade,    ()=>setCascade(v=>!v),    <GitBranch size={10}/>, 'Cascade'],
+        ].map(([active, fn, icon, lbl], ki) => (
+          <button key={ki} onClick={fn}
+            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:7,
+              border:`1px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
+              background: active ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
+              color: active ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
+            {icon}{lbl}
+          </button>
+        ))}
         <button onClick={scrollToToday}
-          style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid #E5E7EB', background: '#fff', fontSize: 11, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
+          style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
           Aujourd'hui
         </button>
-        {/* Scale switcher */}
-        <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 7, padding: 2 }}>
-          {[['month','Mois'],['week','Sem.']].map(([s,lbl]) => (
+        <div style={{ display:'flex', background:'#F3F4F6', borderRadius:7, padding:2 }}>
+          {[['month','Mois'],['week','Sem.'],['day','Jour']].map(([s,lbl]) => (
             <button key={s} onClick={() => setScale(s)}
-              style={{ padding: '4px 9px', borderRadius: 5, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all .12s',
-                background: scale === s ? '#fff' : 'transparent', color: scale === s ? '#15171C' : '#9CA3AF',
-                boxShadow: scale === s ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
+              style={{ padding:'4px 8px', borderRadius:5, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
+                background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
+                boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
           ))}
         </div>
-        {/* Add phase */}
+        <button onClick={exportPdf} title="Exporter PDF"
+          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
+          <Download size={10}/> PDF
+        </button>
         <button onClick={onAddPhase}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 12px', borderRadius:8, border:'none', background:BRAND, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
           <Plus size={12}/> Phase
         </button>
       </div>
 
-      {/* ── Scrollable Gantt ── */}
-      <div ref={scrollRef} style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 820 }}>
+      {/* ── Légende ── */}
+      {showLegend && (
+        <div style={{ display:'flex', gap:14, padding:'8px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6', flexWrap:'wrap', alignItems:'center' }}>
+          {Object.entries(STATUS_LABELS).map(([status, label]) => (
+            <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
+              <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
+              {label}
+            </div>
+          ))}
+          <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+            <span style={{ width:18, height:8, background:BRAND, borderRadius:4, display:'block', opacity:.5 }}/>
+            Durée estimée
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
+            <span style={{ width:18, height:8, background:'rgba(0,0,0,.22)', borderRadius:4, display:'block' }}/>
+            Avancement
+          </div>
+        </div>
+      )}
 
-          {/* Column headers */}
-          <div style={{ display: 'flex', borderBottom: '2px solid #EEF0F2' }}>
-            <div style={{ width: labelWidth + 20, flexShrink: 0, padding: '7px 0 7px 18px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Phase</div>
-            <div style={{ width: assigneeWidth, flexShrink: 0, padding: '7px 8px 7px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Assigné</div>
-            <div ref={ganttColRef} style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
-              {columns.map((col, ci) => {
-                const w = Math.min(pct(new Date(col.end.getTime()+86400000)), 100) - Math.max(pct(col.start), 0);
-                return (
-                  <div key={ci} style={{ width: `${Math.max(w,0)}%`, minWidth: colMinW, padding: '5px 0 5px 8px', borderLeft: ci > 0 ? '1px solid #E5E7EB' : 'none', flexShrink: 0 }}>
-                    {scale === 'month' ? (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: '#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
-                        <div style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 600 }}>{col.start.getFullYear()}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#374151' }}>S{weekNum(col.start)}</div>
-                        <div style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 500 }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-              {todayPct >= 0 && todayPct <= 100 && (
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .65 }}>
-                  <span style={{ position: 'absolute', bottom: 2, left: -12, fontSize: 8.5, fontWeight: 800, color: BRAND, background: '#FFF3EE', padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>Auj.</span>
+      {/* ── Gantt scrollable ── */}
+      <div ref={scrollRef} style={{ overflowX:'auto' }}>
+        <div style={{ minWidth: totalMinW, position:'relative' }}>
+
+          {/* Header */}
+          <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
+            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Phase</div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 8px 7px 0', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Assigné</div>
+            <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
+              {columns.map((col, ci) => (
+                <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden' }}>
+                  {scale === 'month' && <>
+                    <div style={{ fontSize:11, fontWeight:800, color:'#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
+                    <div style={{ fontSize:9.5, color:'#9CA3AF', fontWeight:600 }}>{col.start.getFullYear()}</div>
+                  </>}
+                  {scale === 'week' && <>
+                    <div style={{ fontSize:10.5, fontWeight:800, color:'#374151' }}>S{weekNum(col.start)}</div>
+                    <div style={{ fontSize:9, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>
+                  </>}
+                  {scale === 'day' && <>
+                    <div style={{ fontSize:10, fontWeight:800, color: col.start.getDay()===0||col.start.getDay()===6 ? '#D1D5DB' : '#374151' }}>{col.start.getDate()}</div>
+                    <div style={{ fontSize:8.5, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{weekday:'short'}).slice(0,1).toUpperCase()}</div>
+                  </>}
+                </div>
+              ))}
+              {/* Today marker in header */}
+              {todayPx >= 0 && todayPx <= ganttW && (
+                <div style={{ position:'absolute', top:0, bottom:0, left:todayPx, width:2, background:BRAND, opacity:.7, pointerEvents:'none' }}>
+                  <span style={{ position:'absolute', top:3, left:3, fontSize:8.5, fontWeight:800, color:BRAND, background:'#FFF3EE', padding:'1px 4px', borderRadius:4, whiteSpace:'nowrap' }}>Auj.</span>
                 </div>
               )}
             </div>
@@ -693,37 +779,34 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Phase rows */}
           {phases.map((ph, i) => {
-            const es = effStart(ph), ee = effEnd(ph);
-            const s = es ? new Date(es) : refStart;
-            const e = ee ? new Date(ee) : new Date(s.getTime()+14*86400000);
+            const { left, width, s, e, sDate, eDate } = getBarBounds(ph);
             const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-            const pL = pct(s), pW = barW(s, e);
             const isEven = i % 2 === 0;
             const isDragOver = dragOverIdx === i;
-            const isBarDrag = barDrag?.phId === ph.id;
+            const isBarDrag_ = barDrag?.phId === ph.id;
+            const isResize_  = resize?.phId === ph.id;
             const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
-            const dateLabel = [fmtDate(es), ee ? fmtDate(ee) : null].filter(Boolean).join(' → ');
             const progress = ph.progress_pct || 0;
             const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
 
             return (
               <div key={ph.id} draggable
-                onDragStart={ev => { if (!barDrag) onDragStart(ev, i); }}
-                onDragOver={ev => onDragOver(ev, i)} onDrop={ev => onDrop(ev, i)}
+                onDragStart={ev => { if (!barDrag && !resize) onRowDragStart(ev, i); }}
+                onDragOver={ev => onRowDragOver(ev, i)} onDrop={ev => onRowDrop(ev, i)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 style={{
-                  display: 'flex', alignItems: 'center', minHeight: 42,
+                  display:'flex', alignItems:'center', minHeight:42,
                   background: isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff',
                   borderLeft: `3px solid ${borderColor}`,
                   borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
-                  marginBottom: 2, opacity: dragIdx === i ? 0.35 : 1, transition: 'opacity .15s',
+                  marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
                 }}>
                 {/* Drag handle */}
-                <div style={{ width: 16, flexShrink: 0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.25, padding:'0 2px' }}>
+                <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.2, padding:'0 2px' }}>
                   {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
                 </div>
                 {/* Name */}
-                <div style={{ width: labelWidth, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
+                <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
                   <button onClick={ev=>{ev.stopPropagation();onDeletePhase?.(ph.id);}}
                     style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'#fff',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
                   <div style={{minWidth:0,flex:1}}>
@@ -741,43 +824,70 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   </div>
                 </div>
                 {/* Assignee */}
-                <div style={{width:assigneeWidth,flexShrink:0,padding:'0 8px 0 0'}}>
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 8px 0 0'}}>
                   <AssigneeChip trade={matchedTrade}/>
                 </div>
-                {/* Gantt bar area */}
-                <div style={{flex:1,position:'relative',height:36,background:'#F8F9FA'}}>
-                  {/* Grid lines */}
-                  {columns.map((col,ci)=>ci>0 ? <div key={ci} style={{position:'absolute',top:0,bottom:0,left:`${pct(col.start)}%`,width:1,background:'#ECEEF0',zIndex:0}}/> : null)}
+                {/* Gantt bar area — fixed pixel width, matches header */}
+                <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
+                  {/* Grid lines aligned with header columns */}
+                  {columns.map((_col, ci) => (
+                    <div key={ci} style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:1,background:'#ECEEF0',zIndex:0,pointerEvents:'none'}}/>
+                  ))}
                   {/* Today line */}
-                  {todayPct>=0&&todayPct<=100&&<div style={{position:'absolute',top:-4,bottom:-4,left:`${todayPct}%`,width:2,background:BRAND,opacity:.35,zIndex:2,borderRadius:1}}/>}
+                  {todayPx>=0&&todayPx<=ganttW&&<div style={{position:'absolute',top:0,bottom:0,left:todayPx,width:2,background:BRAND,opacity:.25,zIndex:2,borderRadius:1,pointerEvents:'none'}}/>}
                   {/* Phase bar */}
                   <div
-                    onPointerDown={ev=>handleBarPointerDown(ev,ph)}
-                    onPointerMove={ev=>{if(isBarDrag)handleBarPointerMove(ev);}}
-                    onPointerUp={ev=>{if(isBarDrag)handleBarPointerUp(ev,ph);}}
-                    onPointerCancel={()=>setBarDrag(null)}
-                    title={dateLabel}
+                    onPointerDown={ev => handleBarDown(ev, ph)}
+                    onPointerMove={ev => { if (isBarDrag_) handleBarMove(ev); }}
+                    onPointerUp={ev => handleBarUp(ev, ph)}
+                    onPointerCancel={() => setBarDrag(null)}
+                    onMouseEnter={ev => { if (!barDrag && !resize) setTooltip({ ph, trade: matchedTrade, x: ev.clientX, y: ev.clientY }); }}
+                    onMouseMove={ev => { if (tooltip && !barDrag && !resize) setTooltip(t => t ? { ...t, x: ev.clientX, y: ev.clientY } : null); }}
+                    onMouseLeave={() => setTooltip(null)}
                     style={{
-                      position:'absolute',top:5,bottom:5,left:`${pL}%`,width:`${pW}%`,minWidth:18,
-                      borderRadius:99,background:color,color:'#fff',
-                      display:'flex',alignItems:'center',padding:'0 8px',
-                      cursor:isBarDrag?'grabbing':'grab',
-                      whiteSpace:'nowrap',overflow:'hidden',zIndex:1,userSelect:'none',
-                      boxShadow:isBarDrag?'0 4px 12px rgba(0,0,0,.25)':'0 1px 3px rgba(0,0,0,.1)',
-                      transition:isBarDrag?'none':'box-shadow .15s',
+                      position:'absolute', top:5, bottom:5,
+                      left: left, width: width, minWidth:8,
+                      borderRadius:99, background:color, color:'#fff',
+                      display:'flex', alignItems:'center', padding:'0 12px 0 10px',
+                      cursor: isBarDrag_ ? 'grabbing' : 'grab',
+                      whiteSpace:'nowrap', overflow:'hidden', zIndex:3, userSelect:'none',
+                      boxShadow: isBarDrag_ ? '0 4px 16px rgba(0,0,0,.28)' : '0 1px 3px rgba(0,0,0,.12)',
+                      transition: (isBarDrag_||isResize_) ? 'none' : 'left .06s,width .06s,box-shadow .15s',
                     }}>
                     {/* Progress overlay */}
-                    {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:'rgba(0,0,0,.22)',zIndex:0}}/>}
-                    <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1}}>
-                      {ph.trade_name||ph.name}
+                    {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:'rgba(0,0,0,.22)',zIndex:0,pointerEvents:'none'}}/>}
+                    <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1,flexShrink:1,minWidth:0}}>
+                      {showDates ? `${fmtDate(sDate||s.toISOString())} → ${fmtDate(eDate||e.toISOString())}` : (ph.trade_name||ph.name)}
                     </span>
                     {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:4,opacity:.9,position:'relative',zIndex:1,flexShrink:0}}>{progress}%</span>}
-                    {/* Drag date tooltip */}
-                    {isBarDrag&&barDrag.delta!==0&&(
-                      <span style={{position:'absolute',top:-22,left:'50%',transform:'translateX(-50%)',background:'#15171C',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',zIndex:10,pointerEvents:'none'}}>
-                        {fmtDate(es)} → {fmtDate(ee)}
+                    {/* Drag delta tooltip */}
+                    {isBarDrag_&&(barDrag?.delta||0)!==0&&(
+                      <span style={{position:'absolute',top:-26,left:'50%',transform:'translateX(-50%)',background:'#15171C',color:'#fff',fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,whiteSpace:'nowrap',zIndex:20,pointerEvents:'none',boxShadow:'0 2px 8px rgba(0,0,0,.3)'}}>
+                        {fmtDate(sDate)} → {fmtDate(eDate)}
                       </span>
                     )}
+                    {/* Resize delta tooltip */}
+                    {isResize_&&(resize?.delta||0)!==0&&(
+                      <span style={{position:'absolute',top:-26,left:'50%',transform:'translateX(-50%)',background:'#374151',color:'#fff',fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,whiteSpace:'nowrap',zIndex:20,pointerEvents:'none'}}>
+                        {fmtDate(sDate)} → {fmtDate(eDate)}
+                      </span>
+                    )}
+                    {/* Resize handles — left */}
+                    <div
+                      onPointerDown={ev => handleResizeDown(ev, ph, 'left')}
+                      onPointerMove={ev => { if (isResize_ && resize?.side==='left') handleResizeMove(ev); }}
+                      onPointerUp={ev => handleResizeUp(ev, ph)}
+                      onPointerCancel={() => setResize(null)}
+                      style={{position:'absolute',top:0,bottom:0,left:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'99px 0 0 99px'}}
+                    />
+                    {/* Resize handles — right */}
+                    <div
+                      onPointerDown={ev => handleResizeDown(ev, ph, 'right')}
+                      onPointerMove={ev => { if (isResize_ && resize?.side==='right') handleResizeMove(ev); }}
+                      onPointerUp={ev => handleResizeUp(ev, ph)}
+                      onPointerCancel={() => setResize(null)}
+                      style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
+                    />
                   </div>
                 </div>
               </div>
@@ -785,7 +895,44 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           })}
         </div>
       </div>
-    </div>
+
+      {/* ── Hover tooltip (fixed position) ── */}
+      {tooltip && (
+        <div style={{
+          position:'fixed', zIndex:9999, pointerEvents:'none',
+          top: tooltip.y - 16, left: tooltip.x + 14,
+          transform:'translateY(-100%)',
+          background:'#15171C', color:'#fff', borderRadius:10,
+          padding:'10px 14px', fontSize:12, maxWidth:240,
+          boxShadow:'0 8px 28px rgba(0,0,0,.32)',
+        }}>
+          <div style={{ fontWeight:800, fontSize:13, marginBottom:4 }}>{tooltip.ph.name}</div>
+          {tooltip.ph.trade_name && (
+            <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Corps: {tooltip.ph.trade_name}</div>
+          )}
+          <div style={{ color:'#D1D5DB', fontSize:11, marginBottom:2 }}>
+            {fmtDate(tooltip.ph.start_date)}{tooltip.ph.end_date ? ` → ${fmtDate(tooltip.ph.end_date)}` : ''}
+          </div>
+          {tooltip.ph.status && (
+            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, marginTop:4 }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:STATUS_BORDER[tooltip.ph.status]||'#9CA3AF', display:'block', flexShrink:0 }}/>
+              <span style={{ color:'#9CA3AF' }}>{STATUS_LABELS[tooltip.ph.status]||tooltip.ph.status}</span>
+            </div>
+          )}
+          {(tooltip.ph.progress_pct||0) > 0 && (
+            <div style={{ marginTop:6 }}>
+              <div style={{ height:4, background:'#374151', borderRadius:4, overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${tooltip.ph.progress_pct}%`, background:BRAND, borderRadius:4 }}/>
+              </div>
+              <div style={{ fontSize:10, color:'#9CA3AF', marginTop:2 }}>{tooltip.ph.progress_pct}% complété</div>
+            </div>
+          )}
+          {tooltip.trade?.subcontractor_name && (
+            <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -3954,8 +4101,9 @@ Règles :
               onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
-          {project.phases?.length > 0 ? (
-            <div style={{ marginBottom: 12 }}>
+          {/* ── Gantt + Florence — même carte blanche ── */}
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginBottom: 16 }}>
+            {project.phases?.length > 0 ? (
               <GanttChart
                 phases={project.phases}
                 projectStart={project.start_date}
@@ -3968,16 +4116,15 @@ Règles :
                 onDatesChange={handleDatesChange}
                 onAddPhase={() => setShowPhase(true)}
               />
-            </div>
-          ) : (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '22px 20px', textAlign: 'center', marginBottom: 12 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
-              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
-            </div>
-          )}
+            ) : (
+              <div style={{ padding: '22px 20px', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
+              </div>
+            )}
 
-          {/* Florence — sous le Gantt */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '14px 18px', marginBottom: 16 }}>
+          {/* Florence — même fond blanc, séparateur */}
+          <div style={{ borderTop: '1px solid #F4F5F6', padding: '14px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <Sparkles size={13} color="#fff"/>
@@ -4045,6 +4192,7 @@ Règles :
               );
             })()}
           </div>
+          </div>{/* fin carte blanche Gantt+Florence */}
 
           {(() => {
             const phases = project.phases || [];
