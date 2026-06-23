@@ -885,6 +885,7 @@ export default function ProjectDetail() {
   const [estimTab, setEstimTab] = useState('voieB');
   const [showClientReply, setShowClientReply] = useState(false);
   const [clientReplyText, setClientReplyText] = useState('');
+  const [autreTexts, setAutreTexts] = useState({});
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
   const [searchingPrices, setSearchingPrices] = useState(false);
   const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
@@ -1314,7 +1315,25 @@ export default function ProjectDetail() {
     try {
       const fa = project.field_assessment || {};
       const workType = fa.work_type || project.name || 'rénovation générale';
-      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.
+
+      /* Compiler tout le contexte disponible */
+      const ctxParts = [];
+      if (project.description) ctxParts.push(`Résumé de la demande : ${project.description}`);
+      if (project.client_name)  ctxParts.push(`Client : ${project.client_name}`);
+      if (project.address)      ctxParts.push(`Adresse : ${project.address}`);
+      const trades = fa.selected_trades || [];
+      if (trades.length) ctxParts.push(`Corps de métier : ${trades.join(', ')}`);
+      const va = fa.visite_answers || {};
+      if (va.area)   ctxParts.push(`Superficie : ${va.area} ${va.area_unit || 'pi²'}`);
+      if (va.notes)  ctxParts.push(`Observations sur place : ${va.notes}`);
+      const qaLines = Object.entries(va).filter(([k,v]) => v && !['area','area_unit','notes'].includes(k))
+        .map(([k,v]) => `${k}: ${v}`);
+      if (qaLines.length) ctxParts.push(`Réponses visite sur place :\n${qaLines.join('\n')}`);
+      const clientMsg = clientMsgRef.current?.value;
+      if (clientMsg && clientMsg.length > 50) ctxParts.push(`Message envoyé au client :\n${clientMsg.substring(0, 400)}`);
+      const contextBlock = ctxParts.length ? `\n\nCONTEXTE DU PROJET :\n${ctxParts.join('\n')}` : '';
+
+      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.${contextBlock}
 
 INSTRUCTION STRICTE : Retourne UNIQUEMENT un objet JSON valide. Aucun texte avant ou après. Aucune balise markdown. Structure exacte :
 {
@@ -1595,10 +1614,20 @@ Règles :
 
   /* Questions universelles + banques par type de travaux */
   const VISITE_QUESTIONS_UNIVERSAL = [
-    { id: 'occupied', q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — résidents/locataires présents', 'Non — vacant', 'Partiellement occupé'] },
-    { id: 'permit', q: 'Un permis municipal est-il requis ?', opts: ['Oui — en cours', 'Oui — à demander', 'Non requis', 'À vérifier avec la ville'] },
-    { id: 'hazmat', q: 'Présence suspectée de matériaux dangereux ?', opts: ['Amiante (bâtiment avant 1980)', 'Peinture au plomb', 'Aucun à ma connaissance', 'Test requis avant démarrage'] },
-    { id: 'access', q: 'Accessibilité du chantier', opts: ['Facile — accès direct rue', 'Stationnement limité', 'Accès arrière seulement', 'Contraintes importantes (escaliers, ruelle)'] },
+    /* ── Contexte général ── */
+    { id: 'occupied',  q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — résidents/locataires présents', 'Non — vacant', 'Partiellement occupé'] },
+    { id: 'permit',    q: 'Un permis municipal est-il requis ?',             opts: ['Oui — en cours', 'Oui — à demander', 'Non requis', 'À vérifier avec la ville'] },
+    { id: 'hazmat',    q: 'Présence suspectée de matériaux dangereux ?',     opts: ['Amiante (bâtiment avant 1980)', 'Peinture au plomb', 'Aucun à ma connaissance', 'Test requis avant démarrage'] },
+    { id: 'access',    q: 'Accessibilité du chantier',                       opts: ['Facile — accès direct rue', 'Stationnement limité', 'Accès arrière seulement', 'Contraintes importantes (escaliers, ruelle)'] },
+    /* ── Préparation des lieux ── */
+    { id: 'prep_protection', q: 'Protection des surfaces à préserver ?',     opts: ['Meubles à protéger sur place', 'Planchers à couvrir', 'Pièces adjacentes à isoler', 'Aucune contrainte'] },
+    { id: 'prep_debarras',   q: 'Débarras ou déménagement avant travaux ?',  opts: ['Client s\'en charge', 'À inclure dans la soumission', 'Partiellement — voir observations', 'Non requis'] },
+    { id: 'prep_dust',       q: 'Confinement de la poussière requis ?',      opts: ['Oui — zone de travail à fermer', 'Protections légères suffisantes', 'Non requis (extérieur)'] },
+    /* ── Actions connexes possibles ── */
+    { id: 'connexe_floor',   q: 'Remplacement de plancher à prévoir ?',      opts: ['Oui — zone touchée', 'À évaluer', 'Non'] },
+    { id: 'connexe_paint',   q: 'Peinture incluse ou connexe ?',             opts: ['Oui — pièces complètes', 'Retouches seulement', 'Exclu de la soumission'] },
+    { id: 'connexe_drywall', q: 'Réparations de gypse nécessaires ?',        opts: ['Oui — trous et joints', 'Remplacement de panneaux', 'Non'] },
+    { id: 'connexe_cleanup', q: 'Nettoyage post-travaux ?',                  opts: ['Inclus dans la soumission', 'À la charge du client', 'Non précisé'] },
   ];
 
   const VISITE_QUESTIONS_BY_TYPE = {
@@ -2324,7 +2353,7 @@ Règles :
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
                 <div style={{ flex: 1 }}>
                   <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
-                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Estimation approximative en 3 étapes</div>
+                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4, maxWidth: 560 }}>Qualifiez le projet sans perdre de temps. Envoyez un message au client, visitez sur place ou laissez Florence estimer les coûts — dans l'ordre qui vous convient, aucune étape obligatoire.</div>
                 </div>
               </div>
 
@@ -2335,20 +2364,33 @@ Règles :
                 <b style={{ color: BRAND }}>Entrepreneur général</b>
               </div>
 
-              {/* Onglets */}
-              <div style={{ display: 'flex', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, marginBottom: 24, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
-                {[
-                  { k: 'voieB', label: 'Étape 1 — Message client' },
-                  { k: 'voieA', label: 'Étape 2 — Recherche IA' },
-                  { k: 'voieC', label: 'Étape 3 — Visite sur place' },
-                ].map(({ k, label }) => (
-                  <button key={k} type="button" onClick={() => setEstimTab(k)}
-                    style={{ flex: 1, border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
-                      background: estimTab === k ? '#fff' : 'transparent',
-                      color: estimTab === k ? BRAND_DARK : '#7C8089',
-                      boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
-                    }}>{label}</button>
-                ))}
+              {/* Onglets — 2 niveaux */}
+              <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {/* Rangée haute : Message client + Visite sur place */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
+                  {[
+                    { k: 'voieB', label: '💬 Message client' },
+                    { k: 'voieC', label: '🏗 Visite sur place' },
+                  ].map(({ k, label }) => (
+                    <button key={k} type="button" onClick={() => setEstimTab(k)}
+                      style={{ border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+                        background: estimTab === k ? '#fff' : 'transparent',
+                        color: estimTab === k ? BRAND_DARK : '#7C8089',
+                        boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                      }}>{label}</button>
+                  ))}
+                </div>
+                {/* Rangée basse : Recherche IA Florence */}
+                <div style={{ background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, border: '1px solid rgba(0,0,0,.06)' }}>
+                  <button type="button" onClick={() => setEstimTab('voieA')}
+                    style={{ width: '100%', border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      background: estimTab === 'voieA' ? '#fff' : 'transparent',
+                      color: estimTab === 'voieA' ? BRAND_DARK : '#7C8089',
+                      boxShadow: estimTab === 'voieA' ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                    }}>
+                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Recherche IA — Florence
+                  </button>
+                </div>
               </div>
 
               {/* ── Voie A — Tableau d'estimation + IA ── */}
@@ -2518,8 +2560,9 @@ Règles :
                   {/* Message prérempli */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
                     <textarea ref={clientMsgRef}
+                      key={project.client_name + '|' + project.portal_token}
                       style={{ width:'100%', minHeight:240, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
-                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez aussi suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
                     />
                     <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
                       <button className="btn-secondary text-xs"
@@ -2539,59 +2582,6 @@ Règles :
                     </div>
                   </div>
 
-                  {/* Calculateur au pi²/m² */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
-                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
-                      📐 Calculateur de prix approximatif
-                    </p>
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
-                      {/* Toggle pi²/m² */}
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
-                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
-                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
-                            <button key={u} onClick={() => setSqUnit(u)}
-                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
-                                background: sqUnit===u ? '#fff' : 'transparent',
-                                color: sqUnit===u ? '#15171C' : '#9CA3AF',
-                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
-                              {lbl}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {/* Tarif */}
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
-                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
-                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
-                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
-                        </div>
-                      </div>
-                      {/* Superficie */}
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
-                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
-                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
-                      </div>
-                      {/* Résultat */}
-                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
-                        const base = Number(sqRate) * Number(sqArea);
-                        const low = money(Math.round(base * 0.85));
-                        const high = money(Math.round(base * 1.15));
-                        const mid = money(Math.round(base));
-                        return (
-                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
-                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
-                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{mid}</p>
-                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {low} – {high}</p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
                   {/* Checklist photos */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
                     <p style={{ fontSize:12.5, fontWeight:800, color:'#15171C', margin:'0 0 12px', display:'flex', alignItems:'center', gap:8 }}>📷 CHECKLIST PHOTOS DEMANDÉES</p>
@@ -2601,15 +2591,55 @@ Règles :
                       </label>
                     ))}
                   </div>
+
+                  {/* Calculateur au pi²/m² */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
+                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
+                      📐 Calculateur de prix approximatif
+                    </p>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
+                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
+                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                            <button key={u} onClick={() => setSqUnit(u)}
+                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
+                                background: sqUnit===u ? '#fff' : 'transparent', color: sqUnit===u ? '#15171C' : '#9CA3AF',
+                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
+                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
+                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
+                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
+                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
+                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                      </div>
+                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
+                        const base = Number(sqRate) * Number(sqArea);
+                        return (
+                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
+                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
+                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{money(Math.round(base))}</p>
+                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {money(Math.round(base*.85))} – {money(Math.round(base*1.15))}</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* ── Étape 3 — Visite sur place ── */}
               {estimTab === 'voieC' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                  <p style={{ fontSize:13, color:'#7C8089', margin:0 }}>
-                    Questions guidées pour <b style={{ color:'#15171C' }}>Entrepreneur général</b>. Répondez sur place — les réponses préremplissent l'Étape 2 automatiquement.
-                  </p>
 
                   {/* Question 1 — Corps de métier (multi-select) */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
@@ -2635,28 +2665,58 @@ Règles :
                   </div>
 
                   {/* Questions universelles + spécifiques au type de travaux */}
-                  {allVisiteQs.map((q, qi) => (
-                    <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                        <span style={{ width:24, height:24, borderRadius:8, background: visiteAnswers[q.id] ? '#DCFCE7' : `${BRAND}22`, color: visiteAnswers[q.id] ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
-                          {visiteAnswers[q.id] ? '✓' : qi + 2}
-                        </span>
-                        <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
-                      </div>
-                      <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
-                        {q.opts.map(opt => (
-                          <button key={opt} type="button"
-                            onClick={() => saveVisite({ [q.id]: visiteAnswers[q.id] === opt ? null : opt })}
+                  {allVisiteQs.map((q, qi) => {
+                    const curVal = visiteAnswers[q.id] || null;
+                    const isAutre = curVal && !q.opts.includes(curVal);
+                    return (
+                      <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                          <span style={{ width:24, height:24, borderRadius:8, background: curVal ? '#DCFCE7' : `${BRAND}22`, color: curVal ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                            {curVal ? '✓' : qi + 2}
+                          </span>
+                          <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
+                        </div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                          {q.opts.map(opt => (
+                            <button key={opt} type="button"
+                              onClick={() => saveVisite({ [q.id]: curVal === opt ? null : opt })}
+                              style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                                background: curVal === opt ? BRAND : '#fff',
+                                borderColor: curVal === opt ? BRAND : '#E0E4E8',
+                                color: curVal === opt ? '#fff' : '#3A3D44' }}>
+                              {opt}
+                            </button>
+                          ))}
+                          {/* Option Autre */}
+                          <button type="button"
+                            onClick={() => {
+                              if (isAutre) { saveVisite({ [q.id]: null }); setAutreTexts(t => ({ ...t, [q.id]: '' })); }
+                              else { setAutreTexts(t => ({ ...t, [q.id]: '' })); saveVisite({ [q.id]: 'Autre' }); }
+                            }}
                             style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
-                              background: visiteAnswers[q.id] === opt ? BRAND : '#fff',
-                              borderColor: visiteAnswers[q.id] === opt ? BRAND : '#E0E4E8',
-                              color: visiteAnswers[q.id] === opt ? '#fff' : '#3A3D44' }}>
-                            {opt}
+                              background: isAutre ? BRAND : '#fff',
+                              borderColor: isAutre ? BRAND : '#E0E4E8',
+                              color: isAutre ? '#fff' : '#3A3D44' }}>
+                            Autre
                           </button>
-                        ))}
+                        </div>
+                        {/* Texte libre si Autre sélectionné */}
+                        {(isAutre || curVal === 'Autre') && (
+                          <div style={{ marginTop:8, display:'flex', gap:6 }}>
+                            <input
+                              autoFocus
+                              value={isAutre && curVal !== 'Autre' ? curVal : (autreTexts[q.id] || '')}
+                              onChange={e => setAutreTexts(t => ({ ...t, [q.id]: e.target.value }))}
+                              onBlur={e => { if (e.target.value.trim()) saveVisite({ [q.id]: e.target.value.trim() }); }}
+                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { saveVisite({ [q.id]: e.target.value.trim() }); e.target.blur(); } }}
+                              placeholder="Précisez…"
+                              style={{ flex:1, padding:'6px 10px', border:'1px solid #E0E4E8', borderRadius:8, fontSize:12.5, fontFamily:'inherit', outline:'none' }}
+                            />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Superficie + observations */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
@@ -2682,6 +2742,38 @@ Règles :
                     <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:'0 0 6px' }}>Observations sur place</p>
                     <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
                       value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
+                  </div>
+
+                  {/* Photos & documents sur place */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background: media.length ? '#DCFCE7' : `${BRAND}22`, color: media.length ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                        {media.length ? '✓' : <Camera size={13}/>}
+                      </span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Photos & documents sur place</p>
+                      <button onClick={() => setShowCapture(true)}
+                        style={{ marginLeft:'auto', fontSize:11.5, fontWeight:700, color:BRAND, background:'rgba(232,121,78,.08)', border:`1px solid rgba(232,121,78,.25)`, borderRadius:20, padding:'3px 11px', cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                        <Camera size={11}/> Ajouter
+                      </button>
+                    </div>
+                    {media.length > 0 ? (
+                      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
+                        {media.map(m => (
+                          <div key={m.id} style={{ flexShrink:0, width:90, height:68, borderRadius:8, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
+                            onClick={() => m.url && window.open(m.url,'_blank')}>
+                            {m.type==='photo' && m.url
+                              ? <img src={m.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                              : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:22 }}>{m.type==='video'?'▶':'📎'}</div>}
+                          </div>
+                        ))}
+                        <div style={{ flexShrink:0, width:68, height:68, borderRadius:8, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
+                          onClick={() => setShowCapture(true)}>
+                          <span style={{ fontSize:18 }}>+</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize:12.5, color:'#B0B3BA', margin:0 }}>Aucune photo pour l'instant — appuyez sur Ajouter pour prendre ou importer.</p>
+                    )}
                   </div>
 
                   {/* Barre de progression + action */}
