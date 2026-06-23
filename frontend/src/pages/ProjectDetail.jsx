@@ -456,14 +456,14 @@ const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#
 const PHASE_TEMPLATES = [
   { name: 'Démolition',        trade_name: 'Démolition',   durationDays: 5  },
   { name: 'Préparation',       trade_name: null,           durationDays: 3  },
-  { name: 'Structure',         trade_name: 'Structure',    durationDays: 14 },
+  { name: 'Structure',         trade_name: 'Charpenterie', durationDays: 14 },
   { name: 'Électricité',       trade_name: 'Électricité',  durationDays: 7  },
   { name: 'Plomberie',         trade_name: 'Plomberie',    durationDays: 7  },
-  { name: 'CVCA',              trade_name: 'CVCA',         durationDays: 5  },
+  { name: 'CVCA',              trade_name: 'Chauffage / CVC', durationDays: 5  },
   { name: 'Isolation',         trade_name: 'Isolation',    durationDays: 5  },
-  { name: 'Gypse & finition',  trade_name: 'Gypse',        durationDays: 10 },
+  { name: 'Gypse & finition',  trade_name: 'Gypse / cloisons', durationDays: 10 },
   { name: 'Peinture',          trade_name: 'Peinture',     durationDays: 7  },
-  { name: 'Plancher',          trade_name: 'Plancher',     durationDays: 5  },
+  { name: 'Plancher',          trade_name: 'Planchers',    durationDays: 5  },
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
@@ -1107,7 +1107,7 @@ export default function ProjectDetail() {
     const estAmount = total > 0 ? money(total) : mid ? `${money(mid.min)} – ${money(mid.max)}` : null;
     const startLabel = fa.start_label || (proj.start_date ? proj.start_date.slice(0,10) : '');
     const endLabel = fa.end_label || (proj.end_date ? proj.end_date.slice(0,10) : '');
-    const trades = fa.selected_trades || [];
+    const trades = resolveTradeLabels(fa.selected_trades || []);
     const descContext = proj.description || fa.work_type || '';
 
     const lines = [];
@@ -1299,6 +1299,37 @@ export default function ProjectDetail() {
 
   const normalizeTradeName = (value) => String(value || '').trim();
 
+  const toTradeLabel = (value) => {
+    const normalized = normalizeTradeName(value);
+    if (!normalized) return '';
+    if (TRADE_KEY_TO_NAME[normalized]) return TRADE_KEY_TO_NAME[normalized];
+    const alias = TRADE_NAME_ALIASES[normalized.toLowerCase()];
+    return alias || normalized;
+  };
+
+  const resolveTradeLabels = (values = []) => {
+    const unique = [];
+    const seen = new Set();
+    for (const value of values) {
+      const label = toTradeLabel(value);
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(label);
+    }
+    return unique;
+  };
+
+  const getProjectWorkType = () => {
+    const fa = project.field_assessment || {};
+    return fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+  };
+
+  const getProjectTypePlaybook = (workType = getProjectWorkType()) => (
+    PROJECT_TYPE_PHASE_LIBRARY[workType] || null
+  );
+
   const normalizePhaseDate = (value) => {
     if (!value) return null;
     const date = new Date(value);
@@ -1336,7 +1367,7 @@ export default function ProjectDetail() {
     (Array.isArray(phases) ? phases : [])
       .map((ph, index) => {
         const name = String(ph?.name || '').trim();
-        const tradeName = normalizeTradeName(ph?.trade_name || ph?.trade);
+        const tradeName = toTradeLabel(ph?.trade_name || ph?.trade);
         const startDate = normalizePhaseDate(ph?.start_date);
         const endDate = normalizePhaseDate(ph?.end_date);
         return {
@@ -1350,7 +1381,7 @@ export default function ProjectDetail() {
           color: ph?.color || PHASE_COLORS[index % PHASE_COLORS.length],
         };
       })
-      .filter((ph) => ph.name && ph.trade_name)
+      .filter((ph) => ph.name)
       .sort((a, b) => {
         if (a.display_order !== b.display_order) return a.display_order - b.display_order;
         if (a.start_date && b.start_date) return new Date(a.start_date) - new Date(b.start_date);
@@ -1358,11 +1389,125 @@ export default function ProjectDetail() {
       })
   );
 
+  const buildPhaseDates = (existingPhases = [], durationDays = 1) => {
+    const datedPhases = existingPhases
+      .map((ph) => normalizePhaseDate(ph?.end_date || ph?.start_date))
+      .filter(Boolean)
+      .map((value) => new Date(value));
+    const latestBoundary = datedPhases.length ? new Date(Math.max(...datedPhases)) : null;
+    const defaultStart = normalizePhaseDate(project.start_date) || new Date().toISOString().slice(0, 10);
+    const startDate = latestBoundary ? new Date(latestBoundary) : new Date(defaultStart);
+    if (latestBoundary) startDate.setDate(startDate.getDate() + 1);
+    const safeDuration = Math.max(Number(durationDays) || 1, 1);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + safeDuration - 1);
+    return {
+      start_date: startDate.toISOString().slice(0, 10),
+      end_date: endDate.toISOString().slice(0, 10),
+    };
+  };
+
+  const ensureAssessmentTradeKeys = async (tradeKeys = []) => {
+    const current = Array.isArray(project.field_assessment?.selected_trades)
+      ? project.field_assessment.selected_trades
+      : [];
+    const merged = [...new Set([...current, ...tradeKeys.map((value) => String(value || '').trim()).filter(Boolean)])];
+    if (merged.length === current.length && merged.every((value, index) => value === current[index])) return;
+    const nextAssessment = { ...(project.field_assessment || {}), selected_trades: merged };
+    try {
+      await projectsApi.update(id, { field_assessment: nextAssessment });
+      setProject((p) => ({ ...p, field_assessment: nextAssessment }));
+    } catch (err) {
+      console.error('ensureAssessmentTradeKeys', err);
+    }
+  };
+
+  const addTemplatePhasesBatch = async (templates = [], options = {}) => {
+    const { replaceExisting = false } = options;
+    const sourcePhases = replaceExisting ? [] : [...(project.phases || [])];
+    const existingNames = new Set(sourcePhases.map((ph) => String(ph?.name || '').trim().toLowerCase()).filter(Boolean));
+    const queue = (Array.isArray(templates) ? templates : [])
+      .map((tpl) => ({
+        ...tpl,
+        name: String(tpl?.name || '').trim(),
+        trade_name: toTradeLabel(tpl?.trade_name),
+        durationDays: Math.max(Number(tpl?.durationDays) || 1, 1),
+      }))
+      .filter((tpl) => tpl.name)
+      .filter((tpl) => replaceExisting || !existingNames.has(tpl.name.toLowerCase()));
+
+    if (!queue.length) return [];
+
+    setAddingTemplatePhase('__batch__');
+    try {
+      if (replaceExisting) {
+        for (const ph of (project.phases || [])) {
+          await projectsApi.deletePhase(id, ph.id);
+        }
+      }
+
+      const createdPhases = [];
+      const timeline = [...sourcePhases];
+      for (const tpl of queue) {
+        const dates = buildPhaseDates(timeline, tpl.durationDays);
+        const { data } = await projectsApi.addPhase(id, {
+          name: tpl.name,
+          trade_name: tpl.trade_name || '',
+          progress_pct: 0,
+          status: 'not_started',
+          ...dates,
+        });
+        createdPhases.push(data);
+        timeline.push(data);
+      }
+
+      await ensureProjectTradesExist(createdPhases.map((ph) => ph.trade_name));
+      setProject((p) => ({
+        ...p,
+        phases: replaceExisting ? createdPhases : [...(p.phases || []), ...createdPhases],
+      }));
+      return createdPhases;
+    } catch (err) {
+      console.error('addTemplatePhasesBatch', err);
+      throw err;
+    } finally {
+      setAddingTemplatePhase(null);
+    }
+  };
+
+  const applyProjectTypePlaybook = async (options = {}) => {
+    const { replaceExisting = false, source = 'manual' } = options;
+    const workType = getProjectWorkType();
+    const playbook = getProjectTypePlaybook(workType);
+    if (!playbook?.phases?.length) {
+      setAiNotice("Choisis d'abord un type de projet pour obtenir des étapes adaptées.");
+      return [];
+    }
+
+    await ensureAssessmentTradeKeys(playbook.selectedTradeKeys || []);
+    await ensureProjectTradesExist(resolveTradeLabels(playbook.selectedTradeKeys || []));
+    const created = await addTemplatePhasesBatch(playbook.phases, { replaceExisting });
+
+    if (source === 'fallback' && created.length) {
+      setAiNotice(`Florence est indisponible pour l'instant — plan type appliqué pour ${workType}.`);
+    } else if (source === 'manual') {
+      setAiNotice(created.length
+        ? `${created.length} phase(s) recommandée(s) ajoutée(s) pour ${workType}.`
+        : `Toutes les étapes recommandées pour ${workType} sont déjà présentes.`);
+    } else if (!created.length) {
+      setAiNotice(`Toutes les étapes recommandées pour ${workType} sont déjà présentes.`);
+    } else {
+      setAiNotice('');
+    }
+
+    return created;
+  };
+
   // Auto-ajouter les corps de métier depuis fa.selected_trades
   const autoAddTradesFromEstim = async () => {
     const fa = project.field_assessment || {};
     setAutoAddingTrades(true);
-    try { await ensureProjectTradesExist(fa.selected_trades || []); }
+    try { await ensureProjectTradesExist(resolveTradeLabels(fa.selected_trades || [])); }
     finally { setAutoAddingTrades(false); }
   };
 
@@ -1413,9 +1558,12 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
 
   const generatePhasesFromAI = async () => {
     setGeneratingPhases(true);
+    setAiNotice('');
     const fa = project.field_assessment || {};
+    const playbook = getProjectTypePlaybook();
     const tradeList = [
-      ...(fa.selected_trades || []),
+      ...resolveTradeLabels(fa.selected_trades || []),
+      ...resolveTradeLabels(playbook?.selectedTradeKeys || []),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
     ].filter((v, i, a) => v && a.indexOf(v) === i);
 
@@ -1436,7 +1584,13 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       });
       const nextPhases = normalizeGeneratedPhases(data?.phases || []);
       if (!nextPhases.length) {
-        alert("Flo n'a pas réussi à générer des phases valides pour ce projet.");
+        const fallback = await applyProjectTypePlaybook({
+          replaceExisting: (project.phases || []).length > 0,
+          source: 'fallback',
+        });
+        if (!fallback.length) {
+          alert("Flo n'a pas réussi à générer des phases valides pour ce projet.");
+        }
         return;
       }
 
@@ -1450,29 +1604,39 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
         createdPhases.push(created);
       }
 
+      await ensureAssessmentTradeKeys(playbook?.selectedTradeKeys || []);
       await ensureProjectTradesExist(createdPhases.map((ph) => ph.trade_name));
       setProject((p) => ({ ...p, phases: createdPhases }));
+      setAiNotice('');
     } catch (err) {
       console.error('generatePhasesFromAI', err);
-      alert("Impossible de générer les phases avec Florence pour l'instant.");
+      try {
+        const fallback = await applyProjectTypePlaybook({
+          replaceExisting: (project.phases || []).length > 0,
+          source: 'fallback',
+        });
+        if (!fallback.length) {
+          alert("Impossible de générer les phases avec Florence pour l'instant.");
+        }
+      } catch {
+        alert("Impossible de générer les phases avec Florence pour l'instant.");
+      }
     } finally { setGeneratingPhases(false); }
   };
 
   const addTemplatePhase = async (tpl) => {
     setAddingTemplatePhase(tpl.name);
-    const existingPhases = project.phases || [];
-    const lastEnd = existingPhases.length > 0 && existingPhases[existingPhases.length-1].end_date
-      ? new Date(existingPhases[existingPhases.length-1].end_date)
-      : (project.start_date ? new Date(project.start_date) : new Date());
-    const startDate = new Date(lastEnd); startDate.setDate(startDate.getDate() + 1);
-    const endDate   = new Date(startDate); endDate.setDate(endDate.getDate() + tpl.durationDays);
     try {
+      const dates = buildPhaseDates(project.phases || [], tpl.durationDays);
       const { data } = await projectsApi.addPhase(id, {
-        name: tpl.name, trade_name: tpl.trade_name || '', progress_pct: 0, status: 'not_started',
-        start_date: startDate.toISOString().slice(0,10), end_date: endDate.toISOString().slice(0,10),
+        name: tpl.name,
+        trade_name: toTradeLabel(tpl.trade_name) || '',
+        progress_pct: 0,
+        status: 'not_started',
+        ...dates,
       });
       setProject(p => ({ ...p, phases: [...(p.phases||[]), data] }));
-      await ensureProjectTradesExist([data.trade_name || tpl.trade_name]);
+      await ensureProjectTradesExist([data.trade_name || toTradeLabel(tpl.trade_name)]);
     } catch {} finally { setAddingTemplatePhase(null); }
   };
 
@@ -1658,7 +1822,7 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       if (project.description) ctxParts.push(`Résumé de la demande : ${project.description}`);
       if (project.client_name)  ctxParts.push(`Client : ${project.client_name}`);
       if (project.address)      ctxParts.push(`Adresse : ${project.address}`);
-      const trades = fa.selected_trades || [];
+      const trades = resolveTradeLabels(fa.selected_trades || []);
       if (trades.length) ctxParts.push(`Corps de métier : ${trades.join(', ')}`);
       const va = fa.visite_answers || {};
       if (va.area)   ctxParts.push(`Superficie : ${va.area} ${va.area_unit || 'pi²'}`);
@@ -1948,6 +2112,15 @@ Règles :
     { key: 'ingenierie', label: 'Ingénierie structurelle', emoji: '📐' },
     { key: 'autre', label: 'Autre spécialité', emoji: '➕' },
   ];
+  const TRADE_KEY_TO_NAME = Object.fromEntries(ALL_TRADES.map((trade) => [trade.key, trade.label]));
+  const TRADE_NAME_ALIASES = {
+    'structure': 'Charpenterie',
+    'cvca': 'Chauffage / CVC',
+    'cvc': 'Chauffage / CVC',
+    'gypse': 'Gypse / cloisons',
+    'plancher': 'Planchers',
+    'peinture intérieure': 'Peinture',
+  };
 
   /* Questions universelles + banques par type de travaux */
   const VISITE_QUESTIONS_UNIVERSAL = [
@@ -2053,6 +2226,145 @@ Règles :
       { id: 'urgency', q: 'Niveau d\'urgence', opts: ['Urgent — sécurité compromise', 'Modéré — corriger sous peu', 'Planifié — rénovation future'] },
     ],
   };
+
+  /* Banque d'étapes + métiers recommandés par type de projet.
+     Même logique que les questions par type dans la soumission approximative. */
+  const PROJECT_TYPE_PHASE_LIBRARY = {
+    'Cuisine': {
+      selectedTradeKeys: ['demolition', 'plomberie', 'electricite', 'gypse', 'ebenisterie', 'plancher', 'peinture'],
+      phases: [
+        { name: 'Planification cuisine', trade_name: null, durationDays: 2 },
+        { name: 'Démolition cuisine', trade_name: 'Démolition', durationDays: 2 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 3 },
+        { name: 'Pose des armoires', trade_name: 'Ébénisterie / armoires', durationDays: 3 },
+        { name: 'Comptoir & dosseret', trade_name: 'Ébénisterie / armoires', durationDays: 2 },
+        { name: 'Plancher', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Finition plomberie & électricité', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Salle de bain': {
+      selectedTradeKeys: ['demolition', 'plomberie', 'electricite', 'gypse', 'ceramique', 'peinture'],
+      phases: [
+        { name: 'Planification salle de bain', trade_name: null, durationDays: 2 },
+        { name: 'Démolition salle de bain', trade_name: 'Démolition', durationDays: 1 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Gypse & membrane', trade_name: 'Gypse / cloisons', durationDays: 2 },
+        { name: 'Céramique', trade_name: 'Céramique', durationDays: 3 },
+        { name: 'Vanité & accessoires', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 1 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Sous-sol': {
+      selectedTradeKeys: ['charpenterie', 'plomberie', 'electricite', 'isolation', 'gypse', 'plancher', 'peinture'],
+      phases: [
+        { name: 'Planification sous-sol', trade_name: null, durationDays: 2 },
+        { name: 'Charpente & divisions', trade_name: 'Charpenterie', durationDays: 4 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 4 },
+        { name: 'Planchers', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Planchers': {
+      selectedTradeKeys: ['demolition', 'plancher'],
+      phases: [
+        { name: 'Préparation des surfaces', trade_name: null, durationDays: 1 },
+        { name: 'Dépose revêtement existant', trade_name: 'Démolition', durationDays: 1 },
+        { name: 'Nivellement / correction', trade_name: 'Planchers', durationDays: 1 },
+        { name: 'Pose du plancher', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Plinthes & ajustements', trade_name: 'Planchers', durationDays: 1 },
+      ],
+    },
+    'Peinture intérieure': {
+      selectedTradeKeys: ['gypse', 'peinture'],
+      phases: [
+        { name: 'Préparation & protections', trade_name: null, durationDays: 1 },
+        { name: 'Réparations de surfaces', trade_name: 'Gypse / cloisons', durationDays: 1 },
+        { name: 'Peinture', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Retouches & nettoyage', trade_name: 'Peinture intérieure', durationDays: 1 },
+      ],
+    },
+    'Rénovation complète': {
+      selectedTradeKeys: ['demolition', 'charpenterie', 'plomberie', 'electricite', 'hvac', 'isolation', 'gypse', 'plancher', 'peinture', 'ebenisterie'],
+      phases: [
+        { name: 'Planification générale', trade_name: null, durationDays: 3 },
+        { name: 'Démolition', trade_name: 'Démolition', durationDays: 3 },
+        { name: 'Structure & charpente', trade_name: 'Charpenterie', durationDays: 5 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 3 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 3 },
+        { name: 'CVC', trade_name: 'Chauffage / CVC', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 5 },
+        { name: 'Armoires & menuiserie', trade_name: 'Ébénisterie / armoires', durationDays: 3 },
+        { name: 'Planchers', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Toiture': {
+      selectedTradeKeys: ['couverture', 'charpenterie'],
+      phases: [
+        { name: 'Préparation toiture', trade_name: null, durationDays: 1 },
+        { name: 'Dépose couverture', trade_name: 'Couverture / toiture', durationDays: 1 },
+        { name: 'Réparations structurelles', trade_name: 'Charpenterie', durationDays: 1 },
+        { name: 'Membrane & couverture', trade_name: 'Couverture / toiture', durationDays: 2 },
+        { name: 'Solins & finitions', trade_name: 'Couverture / toiture', durationDays: 1 },
+      ],
+    },
+    'Agrandissement': {
+      selectedTradeKeys: ['excavation', 'fondation', 'charpenterie', 'electricite', 'plomberie', 'isolation', 'gypse', 'peinture'],
+      phases: [
+        { name: 'Planification & permis', trade_name: null, durationDays: 4 },
+        { name: 'Excavation', trade_name: 'Excavation', durationDays: 2 },
+        { name: 'Fondation', trade_name: 'Fondation / maçonnerie', durationDays: 3 },
+        { name: 'Structure', trade_name: 'Charpenterie', durationDays: 5 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 4 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+      ],
+    },
+    'Électricité': {
+      selectedTradeKeys: ['electricite'],
+      phases: [
+        { name: 'Diagnostic électrique', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Préparation & sécurisation', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Travaux électriques', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Tests & mise en service', trade_name: 'Électricité', durationDays: 1 },
+      ],
+    },
+    'Plomberie': {
+      selectedTradeKeys: ['plomberie'],
+      phases: [
+        { name: 'Diagnostic plomberie', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Préparation du chantier', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Travaux de plomberie', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Tests & finition', trade_name: 'Plomberie', durationDays: 1 },
+      ],
+    },
+    'Chauffage / climatisation (CVC)': {
+      selectedTradeKeys: ['hvac', 'electricite'],
+      phases: [
+        { name: 'Diagnostic CVC', trade_name: 'Chauffage / CVC', durationDays: 1 },
+        { name: 'Préparation & raccordements', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Installation CVC', trade_name: 'Chauffage / CVC', durationDays: 2 },
+        { name: 'Mise en service', trade_name: 'Chauffage / CVC', durationDays: 1 },
+      ],
+    },
+  };
+  const projectWorkType = getProjectWorkType();
+  const projectTypePlaybook = getProjectTypePlaybook(projectWorkType);
+  const recommendedPhaseTemplates = projectTypePlaybook?.phases?.length ? projectTypePlaybook.phases : PHASE_TEMPLATES;
 
   /* Lignes pré-remplies suggérées par type de travaux */
   const SUGGESTED_LINES = {
@@ -3394,22 +3706,51 @@ Règles :
                 {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Régénérer avec Flo' : 'Générer avec Flo'}
               </button>
             </div>
+            {aiNotice && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
+                <p className="text-xs text-amber-700">{aiNotice}</p>
+                <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
+              </div>
+            )}
             {(() => {
               const existing = new Set((project.phases || []).map((p) => p.name?.toLowerCase()));
-              const available = PHASE_TEMPLATES.filter((tpl) => !existing.has(tpl.name.toLowerCase()));
-              if (!available.length) return null;
+              const available = recommendedPhaseTemplates
+                .map((tpl) => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) }))
+                .filter((tpl) => !existing.has(tpl.name.toLowerCase()));
+              const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
+              const bulkLabel = projectWorkType || 'ce projet';
+              if (!available.length && !hasPlaybook) return null;
               return (
                 <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 12 }}>
-                  <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Ajouter une phase type</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {available.map((tpl) => (
-                      <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
-                        {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
-                        {tpl.name}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: 0 }}>
+                      {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Ajouter une phase type'}
+                    </p>
+                    {hasPlaybook && (
+                      <button
+                        onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })}
+                        disabled={addingTemplatePhase === '__batch__'}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: `1px solid ${BRAND_BORDER}`, background: BRAND_SOFT, color: BRAND_DARK, fontSize: 12, fontWeight: 800, cursor: addingTemplatePhase === '__batch__' ? 'wait' : 'pointer' }}
+                      >
+                        {addingTemplatePhase === '__batch__' ? <Loader2 size={11} className="animate-spin"/> : <Plus size={11}/>}
+                        {`Ajouter les étapes de ${bulkLabel}`}
                       </button>
-                    ))}
+                    )}
                   </div>
+                  {available.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {available.map((tpl) => (
+                        <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                          {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
+                          {tpl.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Toutes les étapes recommandées sont déjà ajoutées pour ce type de projet.</p>
+                  )}
                 </div>
               );
             })()}
@@ -3725,14 +4066,6 @@ Règles :
               onChange={e => handleNotesChange(e.target.value)}
             />
           </div>
-
-          {aiNotice && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
-              <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
-              <p className="text-xs text-amber-700">{aiNotice}</p>
-              <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
-            </div>
-          )}
 
           {showMediaForm && (
             <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
