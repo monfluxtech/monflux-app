@@ -1273,7 +1273,6 @@ export default function ProjectDetail() {
   };
 
   // Florence recommande des sous-traitants pour les corps non assignés
-  const PROJ_CHAT_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
   const fetchTradeRecos = async () => {
     const missingTrades = (project.trades || []).filter(t => t.status === 'to_find' || !t.chosen_subcontractor_id);
     if (!missingTrades.length) return;
