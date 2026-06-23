@@ -15,7 +15,6 @@ const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
-  { id: 's-payments', icon: '💳', label: 'Paiements' },
   { id: 's-phases', icon: '📅', label: 'Phases & Gantt' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-trades', icon: '🏗️', label: 'Corps de métier' },
@@ -852,7 +851,10 @@ export default function ProjectDetail() {
     try {
       const saved = JSON.parse(localStorage.getItem(`monflux-toc-order-${id}`) || 'null');
       if (saved) {
-        const filtered = saved.filter(s => validIds.has(s.id));
+        // Toujours utiliser les labels/icônes du code (pas du localStorage qui peut être périmé)
+        const filtered = saved
+          .filter(s => validIds.has(s.id))
+          .map(s => DETAIL_TOC_SECTIONS.find(d => d.id === s.id) || s);
         const savedIds = new Set(filtered.map(s => s.id));
         const missing = DETAIL_TOC_SECTIONS.filter(s => !savedIds.has(s.id));
         return [...filtered, ...missing];
@@ -908,6 +910,12 @@ export default function ProjectDetail() {
   const [showClientReply, setShowClientReply] = useState(false);
   const [clientReplyText, setClientReplyText] = useState('');
   const [autreTexts, setAutreTexts] = useState({});
+  const [estimMsg, setEstimMsg] = useState('');
+  const [estimInspoPhotos, setEstimInspoPhotos] = useState([]);
+  const [estimInspoInput, setEstimInspoInput] = useState('');
+  const [relanceCount, setRelanceCount] = useState(() => { try { return Number(localStorage.getItem(`monflux-relances-count-${id}`) || 2); } catch { return 2; } });
+  const [relanceMethods, setRelanceMethods] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-relances-methods-${id}`) || '["email"]'); } catch { return ['email']; } });
+  const estimMsgRef = useRef(null);
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
   const [searchingPrices, setSearchingPrices] = useState(false);
   const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
@@ -997,6 +1005,7 @@ export default function ProjectDetail() {
         : { [field]: value || null };
       const { data } = await projectsApi.update(id, payload);
       setProject(p => ({ ...p, ...data }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), ...payload } }));
     } catch {}
   };
 
@@ -1012,11 +1021,15 @@ export default function ProjectDetail() {
     const map = { name: 'client_name', email: 'client_email', phone: 'client_phone', notes: 'client_notes' };
     const stateKey = map[field] || `client_${field}`;
     setProject(p => ({ ...p, [stateKey]: value }));
+    // Toujours sauvegarder sur le projet — garantit la persistance au rechargement
+    try {
+      const { data } = await projectsApi.update(id, { [stateKey]: value || null });
+      setProject(p => ({ ...p, ...data }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), [stateKey]: value } }));
+    } catch {}
+    // Si un contact est lié, mettre aussi à jour le contact
     if (project.client_id) {
       try { await contactsApi.update(project.client_id, { [field]: value || null }); } catch {}
-    } else {
-      const next = { ...(project.field_assessment || {}), [stateKey]: value };
-      try { await projectsApi.update(id, { field_assessment: next }); setProject(p => ({ ...p, field_assessment: next })); } catch {}
     }
   };
 
@@ -2048,17 +2061,21 @@ Règles :
               const kvChips = [
                 contractValue > 0 && {
                   label: 'Valeur contrat', value: money(contractValue),
-                  tooltip: `Contrat signé · ${projectContracts.length} contrat${projectContracts.length !== 1 ? 's' : ''}`,
+                  tooltip: projectContracts.length > 0 ? `${projectContracts.length} contrat${projectContracts.length > 1 ? 's' : ''} signé${projectContracts.length > 1 ? 's' : ''}` : 'Montant total du contrat',
                   bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
                 },
                 heroNextPaymentAmount > 0 && {
                   label: 'Prochain versement', value: money(heroNextPaymentAmount),
-                  tooltip: nextInstallment ? `${nextInstallment.label} · ${nextInstallment.pct}% du contrat` : (project.payment_terms || 'Voir échéancier'),
+                  tooltip: nextInstallment ? `${nextInstallment.label} — ${nextInstallment.pct}% du contrat` : (project.payment_terms ? `Termes : ${project.payment_terms}` : null),
                   bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
                 },
                 {
                   label: 'Santé du chantier', value: hc.label,
-                  tooltip: overdue ? 'Facture(s) en retard de paiement' : ['brouillon','estimation'].includes(project.status) ? 'Projet non encore confirmé' : 'Toutes les échéances sont à jour',
+                  tooltip: overdue
+                    ? `Tu as ${projectInvoices.filter(i => i.status === 'overdue').length} facture${projectInvoices.filter(i => i.status === 'overdue').length > 1 ? 's' : ''} en retard`
+                    : ['brouillon','estimation'].includes(project.status)
+                      ? `Statut actuel : ${PIPELINE_LABELS[project.status] || project.status}`
+                      : null,
                   bg: hc.bg, border: `1px solid ${hc.dot}33`, dot: hc.dot,
                 },
                 profit && profit.theoretical.margin_pct != null && {
@@ -2073,7 +2090,9 @@ Règles :
                 profit && profit.actual.margin_pct != null && {
                   label: 'Marge réelle',
                   value: `${profit.actual.margin_pct}%`,
-                  tooltip: `Factures émises − punch & dépenses · ${profit.actual.cost_breakdown?.hours_logged || 0}h MO`,
+                  tooltip: profit.actual.cost_breakdown?.hours_logged > 0
+                    ? `${profit.actual.cost_breakdown.hours_logged}h pointées · MO ${money(profit.actual.cost_breakdown.labor_punch)} · dépenses ${money(profit.actual.cost_breakdown.expenses)}`
+                    : `Facturé ${money(profit.actual.revenue)} − dépenses ${money(profit.actual.cost)}`,
                   bg: profit.actual.margin_pct >= 0 ? '#DCFCE7' : '#FEE2E2',
                   border: `1px solid ${profit.actual.margin_pct >= 0 ? '#16a34a33' : '#DC262633'}`,
                   dot: null,
@@ -2901,98 +2920,158 @@ Règles :
                   )}
                 </div>
               )}
+
+              {/* ── Envoyer l'estimation au client ── */}
+              {(() => {
+                const fa = project.field_assessment || {};
+              const approxLines = fa.approx_lines || [];
+              const aiScenarios = aiPriceResult?.scenarios || [];
+              const totalApprox = approxLines.reduce((s, l) => s + (Number(l.total) || 0), 0);
+              const midScenario = aiScenarios.find(s => (s.label||'').toLowerCase().includes('moyen')) || aiScenarios[1] || aiScenarios[0];
+              const estAmount = totalApprox > 0 ? money(totalApprox) : midScenario ? `${money(midScenario.min)} – ${money(midScenario.max)}` : null;
+              const startLabel = fa.start_label || (project.start_date ? project.start_date.slice(0,10) : '');
+              const endLabel = fa.end_label || (project.end_date ? project.end_date.slice(0,10) : '');
+              const trades = fa.selected_trades || [];
+
+              const generate = () => {
+                const lines = [];
+                lines.push(`Bonjour ${project.client_name || '[Nom du client]'},`);
+                lines.push('');
+                lines.push(`Suite à notre échange concernant ${fa.work_type || project.description || project.name || 'ton projet'}, voici mon estimation approximative :`);
+                lines.push('');
+                if (estAmount) lines.push(`💰 Estimation : ${estAmount}`);
+                if (trades.length) lines.push(`🔨 Travaux inclus : ${trades.join(', ')}`);
+                if (startLabel || endLabel) lines.push(`📅 Calendrier prévu : ${[startLabel, endLabel].filter(Boolean).join(' → ')}`);
+                if (project.address) lines.push(`📍 Adresse : ${project.address}`);
+                lines.push('');
+                lines.push(`Cette estimation est approximative. Pour un prix précis et définitif, je te reviens avec une soumission complète après visite.`);
+                lines.push('');
+                lines.push(`N'hésite pas à me contacter si tu as des questions.`);
+                lines.push('');
+                lines.push(`Cordialement,`);
+                lines.push(project.project_manager || '[Ton nom]');
+                setEstimMsg(lines.join('\n'));
+                setTimeout(() => estimMsgRef.current?.focus(), 50);
+              };
+
+              return (
+                <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      <Send size={16} color={BRAND}/>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
+                      <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Génère un message personnalisé avec le montant, ce que ça inclut et le calendrier prévu.</p>
+                    </div>
+                  </div>
+
+                  {/* 3 boutons d'action */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <button onClick={generate}
+                      style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${BRAND}`, background: `${BRAND}12`, fontSize: 12.5, fontWeight: 700, color: BRAND, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Sparkles size={13}/> Générer le message
+                    </button>
+                    <button
+                      onClick={() => {
+                        const txt = estimMsgRef.current?.value || estimMsg;
+                        const body = txt || (() => { generate(); return ''; })();
+                        window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(body)}`,'_blank');
+                      }}
+                      disabled={!project.client_email}
+                      title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
+                      style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      ✉️ Envoyer par courriel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const txt = estimMsgRef.current?.value || estimMsg;
+                        window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(txt)}`,'_blank');
+                      }}
+                      disabled={!project.client_phone}
+                      title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
+                      style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      📱 Par SMS
+                    </button>
+                  </div>
+
+                  {/* Zone de message éditable */}
+                  <textarea ref={estimMsgRef} value={estimMsg} onChange={e => setEstimMsg(e.target.value)}
+                    placeholder={`Clique sur "Générer le message" pour pré-remplir automatiquement, ou écris directement…`}
+                    style={{ width: '100%', minHeight: 180, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.7, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
+
+                  {/* Photos d'inspiration */}
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                      {estimInspoPhotos.map((url, i) => (
+                        <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
+                          onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
+                          <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                          <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
+                            style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                            <X size={10} color="#fff"/>
+                          </button>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                          placeholder="URL d'une photo…"
+                          style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
+                        <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                          style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          + Ajouter
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Relances automatiques */}
+                  <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 14, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 7px' }}>Relances automatiques</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ fontSize: 12.5, color: '#3A3D44' }}>Nombre :</span>
+                        {[0,1,2,3,5].map(n => (
+                          <button key={n} onClick={() => { setRelanceCount(n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
+                            style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 7px' }}>Méthode(s)</p>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
+                          <button key={k} onClick={() => {
+                            const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
+                            setRelanceMethods(next);
+                            localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
+                          }}
+                            style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {relanceCount > 0 && relanceMethods.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: '#DCFCE7', border: '1px solid #16a34a33', alignSelf: 'flex-end' }}>
+                        <CheckCircle size={13} color="#16a34a"/>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
+                          {relanceCount} relance{relanceCount > 1 ? 's' : ''} par {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')} configurées
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             </div>
           );
         })()}
 
-
-        {/* ── Paiements ── */}
-        <div id="s-payments" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💳</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Paiements</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Versements contractuels, facturation et suivi des encaissements</div>
-            </div>
-            <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-            <div className="rounded-xl border border-gray-100 p-4 bg-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Total facturé</p>
-              <p className="text-3xl font-black text-green-600 mt-2">{money(totalBilled)}</p>
-              <p className="text-xs text-gray-400 mt-1">{billedInvoices.length} facture(s) non annulée(s)</p>
-            </div>
-            <div className="rounded-xl border border-gray-100 p-4 bg-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Encaissements reçus</p>
-              <p className="text-3xl font-black text-gray-900 mt-2">{money(totalCollected)}</p>
-              <p className="text-xs text-gray-400 mt-1">{contractValue > 0 ? `${Math.round((totalCollected / contractValue) * 100)}% du contrat` : 'Paiements enregistrés'}</p>
-            </div>
-            <div className="rounded-xl border border-gray-100 p-4 bg-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">À encaisser</p>
-              <p className="text-3xl font-black text-gray-900 mt-2">{money(totalOutstanding)}</p>
-              <p className="text-xs text-gray-400 mt-1">{nextDueInvoice?.due_date ? `Échéance ${new Date(nextDueInvoice.due_date).toLocaleDateString('fr-CA')}` : 'Aucune échéance active'}</p>
-            </div>
-            <div className="rounded-xl border border-gray-100 p-4 bg-white">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">Prochain versement</p>
-              <p className="text-3xl font-black text-gray-900 mt-2">{money(heroNextPaymentAmount)}</p>
-              <p className="text-xs text-gray-400 mt-1">{nextInstallment ? `${nextInstallment.label} · ${nextInstallment.pct}%` : project.payment_terms || 'À définir'}</p>
-            </div>
-          </div>
-
-          {installments.length > 0 && (
-            <div className="rounded-xl border border-gray-100 bg-white p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-gray-900">Échéancier de paiement</p>
-                <span className="text-xs text-gray-400">{project.payment_terms}</span>
-              </div>
-              <div className="space-y-2">
-                {installments.map((item) => (
-                  <div key={item.label} className="flex items-center gap-3 border-b border-gray-50 last:border-b-0 py-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{item.label}</p>
-                      <p className="text-xs text-gray-400">{item.pct}% du contrat</p>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-800 flex-shrink-0">{money(item.amount)}</p>
-                    <span className={`badge ${item.paid ? 'badge-green' : item.current ? 'badge-orange' : 'badge-gray'}`}>
-                      {item.paid ? 'Reçu' : item.current ? 'À venir' : 'Planifié'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-gray-100 bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold text-gray-900">Factures récentes</p>
-              <span className="text-xs text-gray-400">{project.payment_terms || 'Suivi libre'}</span>
-            </div>
-            {billedInvoices.length > 0 ? (
-              <div className="space-y-2">
-                {billedInvoices.slice(0, 4).map((inv) => {
-                  const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
-                  const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
-                  return (
-                    <div key={inv.id} className="flex items-center gap-3 border-b border-gray-50 last:border-b-0 py-2">
-                      <FileText size={14} className="text-gray-300 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{inv.title || `Facture ${inv.number}`}</p>
-                        <p className="text-xs text-gray-400">
-                          {inv.due_date ? `Échéance ${new Date(inv.due_date).toLocaleDateString('fr-CA')}` : 'Sans échéance'}
-                        </p>
-                      </div>
-                      <span className={`badge ${SB[inv.status] || 'badge-gray'} text-xs`}>{SL[inv.status] || inv.status}</span>
-                      <p className="text-sm font-semibold text-gray-800 flex-shrink-0">{money(inv.total)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400">Aucune facture liée à ce projet pour le moment.</p>
-            )}
-          </div>
-        </div>
 
         {/* ── Phases & Gantt ── (blue) */}
         <div id="s-phases" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>

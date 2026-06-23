@@ -471,6 +471,16 @@ export default function Projets() {
 
   useEffect(() => { load(); loadCfg(); }, []);
 
+  // Sync project fields updated from ProjectDetail without a full reload
+  useEffect(() => {
+    const handler = (e) => {
+      const { id: projId, ...fields } = e.detail || {};
+      if (projId) setItems(prev => prev.map(p => p.id === projId ? { ...p, ...fields } : p));
+    };
+    window.addEventListener('monflux:project-updated', handler);
+    return () => window.removeEventListener('monflux:project-updated', handler);
+  }, []);
+
   const changeStage = async (id, status) => {
     setItems((i) => i.map((p) => p.id === id ? { ...p, status } : p));
     try { await projectsApi.update(id, { status }); } catch {}
