@@ -915,7 +915,10 @@ export default function ProjectDetail() {
   const [estimInspoInput, setEstimInspoInput] = useState('');
   const [relanceCount, setRelanceCount] = useState(() => { try { return Number(localStorage.getItem(`monflux-relances-count-${id}`) || 2); } catch { return 2; } });
   const [relanceMethods, setRelanceMethods] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-relances-methods-${id}`) || '["email"]'); } catch { return ['email']; } });
+  const [relanceFrequency, setRelanceFrequency] = useState(() => { try { return Number(localStorage.getItem(`monflux-relances-freq-${id}`) || 7); } catch { return 7; } });
+  const [estimMsgCopied, setEstimMsgCopied] = useState(false);
   const estimMsgRef = useRef(null);
+  const userEditedEstimMsg = useRef(false);
   const [clientMsgCopied, setClientMsgCopied] = useState(false);
   const [searchingPrices, setSearchingPrices] = useState(false);
   const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
@@ -1034,6 +1037,58 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  // Auto-générer le message d'estimation quand le projet ou les résultats IA changent
+  const buildEstimMsg = (proj, aiResult) => {
+    if (!proj) return '';
+    const fa = proj.field_assessment || {};
+    const approxLines = fa.approx_lines || [];
+    const aiScenarios = aiResult?.scenarios || [];
+    const total = approxLines.reduce((s, l) => s + (Number(l.total) || 0), 0);
+    const mid = aiScenarios.find(s => (s.label||'').toLowerCase().includes('moyen')) || aiScenarios[1] || aiScenarios[0];
+    const estAmount = total > 0 ? money(total) : mid ? `${money(mid.min)} – ${money(mid.max)}` : null;
+    const startLabel = fa.start_label || (proj.start_date ? proj.start_date.slice(0,10) : '');
+    const endLabel = fa.end_label || (proj.end_date ? proj.end_date.slice(0,10) : '');
+    const trades = fa.selected_trades || [];
+    const descContext = proj.description || fa.work_type || '';
+
+    const lines = [];
+    const prenom = (proj.client_name || '').split(' ')[0] || 'toi';
+    lines.push(`Bonjour ${prenom},`);
+    lines.push('');
+    if (descContext) {
+      lines.push(`J'ai bien regardé ta demande pour ${descContext.toLowerCase().startsWith('réno') || descContext.toLowerCase().startsWith('remo') ? descContext : `les travaux de ${descContext}`}.${proj.address ? ` Je voulais te faire un retour rapide sur le projet à ${proj.address}.` : ''}`);
+    } else {
+      lines.push(`Je voulais te faire un retour rapide concernant ton projet${proj.address ? ` à ${proj.address}` : ''}.`);
+    }
+    lines.push('');
+    if (estAmount) {
+      lines.push(`Selon les informations que j'ai en main, mon estimation approximative se situe autour de **${estAmount}**.`);
+    } else {
+      lines.push(`Je finalise encore les détails de mon estimation et je reviens vers toi très bientôt avec un montant.`);
+    }
+    if (trades.length) {
+      lines.push(`Ça couvre : ${trades.join(', ')}.`);
+    }
+    if (startLabel || endLabel) {
+      lines.push(`Pour le calendrier, je vise ${startLabel && endLabel ? `une réalisation entre le ${startLabel} et le ${endLabel}` : startLabel ? `un début autour du ${startLabel}` : `une fin autour du ${endLabel}`}.`);
+    }
+    lines.push('');
+    lines.push(`Garde en tête que c'est une estimation approximative — pour un prix ferme, je te prépare une soumission complète après ma visite.`);
+    lines.push('');
+    lines.push(`N'hésite pas à me contacter si tu as des questions ou si tu veux qu'on planifie une visite.`);
+    lines.push('');
+    lines.push(`À bientôt,`);
+    lines.push(proj.project_manager || '');
+    return lines.filter((l, i, arr) => !(l === '' && arr[i-1] === '')).join('\n');
+  };
+
+  useEffect(() => {
+    if (userEditedEstimMsg.current) return;
+    const msg = buildEstimMsg(project, aiPriceResult);
+    if (msg) setEstimMsg(msg);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, aiPriceResult]);
 
   useEffect(() => {
     if (loading) return undefined;
@@ -2512,7 +2567,7 @@ Règles :
                       color: estimTab === 'voieA' ? BRAND_DARK : '#7C8089',
                       boxShadow: estimTab === 'voieA' ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
                     }}>
-                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Recherche IA — Florence
+                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Estimation approximative
                   </button>
                 </div>
               </div>
@@ -2922,152 +2977,134 @@ Règles :
               )}
 
               {/* ── Envoyer l'estimation au client ── */}
-              {(() => {
-                const fa = project.field_assessment || {};
-              const approxLines = fa.approx_lines || [];
-              const aiScenarios = aiPriceResult?.scenarios || [];
-              const totalApprox = approxLines.reduce((s, l) => s + (Number(l.total) || 0), 0);
-              const midScenario = aiScenarios.find(s => (s.label||'').toLowerCase().includes('moyen')) || aiScenarios[1] || aiScenarios[0];
-              const estAmount = totalApprox > 0 ? money(totalApprox) : midScenario ? `${money(midScenario.min)} – ${money(midScenario.max)}` : null;
-              const startLabel = fa.start_label || (project.start_date ? project.start_date.slice(0,10) : '');
-              const endLabel = fa.end_label || (project.end_date ? project.end_date.slice(0,10) : '');
-              const trades = fa.selected_trades || [];
-
-              const generate = () => {
-                const lines = [];
-                lines.push(`Bonjour ${project.client_name || '[Nom du client]'},`);
-                lines.push('');
-                lines.push(`Suite à notre échange concernant ${fa.work_type || project.description || project.name || 'ton projet'}, voici mon estimation approximative :`);
-                lines.push('');
-                if (estAmount) lines.push(`💰 Estimation : ${estAmount}`);
-                if (trades.length) lines.push(`🔨 Travaux inclus : ${trades.join(', ')}`);
-                if (startLabel || endLabel) lines.push(`📅 Calendrier prévu : ${[startLabel, endLabel].filter(Boolean).join(' → ')}`);
-                if (project.address) lines.push(`📍 Adresse : ${project.address}`);
-                lines.push('');
-                lines.push(`Cette estimation est approximative. Pour un prix précis et définitif, je te reviens avec une soumission complète après visite.`);
-                lines.push('');
-                lines.push(`N'hésite pas à me contacter si tu as des questions.`);
-                lines.push('');
-                lines.push(`Cordialement,`);
-                lines.push(project.project_manager || '[Ton nom]');
-                setEstimMsg(lines.join('\n'));
-                setTimeout(() => estimMsgRef.current?.focus(), 50);
-              };
-
-              return (
-                <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                      <Send size={16} color={BRAND}/>
-                    </div>
-                    <div>
-                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
-                      <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Génère un message personnalisé avec le montant, ce que ça inclut et le calendrier prévu.</p>
-                    </div>
+              <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Send size={16} color={BRAND}/>
                   </div>
-
-                  {/* 3 boutons d'action */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                    <button onClick={generate}
-                      style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${BRAND}`, background: `${BRAND}12`, fontSize: 12.5, fontWeight: 700, color: BRAND, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Sparkles size={13}/> Générer le message
-                    </button>
-                    <button
-                      onClick={() => {
-                        const txt = estimMsgRef.current?.value || estimMsg;
-                        const body = txt || (() => { generate(); return ''; })();
-                        window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(body)}`,'_blank');
-                      }}
-                      disabled={!project.client_email}
-                      title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
-                      style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      ✉️ Envoyer par courriel
-                    </button>
-                    <button
-                      onClick={() => {
-                        const txt = estimMsgRef.current?.value || estimMsg;
-                        window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(txt)}`,'_blank');
-                      }}
-                      disabled={!project.client_phone}
-                      title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
-                      style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      📱 Par SMS
-                    </button>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
+                    <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Message personnalisé — se met à jour automatiquement avec les données du projet.</p>
                   </div>
+                  <button onClick={() => { userEditedEstimMsg.current = false; setEstimMsg(buildEstimMsg(project, aiPriceResult)); }}
+                    style={{ fontSize: 11.5, fontWeight: 700, color: '#7C8089', background: '#F4F5F6', border: 'none', borderRadius: 8, padding: '5px 11px', cursor: 'pointer', flexShrink: 0 }}>
+                    ↺ Regénérer
+                  </button>
+                </div>
 
-                  {/* Zone de message éditable */}
-                  <textarea ref={estimMsgRef} value={estimMsg} onChange={e => setEstimMsg(e.target.value)}
-                    placeholder={`Clique sur "Générer le message" pour pré-remplir automatiquement, ou écris directement…`}
-                    style={{ width: '100%', minHeight: 180, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.7, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
+                {/* Zone de message éditable */}
+                <textarea ref={estimMsgRef} value={estimMsg}
+                  onChange={e => { userEditedEstimMsg.current = true; setEstimMsg(e.target.value); }}
+                  placeholder="Le message se génère automatiquement dès que des informations sont disponibles sur le projet…"
+                  style={{ width: '100%', minHeight: 200, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.75, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
 
-                  {/* Photos d'inspiration */}
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                      {estimInspoPhotos.map((url, i) => (
-                        <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
-                          onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
-                          <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                          <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
-                            style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                            <X size={10} color="#fff"/>
-                          </button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
-                          placeholder="URL d'une photo…"
-                          style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
-                        <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
-                          style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          + Ajouter
+                {/* Photos de projets similaires */}
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {estimInspoPhotos.map((url, i) => (
+                      <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
+                        onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
+                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
+                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                          <X size={10} color="#fff"/>
                         </button>
                       </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        placeholder="URL d'une photo…"
+                        style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
+                      <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        + Ajouter
+                      </button>
                     </div>
                   </div>
+                </div>
 
-                  {/* Relances automatiques */}
-                  <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 14, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+                {/* 3 boutons d'envoi */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText(estimMsg).then(() => { setEstimMsgCopied(true); setTimeout(() => setEstimMsgCopied(false), 2000); });
+                  }}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${estimMsgCopied ? '#16a34a' : '#E0E4E8'}`, background: estimMsgCopied ? '#DCFCE7' : '#fff', fontSize: 12.5, fontWeight: 700, color: estimMsgCopied ? '#16a34a' : '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {estimMsgCopied ? '✓ Copié !' : '⎘ Copier le message'}
+                  </button>
+                  <button
+                    onClick={() => window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_email}
+                    title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✉️ Envoyer par courriel
+                  </button>
+                  <button
+                    onClick={() => window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_phone}
+                    title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📱 Par SMS
+                  </button>
+                </div>
+
+                {/* Relances automatiques */}
+                <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: 0 }}>Relances automatiques</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 7px' }}>Relances automatiques</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <span style={{ fontSize: 12.5, color: '#3A3D44' }}>Nombre :</span>
-                        {[0,1,2,3,5].map(n => (
+                      <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Nombre de relances</p>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {[0,1,2,3,4,5,6,7].map(n => (
                           <button key={n} onClick={() => { setRelanceCount(n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
-                            style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                            style={{ width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
                             {n}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 7px' }}>Méthode(s)</p>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
-                          <button key={k} onClick={() => {
-                            const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
-                            setRelanceMethods(next);
-                            localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
-                          }}
-                            style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
-                            {l}
-                          </button>
-                        ))}
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Fréquence</p>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {[[2,'2 j'],[3,'3 j'],[5,'5 j'],[7,'1 sem.'],[14,'2 sem.'],[30,'1 mois']].map(([v,l]) => (
+                            <button key={v} onClick={() => { setRelanceFrequency(v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
+                              style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${relanceFrequency === v ? BRAND : '#E0E4E8'}`, background: relanceFrequency === v ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceFrequency === v ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    {relanceCount > 0 && relanceMethods.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: '#DCFCE7', border: '1px solid #16a34a33', alignSelf: 'flex-end' }}>
-                        <CheckCircle size={13} color="#16a34a"/>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
-                          {relanceCount} relance{relanceCount > 1 ? 's' : ''} par {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')} configurées
-                        </span>
+                    )}
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Méthode(s)</p>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
+                            <button key={k} onClick={() => {
+                              const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
+                              setRelanceMethods(next);
+                              localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
+                            }}
+                              style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
+                  {relanceCount > 0 && relanceMethods.length > 0 && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 14px', borderRadius: 9, background: '#DCFCE7', border: '1px solid #16a34a33' }}>
+                      <CheckCircle size={13} color="#16a34a"/>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#16a34a' }}>
+                        {relanceCount} relance{relanceCount > 1 ? 's' : ''} · toutes les {relanceFrequency <= 6 ? `${relanceFrequency} jours` : relanceFrequency <= 13 ? '1 semaine' : relanceFrequency <= 27 ? '2 semaines' : '1 mois'} · {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              );
-            })()}
+              </div>
             </div>
           );
         })()}
