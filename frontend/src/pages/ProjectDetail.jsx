@@ -500,95 +500,192 @@ function AssigneeChip({ trade }) {
   );
 }
 
-function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase }) {
+function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase }) {
+  const [scale, setScale] = useState('month'); // 'month' | 'week'
+  const [cascade, setCascade] = useState(true);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [barDrag, setBarDrag] = useState(null); // { phId, startX, origStart, origEnd, pixelsPerDay, currentDeltaDays }
+  const scrollRef = useRef(null);
+  const ganttColRef = useRef(null);
 
   if (!phases || phases.length === 0) return null;
 
-  const datedStarts = phases.map((ph) => ph.start_date).filter(Boolean).map((d) => new Date(d));
-  const datedEnds = phases.map((ph) => ph.end_date).filter(Boolean).map((d) => new Date(d));
+  const datedStarts = phases.map(ph => ph.start_date).filter(Boolean).map(d => new Date(d));
+  const datedEnds   = phases.map(ph => ph.end_date).filter(Boolean).map(d => new Date(d));
   const fallbackStart = datedStarts.length ? new Date(Math.min(...datedStarts)) : new Date();
-  const fallbackEnd = datedEnds.length
-    ? new Date(Math.max(...datedEnds))
-    : new Date(fallbackStart.getTime() + 90 * 86400000);
+  const fallbackEnd   = datedEnds.length   ? new Date(Math.max(...datedEnds))   : new Date(fallbackStart.getTime() + 90*86400000);
   const refStart = projectStart ? new Date(projectStart) : fallbackStart;
-  const refEnd = projectEnd ? new Date(projectEnd) : fallbackEnd;
+  const rawEnd   = projectEnd   ? new Date(projectEnd)   : fallbackEnd;
+  const refEnd   = new Date(Math.max(rawEnd.getTime(), fallbackEnd.getTime()) + 14*86400000);
   const totalMs  = Math.max(refEnd - refStart, 1);
+  const totalDays = totalMs / 86400000;
 
-  const months = [];
-  const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
-  while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
+  // Build column headers based on scale
+  const columns = (() => {
+    if (scale === 'week') {
+      const cols = [];
+      const mon = new Date(refStart);
+      mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+      const cur = new Date(mon);
+      while (cur <= refEnd) {
+        const end = new Date(cur); end.setDate(end.getDate() + 6);
+        cols.push({ start: new Date(cur), end });
+        cur.setDate(cur.getDate() + 7);
+      }
+      return cols;
+    }
+    const cols = [];
+    const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
+    while (cur <= refEnd) { cols.push({ start: new Date(cur), end: new Date(cur.getFullYear(), cur.getMonth()+1, 0) }); cur.setMonth(cur.getMonth()+1); }
+    return cols;
+  })();
 
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
   const barW = (s, e) => Math.max(0.5, pct(e) - pct(s));
   const todayPct = pct(new Date());
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
 
-  const labelWidth = 180;
-  const assigneeWidth = 155;
+  const weekNum = (d) => {
+    const dt = new Date(d); dt.setHours(0,0,0,0); dt.setDate(dt.getDate() + 4 - (dt.getDay()||7));
+    return Math.ceil(((dt - new Date(dt.getFullYear(),0,1)) / 86400000 + 1) / 7);
+  };
+
+  // Live bar position with drag preview
+  const effStart = (ph) => {
+    if (barDrag?.phId === ph.id) {
+      const d = new Date(barDrag.origStart); d.setDate(d.getDate() + barDrag.delta); return d.toISOString();
+    }
+    return ph.start_date;
+  };
+  const effEnd = (ph) => {
+    if (barDrag?.phId === ph.id) {
+      const d = new Date(barDrag.origEnd || barDrag.origStart); d.setDate(d.getDate() + barDrag.delta); return d.toISOString();
+    }
+    return ph.end_date;
+  };
 
   const tradesByName = {};
   (trades || []).forEach(t => { if (t.trade) tradesByName[t.trade.toLowerCase()] = t; });
 
-  const onDragStart = (e, i) => {
-    setDragIdx(i);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-  const onDragOver = (e, i) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverIdx(i);
-  };
-  const onDrop = (e, i) => {
+  // Row drag (reorder)
+  const onDragStart = (e, i) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragOver  = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
+  const onDrop      = (e, i) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDragOverIdx(null); return; }
-    const next = [...phases];
-    const [moved] = next.splice(dragIdx, 1);
-    next.splice(i, 0, moved);
-    onReorderPhases?.(next);
-    setDragIdx(null); setDragOverIdx(null);
+    const next = [...phases]; const [moved] = next.splice(dragIdx, 1); next.splice(i, 0, moved);
+    onReorderPhases?.(next); setDragIdx(null); setDragOverIdx(null);
   };
 
-  const startEdit = (ph) => {
-    setEditingId(ph.id);
-    setEditingName(ph.name);
+  // Bar drag (shift dates)
+  const handleBarPointerDown = (e, ph) => {
+    e.preventDefault(); e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const ganttW = ganttColRef.current?.getBoundingClientRect().width || 1;
+    setBarDrag({ phId: ph.id, startX: e.clientX, origStart: ph.start_date, origEnd: ph.end_date, pxPerDay: ganttW / totalDays, delta: 0 });
   };
+  const handleBarPointerMove = (e) => {
+    if (!barDrag) return;
+    const delta = Math.round((e.clientX - barDrag.startX) / barDrag.pxPerDay);
+    if (delta !== barDrag.delta) setBarDrag(prev => ({ ...prev, delta }));
+  };
+  const handleBarPointerUp = (e, ph) => {
+    if (!barDrag || barDrag.phId !== ph.id) return;
+    if (barDrag.delta !== 0) {
+      const ns = new Date(barDrag.origStart); ns.setDate(ns.getDate() + barDrag.delta);
+      const ne = new Date(barDrag.origEnd || barDrag.origStart); ne.setDate(ne.getDate() + barDrag.delta);
+      onDatesChange?.(ph.id, ns.toISOString().slice(0,10), ne.toISOString().slice(0,10), cascade);
+    }
+    setBarDrag(null);
+  };
+
+  // Inline name edit
+  const startEdit = (ph) => { setEditingId(ph.id); setEditingName(ph.name); };
   const commitEdit = (ph) => {
-    const trimmed = editingName.trim();
-    if (trimmed && trimmed !== ph.name) onRenamePhase?.(ph.id, trimmed);
+    const t = editingName.trim();
+    if (t && t !== ph.name) onRenamePhase?.(ph.id, t);
     setEditingId(null);
   };
 
+  const scrollToToday = () => {
+    if (!scrollRef.current || !ganttColRef.current) return;
+    const w = ganttColRef.current.scrollWidth;
+    scrollRef.current.scrollLeft = Math.max(0, w * todayPct / 100 - 200);
+  };
+
+  const labelWidth   = 175;
+  const assigneeWidth = 148;
+  const colMinW = scale === 'week' ? 56 : 80;
+
+  const STATUS_BORDER = { not_started: '#E5E7EB', in_progress: BRAND, done: '#22C55E', delayed: '#EF4444', on_hold: '#9CA3AF' };
+
   return (
-    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 0 14px' }}>
-      <div style={{ overflowX: 'auto', paddingLeft: 18, paddingRight: 18 }}>
-        <div style={{ minWidth: 860 }}>
-          {/* Header row */}
-          <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 6 }}>
-            <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 24px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
-              Phase
-            </div>
-            <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 12px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
-              Assigné
-            </div>
-            <div style={{ flex: 1, display: 'flex', borderBottom: '2px solid #EEF0F2', paddingBottom: 8, position: 'relative' }}>
-              {months.map((m, i) => {
-                const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
-                const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
+    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
+
+      {/* ── Toolbar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #F4F5F6', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280', flex: 1 }}>
+          {phases.length} phase{phases.length !== 1 ? 's' : ''}
+        </span>
+        {/* Cascade toggle */}
+        <button onClick={() => setCascade(c => !c)} title={cascade ? 'Cascade activée — les phases suivantes bougent aussi' : 'Cascade désactivée'}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 7, border: `1px solid ${cascade ? BRAND_BORDER : '#E5E7EB'}`, background: cascade ? BRAND_SOFT : '#fff', fontSize: 11, fontWeight: 700, color: cascade ? BRAND_DARK : '#9CA3AF', cursor: 'pointer' }}>
+          <GitBranch size={11}/> Cascade
+        </button>
+        {/* Scroll to today */}
+        <button onClick={scrollToToday}
+          style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid #E5E7EB', background: '#fff', fontSize: 11, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
+          Aujourd'hui
+        </button>
+        {/* Scale switcher */}
+        <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 7, padding: 2 }}>
+          {[['month','Mois'],['week','Sem.']].map(([s,lbl]) => (
+            <button key={s} onClick={() => setScale(s)}
+              style={{ padding: '4px 9px', borderRadius: 5, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all .12s',
+                background: scale === s ? '#fff' : 'transparent', color: scale === s ? '#15171C' : '#9CA3AF',
+                boxShadow: scale === s ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
+          ))}
+        </div>
+        {/* Add phase */}
+        <button onClick={onAddPhase}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          <Plus size={12}/> Phase
+        </button>
+      </div>
+
+      {/* ── Scrollable Gantt ── */}
+      <div ref={scrollRef} style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 820 }}>
+
+          {/* Column headers */}
+          <div style={{ display: 'flex', borderBottom: '2px solid #EEF0F2' }}>
+            <div style={{ width: labelWidth + 20, flexShrink: 0, padding: '7px 0 7px 18px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Phase</div>
+            <div style={{ width: assigneeWidth, flexShrink: 0, padding: '7px 8px 7px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>Assigné</div>
+            <div ref={ganttColRef} style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+              {columns.map((col, ci) => {
+                const w = Math.min(pct(new Date(col.end.getTime()+86400000)), 100) - Math.max(pct(col.start), 0);
                 return (
-                  <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 80, fontSize: 11, fontWeight: 800, color: '#6B7280', paddingLeft: 10, borderLeft: i > 0 ? '1px solid #E5E7EB' : 'none', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <span>{m.toLocaleDateString('fr-CA',{ month:'short' }).toUpperCase()}</span>
-                    <span style={{ opacity: .6, fontSize: 9.5, fontWeight: 600 }}>{m.getFullYear()}</span>
+                  <div key={ci} style={{ width: `${Math.max(w,0)}%`, minWidth: colMinW, padding: '5px 0 5px 8px', borderLeft: ci > 0 ? '1px solid #E5E7EB' : 'none', flexShrink: 0 }}>
+                    {scale === 'month' ? (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: '#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
+                        <div style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 600 }}>{col.start.getFullYear()}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: '#374151' }}>S{weekNum(col.start)}</div>
+                        <div style={{ fontSize: 9.5, color: '#9CA3AF', fontWeight: 500 }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>
+                      </>
+                    )}
                   </div>
                 );
               })}
-              {/* Today line in header */}
               {todayPct >= 0 && todayPct <= 100 && (
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .5 }}>
-                  <span style={{ position: 'absolute', top: -18, left: -18, fontSize: 9, fontWeight: 800, color: BRAND, whiteSpace: 'nowrap', background: '#fff', padding: '1px 4px', borderRadius: 4, border: `1px solid ${BRAND}` }}>Auj.</span>
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .65 }}>
+                  <span style={{ position: 'absolute', bottom: 2, left: -12, fontSize: 8.5, fontWeight: 800, color: BRAND, background: '#FFF3EE', padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>Auj.</span>
                 </div>
               )}
             </div>
@@ -596,100 +693,91 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Phase rows */}
           {phases.map((ph, i) => {
-            const s = ph.start_date ? new Date(ph.start_date) : refStart;
-            const e = ph.end_date ? new Date(ph.end_date) : new Date(s.getTime()+14*86400000);
+            const es = effStart(ph), ee = effEnd(ph);
+            const s = es ? new Date(es) : refStart;
+            const e = ee ? new Date(ee) : new Date(s.getTime()+14*86400000);
             const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-            const pL = pct(s);
-            const pW = barW(s, e);
+            const pL = pct(s), pW = barW(s, e);
             const isEven = i % 2 === 0;
-            const barLabel = ph.trade_name || ph.name;
-            const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
             const isDragOver = dragOverIdx === i;
-            const dateLabel = [fmtDate(ph.start_date), ph.end_date ? fmtDate(ph.end_date) : null].filter(Boolean).join(' → ');
+            const isBarDrag = barDrag?.phId === ph.id;
+            const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
+            const dateLabel = [fmtDate(es), ee ? fmtDate(ee) : null].filter(Boolean).join(' → ');
+            const progress = ph.progress_pct || 0;
+            const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
 
             return (
-              <div
-                key={ph.id}
-                draggable
-                onDragStart={(ev) => onDragStart(ev, i)}
-                onDragOver={(ev) => onDragOver(ev, i)}
-                onDrop={(ev) => onDrop(ev, i)}
+              <div key={ph.id} draggable
+                onDragStart={ev => { if (!barDrag) onDragStart(ev, i); }}
+                onDragOver={ev => onDragOver(ev, i)} onDrop={ev => onDrop(ev, i)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 style={{
-                  display: 'flex', alignItems: 'center', minHeight: 48,
+                  display: 'flex', alignItems: 'center', minHeight: 42,
                   background: isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff',
-                  borderRadius: 10, marginBottom: 4,
+                  borderLeft: `3px solid ${borderColor}`,
                   borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
-                  opacity: dragIdx === i ? 0.4 : 1,
-                  transition: 'opacity .15s, border-color .15s',
-                  cursor: 'grab',
-                }}
-              >
+                  marginBottom: 2, opacity: dragIdx === i ? 0.35 : 1, transition: 'opacity .15s',
+                }}>
                 {/* Drag handle */}
-                <div style={{ width: 20, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', padding: '0 4px', cursor: 'grab', opacity: 0.3 }}>
-                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
-                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
-                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
+                <div style={{ width: 16, flexShrink: 0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.25, padding:'0 2px' }}>
+                  {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
                 </div>
-
-                {/* Phase name + delete */}
-                <div style={{ width: labelWidth - 20, flexShrink: 0, padding: '8px 10px 8px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button onClick={(ev) => { ev.stopPropagation(); onDeletePhase && onDeletePhase(ph.id); }}
-                    style={{ width: 16, height: 16, borderRadius: 5, border: '1px solid #E4E7EB', background: '#fff', color: '#C1C6CE', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}
-                    title="Supprimer la phase">
-                    <X size={9}/>
-                  </button>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    {editingId === ph.id ? (
-                      <input
-                        autoFocus
-                        value={editingName}
-                        onChange={ev => setEditingName(ev.target.value)}
-                        onBlur={() => commitEdit(ph)}
-                        onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(ph); if (ev.key === 'Escape') setEditingId(null); }}
-                        onClick={ev => ev.stopPropagation()}
-                        style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '2px 6px', width: '100%', outline: 'none', background: '#FFF8F5' }}
-                      />
-                    ) : (
-                      <div
-                        onClick={() => startEdit(ph)}
-                        title="Cliquer pour renommer"
-                        style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'text', padding: '2px 2px', borderRadius: 4, border: '1.5px solid transparent' }}
-                      >
+                {/* Name */}
+                <div style={{ width: labelWidth, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
+                  <button onClick={ev=>{ev.stopPropagation();onDeletePhase?.(ph.id);}}
+                    style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'#fff',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
+                  <div style={{minWidth:0,flex:1}}>
+                    {editingId===ph.id ? (
+                      <input autoFocus value={editingName} onChange={ev=>setEditingName(ev.target.value)}
+                        onBlur={()=>commitEdit(ph)} onClick={ev=>ev.stopPropagation()}
+                        onKeyDown={ev=>{if(ev.key==='Enter')commitEdit(ph);if(ev.key==='Escape')setEditingId(null);}}
+                        style={{fontSize:12,fontWeight:700,color:'#15171C',border:`1.5px solid ${BRAND}`,borderRadius:5,padding:'2px 5px',width:'100%',outline:'none',background:'#FFF8F5'}}/>
+                    ):(
+                      <div onClick={()=>startEdit(ph)} title="Cliquer pour renommer"
+                        style={{fontSize:12,fontWeight:700,color:'#15171C',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',cursor:'text',padding:'1px 2px',borderRadius:3}}>
                         {ph.name}
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Assignee chip */}
-                <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 10px 0 0' }}>
-                  <AssigneeChip trade={matchedTrade} />
+                {/* Assignee */}
+                <div style={{width:assigneeWidth,flexShrink:0,padding:'0 8px 0 0'}}>
+                  <AssigneeChip trade={matchedTrade}/>
                 </div>
-
-                {/* Gantt bar */}
-                <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'visible' }}>
-                  {/* Month grid lines */}
-                  {months.slice(1).map((m, mi) => (
-                    <div key={mi} style={{ position: 'absolute', top: 0, bottom: 0, left: `${pct(m)}%`, width: 1, background: '#E5E7EB', zIndex: 0 }}/>
-                  ))}
+                {/* Gantt bar area */}
+                <div style={{flex:1,position:'relative',height:36,background:'#F8F9FA'}}>
+                  {/* Grid lines */}
+                  {columns.map((col,ci)=>ci>0 ? <div key={ci} style={{position:'absolute',top:0,bottom:0,left:`${pct(col.start)}%`,width:1,background:'#ECEEF0',zIndex:0}}/> : null)}
                   {/* Today line */}
-                  {todayPct >= 0 && todayPct <= 100 && (
-                    <div style={{ position: 'absolute', top: -6, bottom: -6, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .5, zIndex: 2, borderRadius: 2 }}/>
-                  )}
+                  {todayPct>=0&&todayPct<=100&&<div style={{position:'absolute',top:-4,bottom:-4,left:`${todayPct}%`,width:2,background:BRAND,opacity:.35,zIndex:2,borderRadius:1}}/>}
                   {/* Phase bar */}
                   <div
-                    onClick={(ev) => { if (editingId !== ph.id) { ev.stopPropagation(); onEditPhase && onEditPhase(ph); } }}
+                    onPointerDown={ev=>handleBarPointerDown(ev,ph)}
+                    onPointerMove={ev=>{if(isBarDrag)handleBarPointerMove(ev);}}
+                    onPointerUp={ev=>{if(isBarDrag)handleBarPointerUp(ev,ph);}}
+                    onPointerCancel={()=>setBarDrag(null)}
                     title={dateLabel}
                     style={{
-                      position: 'absolute', top: 4, bottom: 4, left: `${pL}%`, width: `${pW}%`,
-                      minWidth: 22, borderRadius: 999, background: color, color: '#fff',
-                      display: 'flex', alignItems: 'center', padding: '0 10px',
-                      cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden',
-                      zIndex: 1, boxShadow: '0 1px 3px rgba(0,0,0,.12)',
-                    }}
-                  >
-                    <span style={{ fontSize: 10.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>
+                      position:'absolute',top:5,bottom:5,left:`${pL}%`,width:`${pW}%`,minWidth:18,
+                      borderRadius:99,background:color,color:'#fff',
+                      display:'flex',alignItems:'center',padding:'0 8px',
+                      cursor:isBarDrag?'grabbing':'grab',
+                      whiteSpace:'nowrap',overflow:'hidden',zIndex:1,userSelect:'none',
+                      boxShadow:isBarDrag?'0 4px 12px rgba(0,0,0,.25)':'0 1px 3px rgba(0,0,0,.1)',
+                      transition:isBarDrag?'none':'box-shadow .15s',
+                    }}>
+                    {/* Progress overlay */}
+                    {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:'rgba(0,0,0,.22)',zIndex:0}}/>}
+                    <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1}}>
+                      {ph.trade_name||ph.name}
+                    </span>
+                    {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:4,opacity:.9,position:'relative',zIndex:1,flexShrink:0}}>{progress}%</span>}
+                    {/* Drag date tooltip */}
+                    {isBarDrag&&barDrag.delta!==0&&(
+                      <span style={{position:'absolute',top:-22,left:'50%',transform:'translateX(-50%)',background:'#15171C',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:6,whiteSpace:'nowrap',zIndex:10,pointerEvents:'none'}}>
+                        {fmtDate(es)} → {fmtDate(ee)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1352,9 +1440,33 @@ export default function ProjectDetail() {
 
   const renamePhase = async (phaseId, newName) => {
     try {
-      const { data } = await projectsApi.updatePhase(id, phaseId, { name: newName });
+      await projectsApi.updatePhase(id, phaseId, { name: newName });
       setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id === phaseId ? { ...ph, name: newName } : ph) }));
     } catch (err) { console.error('renamePhase', err); }
+  };
+
+  const handleDatesChange = async (phaseId, newStart, newEnd, cascade) => {
+    const ph = project.phases?.find(p => p.id === phaseId);
+    if (!ph) return;
+    const origStartDate = new Date(ph.start_date);
+    const newStartDate  = new Date(newStart);
+    const deltaDays = Math.round((newStartDate - origStartDate) / 86400000);
+    if (deltaDays === 0) return;
+    const origEndDate = ph.end_date ? new Date(ph.end_date) : new Date(origStartDate.getTime() + 14*86400000);
+
+    const toUpdate = (project.phases || []).filter(p => {
+      if (p.id === phaseId) return true;
+      if (!cascade || !p.start_date) return false;
+      return new Date(p.start_date) >= origEndDate;
+    }).map(p => {
+      if (p.id === phaseId) return { id: p.id, start_date: newStart, end_date: newEnd };
+      const ps = new Date(p.start_date); ps.setDate(ps.getDate() + deltaDays);
+      const pe = p.end_date ? new Date(p.end_date) : null; if (pe) pe.setDate(pe.getDate() + deltaDays);
+      return { id: p.id, start_date: ps.toISOString().slice(0,10), end_date: pe ? pe.toISOString().slice(0,10) : null };
+    });
+
+    setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => { const u = toUpdate.find(u => u.id === ph.id); return u ? { ...ph, ...u } : ph; }) }));
+    await Promise.all(toUpdate.map(u => projectsApi.updatePhase(id, u.id, { start_date: u.start_date, end_date: u.end_date }).catch(()=>{})));
   };
 
   const printQR = () => {
@@ -3835,7 +3947,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Phase manuelle</button>
           </div>
 
           {(showPhase || editPhase) && (
@@ -3854,6 +3965,8 @@ Règles :
                 onEditPhase={(ph) => setEditPhase(ph)}
                 onReorderPhases={reorderPhases}
                 onRenamePhase={renamePhase}
+                onDatesChange={handleDatesChange}
+                onAddPhase={() => setShowPhase(true)}
               />
             </div>
           ) : (
