@@ -467,109 +467,17 @@ const PHASE_TEMPLATES = [
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
-// Séquences de phases réalistes par type de projet (Québec).
-// Clé = valeur de WORK_TYPE_OPTIONS. trade_name = corps de métier assigné (null = coordination interne).
-const PHASE_TEMPLATES_BY_TYPE = {
-  'Cuisine': [
-    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 5 },
-    { name: 'Démolition cuisine',                 trade_name: 'Démolition',        durationDays: 2 },
-    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
-    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 2 },
-    { name: 'Gypse & finition murs',              trade_name: 'Gypse',             durationDays: 4 },
-    { name: 'Pose des armoires',                  trade_name: 'Armoires / cuisines', durationDays: 4 },
-    { name: 'Comptoir & dosseret',                trade_name: 'Comptoir',          durationDays: 2 },
-    { name: 'Revêtement de sol',                  trade_name: 'Planchers',         durationDays: 2 },
-    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 2 },
-    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 2 },
-    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
-  ],
-  'Salle de bain': [
-    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 4 },
-    { name: 'Démolition salle de bain',           trade_name: 'Démolition',        durationDays: 1 },
-    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
-    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 1 },
-    { name: 'Gypse & membrane hydrofuge',         trade_name: 'Gypse',             durationDays: 2 },
-    { name: 'Céramique murs & plancher',          trade_name: 'Céramique',         durationDays: 3 },
-    { name: 'Douche / bain',                      trade_name: 'Plomberie',         durationDays: 1 },
-    { name: 'Vanité, miroir & accessoires',       trade_name: 'Armoires / cuisines', durationDays: 1 },
-    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 1 },
-    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 1 },
-    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
-  ],
-  'Sous-sol': [
-    { name: 'Planification & permis',             trade_name: null,                durationDays: 5 },
-    { name: 'Ossature / cloisons',                trade_name: 'Charpenterie',      durationDays: 4 },
-    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
-    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 2 },
-    { name: 'Isolation périmètre',                trade_name: 'Isolation',         durationDays: 2 },
-    { name: 'Gypse — pose, mastic, sablage',      trade_name: 'Gypse',             durationDays: 5 },
-    { name: 'Revêtement de sol',                  trade_name: 'Planchers',         durationDays: 2 },
-    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 2 },
-    { name: 'Finition électricité & luminaires',  trade_name: 'Électricité',       durationDays: 1 },
-    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
-  ],
-  'Rénovation complète': [
-    { name: 'Planification & permis',             trade_name: null,                durationDays: 7 },
-    { name: 'Démolition sélective',               trade_name: 'Démolition',        durationDays: 3 },
-    { name: 'Structure & charpenterie',           trade_name: 'Charpenterie',      durationDays: 7 },
-    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 4 },
-    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 4 },
-    { name: 'CVC',                                trade_name: 'CVC',               durationDays: 3 },
-    { name: 'Isolation',                          trade_name: 'Isolation',         durationDays: 3 },
-    { name: 'Gypse & finition',                   trade_name: 'Gypse',             durationDays: 8 },
-    { name: 'Revêtements de sol',                 trade_name: 'Planchers',         durationDays: 4 },
-    { name: 'Cuisine (armoires + comptoir)',      trade_name: 'Armoires / cuisines', durationDays: 5 },
-    { name: 'Peinture complète',                  trade_name: 'Peinture intérieure', durationDays: 5 },
-    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 3 },
-    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 2 },
-  ],
-  'Toiture': [
-    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 3 },
-    { name: 'Dépose ancienne couverture',         trade_name: 'Toiture',           durationDays: 1 },
-    { name: 'Réparation pontage / OSB',           trade_name: 'Charpenterie',      durationDays: 1 },
-    { name: 'Membrane sous-toiture',              trade_name: 'Toiture',           durationDays: 1 },
-    { name: 'Pose couverture',                    trade_name: 'Toiture',           durationDays: 2 },
-    { name: 'Solins & ventilation',               trade_name: 'Toiture',           durationDays: 1 },
-    { name: 'Gouttières',                         trade_name: 'Toiture',           durationDays: 1 },
-    { name: 'Nettoyage & inspection finale',      trade_name: null,                durationDays: 1 },
-  ],
-};
-
-// Corps de métier → durée par défaut (jours), pour les types sans template dédié.
-const TRADE_DEFAULT_DURATION = {
-  'Démolition': 2, 'Excavation': 3, 'Charpenterie': 5, 'Structure': 7,
-  'Plomberie': 4, 'Électricité': 4, 'CVC': 3, 'Isolation': 3, 'Gypse': 5,
-  'Céramique': 3, 'Armoires / cuisines': 4, 'Comptoir': 2, 'Planchers': 3,
-  'Peinture intérieure': 3, 'Toiture': 3, 'Maçonnerie / béton': 5,
-};
-
-// Construit la séquence de phases pour un type de projet donné.
-// Fallback : si pas de template dédié, dérive les phases des corps de métier sélectionnés,
-// sinon utilise la liste générique PHASE_TEMPLATES.
-function phaseTemplatesForType(workType, selectedTrades = []) {
-  if (workType && PHASE_TEMPLATES_BY_TYPE[workType]) {
-    return PHASE_TEMPLATES_BY_TYPE[workType];
-  }
-  const trades = [...new Set((selectedTrades || []).filter(Boolean))];
-  if (trades.length) {
-    return [
-      { name: 'Planification & préparation', trade_name: null, durationDays: 3 },
-      ...trades.map(t => ({ name: t, trade_name: t, durationDays: TRADE_DEFAULT_DURATION[t] || 5 })),
-      { name: 'Nettoyage & livraison', trade_name: null, durationDays: 1 },
-    ];
-  }
-  return PHASE_TEMPLATES;
-}
-
-function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePhase, onDeletePhase, onEditPhase }) {
-  const [editingTrade, setEditingTrade] = useState(null);
-  const [tradeVal, setTradeVal] = useState('');
-  const [customTradeMode, setCustomTradeMode] = useState(null);
-
+function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPhase }) {
   if (!phases || phases.length === 0) return null;
 
-  const refStart = projectStart ? new Date(projectStart) : new Date();
-  const refEnd   = projectEnd   ? new Date(projectEnd)   : new Date(refStart.getTime() + 90*86400000);
+  const datedStarts = phases.map((ph) => ph.start_date).filter(Boolean).map((d) => new Date(d));
+  const datedEnds = phases.map((ph) => ph.end_date).filter(Boolean).map((d) => new Date(d));
+  const fallbackStart = datedStarts.length ? new Date(Math.min(...datedStarts)) : new Date();
+  const fallbackEnd = datedEnds.length
+    ? new Date(Math.max(...datedEnds))
+    : new Date(fallbackStart.getTime() + 90 * 86400000);
+  const refStart = projectStart ? new Date(projectStart) : fallbackStart;
+  const refEnd = projectEnd ? new Date(projectEnd) : fallbackEnd;
   const totalMs  = Math.max(refEnd - refStart, 1);
 
   const months = [];
@@ -581,135 +489,71 @@ function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePha
   const todayPct = pct(new Date());
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
 
-  const LW = 160; // Phase name
-  const CW = 130; // Corps de métier
-
-  const saveTrade = (ph) => {
-    const val = tradeVal.trim();
-    setEditingTrade(null);
-    setCustomTradeMode(null);
-    if (val !== ph.trade_name) onUpdatePhase && onUpdatePhase(ph.id, { trade_name: val });
-  };
+  const labelWidth = 210;
 
   return (
-    <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid #E8EAED', background: '#fff' }}>
-      <div style={{ minWidth: 640, fontFamily: 'inherit' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#F9FAFB' }}>
-          <div style={{ width: 24, flexShrink: 0 }}/>
-          <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 10px 8px 4px' }}>Phase</div>
-          <div style={{ width: CW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 12px', borderLeft: '1px solid #E8EAED' }}>Corps de métier</div>
-          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED' }}>
+    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 18px 14px' }}>
+      <div style={{ fontSize: 12, color: '#7C8089', background: '#F7F8FA', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+        Vue planning du chantier. Clique une phase pour la modifier; les liaisons avancées et dépendances viendront plus tard.
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 760 }}>
+          <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 4 }}>
+            <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
+              Phase
+            </div>
+            <div style={{ flex: 1, display: 'flex', borderBottom: '1px solid #EEF0F2', paddingBottom: 8 }}>
             {months.map((m, i) => {
               const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
               const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
               return (
-                <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 44, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', padding: '8px 0 8px 10px', borderLeft: i > 0 ? '1px solid #E8EAED' : 'none' }}>
-                  {m.toLocaleDateString('fr-CA',{ month:'short' })} <span style={{ opacity: .6, fontSize: 9.5 }}>{m.getFullYear()}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Rows */}
-        {phases.map((ph, i) => {
-          const s = ph.start_date ? new Date(ph.start_date) : refStart;
-          const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+14*86400000);
-          const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-          const pL = pct(s), pW = barW(s, e);
-          const isEven = i % 2 === 0;
-          const isEditing = editingTrade === ph.id;
-          const ROW_H = 48;
-
-          return (
-            <div key={ph.id} style={{ display: 'flex', alignItems: 'center', borderBottom: i < phases.length-1 ? '1px solid #F0F1F3' : 'none', background: isEven ? '#FAFAFA' : '#fff', minHeight: ROW_H }}>
-              {/* Delete — à gauche */}
-              <div style={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
-                  style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #E0E4E8', background: 'transparent', color: '#C0C4CC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                  title="Supprimer">
-                  <X size={10}/>
-                </button>
-              </div>
-              {/* Phase name */}
-              <div style={{ width: LW, flexShrink: 0, padding: '0 10px 0 4px', cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Cliquer pour modifier">
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
-                {(ph.start_date || ph.end_date) && (
-                  <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2, whiteSpace: 'nowrap' }}>
-                    {fmtDate(ph.start_date)}{ph.end_date ? ` → ${fmtDate(ph.end_date)}` : ''}
+                  <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 70, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', paddingLeft: 10, borderLeft: i > 0 ? '1px solid #F0F1F3' : 'none' }}>
+                    {m.toLocaleDateString('fr-CA',{ month:'long' })}
+                    <span style={{ opacity: .65, fontSize: 9.5, marginLeft: 4 }}>{m.getFullYear()}</span>
                   </div>
-                )}
-              </div>
-
-              {/* Corps de métier — sélecteur */}
-              <div style={{ width: CW, flexShrink: 0, padding: '0 8px', borderLeft: '1px solid #F0F1F3' }}>
-                {isEditing ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <select autoFocus
-                      value={customTradeMode === ph.id ? '__custom__' : tradeVal}
-                      onChange={e => {
-                        if (e.target.value === '__custom__') {
-                          setCustomTradeMode(ph.id);
-                          setTradeVal('');
-                          return;
-                        }
-                        setCustomTradeMode(null);
-                        setTradeVal(e.target.value);
-                        setEditingTrade(null);
-                        if (e.target.value !== ph.trade_name) {
-                          onUpdatePhase && onUpdatePhase(ph.id, { trade_name: e.target.value.trim() });
-                        }
-                      }}
-                      style={{ width: '100%', fontSize: 12, fontWeight: 600, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 5px', outline: 'none', background: '#fff', color: '#15171C' }}>
-                      <option value="">— Non assigné —</option>
-                      {trades.map(t => <option key={t} value={t}>{t}</option>)}
-                      <option value="__custom__" style={{ fontStyle: 'italic', color: '#9CA3AF' }}>+ Autre (saisir)</option>
-                    </select>
-                    {customTradeMode === ph.id && (
-                      <input autoFocus value={tradeVal} onChange={e => setTradeVal(e.target.value)}
-                        onBlur={() => saveTrade(ph)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') saveTrade(ph);
-                          if (e.key === 'Escape') {
-                            setCustomTradeMode(null);
-                            setEditingTrade(null);
-                          }
-                        }}
-                        placeholder="Nom du corps de métier"
-                        style={{ width: '100%', fontSize: 12, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 7px', outline: 'none' }}/>
-                    )}
-                  </div>
-                ) : (
-                  <div onClick={() => { setEditingTrade(ph.id); setTradeVal(ph.trade_name || ''); setCustomTradeMode(null); }}
-                    title="Cliquer pour assigner un corps de métier"
-                    style={{ cursor: 'pointer', minHeight: 24, display: 'flex', alignItems: 'center' }}>
-                    {ph.trade_name
-                      ? <span style={{ fontSize: 11.5, fontWeight: 700, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: '100%' }}>{ph.trade_name}</span>
-                      : <span style={{ fontSize: 11, color: '#C8CACD' }}>+ Assigner</span>}
-                  </div>
-                )}
-              </div>
-
-              {/* Timeline area */}
-              <div style={{ flex: 1, position: 'relative', height: ROW_H, borderLeft: '1px solid #E8EAED' }}>
-                {/* Today marker */}
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left:`${todayPct}%`, width: 2, background: BRAND, opacity: .5, zIndex: 3 }}/>
-                {/* Bar */}
-                <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left:`${pL}%`, width:`${pW}%`, minWidth: 8, height: 26, borderRadius: 7, background: color+'20', border:`1.5px solid ${color}`, overflow: 'hidden', zIndex: 2, cursor: 'pointer' }}
-                  onClick={() => onEditPhase && onEditPhase(ph)} title={`${fmtDate(ph.start_date)} → ${fmtDate(ph.end_date)}`}>
-                  {(ph.progress_pct||0) > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width:`${ph.progress_pct}%`, background: color+'50', borderRadius: 7 }}/>}
-                  {pW > 5 && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 8, overflow: 'hidden' }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color, whiteSpace: 'nowrap', position: 'relative', zIndex: 1 }}>{ph.name}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+
+          {phases.map((ph, i) => {
+            const s = ph.start_date ? new Date(ph.start_date) : refStart;
+            const e = ph.end_date ? new Date(ph.end_date) : new Date(s.getTime()+14*86400000);
+            const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
+            const pL = pct(s);
+            const pW = barW(s, e);
+            const isEven = i % 2 === 0;
+            const barLabel = ph.trade_name || ph.name;
+
+            return (
+              <div key={ph.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, background: isEven ? '#FBFCFD' : '#fff', borderRadius: 10, marginBottom: 6 }}>
+                <div style={{ width: labelWidth, flexShrink: 0, padding: '10px 14px 10px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
+                    style={{ width: 18, height: 18, borderRadius: 6, border: '1px solid #E4E7EB', background: '#fff', color: '#C1C6CE', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}
+                    title="Supprimer la phase">
+                    <X size={10}/>
+                  </button>
+                  <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Modifier la phase">
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
+                    <div style={{ fontSize: 10.5, color: '#A0A6AF', marginTop: 2, whiteSpace: 'nowrap' }}>
+                      {fmtDate(ph.start_date)}{ph.end_date ? ` → ${fmtDate(ph.end_date)}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'hidden' }}>
+                  {todayPct >= 0 && todayPct <= 100 && (
+                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .45, zIndex: 2 }}/>
+                  )}
+                  <div onClick={() => onEditPhase && onEditPhase(ph)}
+                    title={`${fmtDate(ph.start_date)} → ${fmtDate(ph.end_date)}`}
+                    style={{ position: 'absolute', top: 4, bottom: 4, left: `${pL}%`, width: `${pW}%`, minWidth: 22, borderRadius: 999, background: color, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', zIndex: 1, boxShadow: '0 1px 2px rgba(0,0,0,.08)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1522,6 +1366,14 @@ export default function ProjectDetail() {
     finally { setAutoAddingTrades(false); }
   };
 
+  useEffect(() => {
+    if (!project?.phases?.length) return;
+    const phaseTrades = project.phases.map((ph) => ph.trade_name).filter(Boolean);
+    if (!phaseTrades.length) return;
+    void ensureProjectTradesExist(phaseTrades);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.phases]);
+
   // Florence recommande des sous-traitants pour les corps non assignés
   const fetchTradeRecos = async () => {
     const missingTrades = (project.trades || []).filter(t => t.status === 'to_find' || !t.chosen_subcontractor_id);
@@ -1605,95 +1457,6 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       alert("Impossible de générer les phases avec Florence pour l'instant.");
     } finally { setGeneratingPhases(false); }
   };
-
-  // ── Génération automatique des phases à partir du TYPE de projet (sans IA) ──
-  // Déterministe, instantané, aucun appel réseau IA. Déclenché quand le type
-  // de travaux est connu et que l'estimation approximative est entamée.
-  const autoGenPhasesRef = useRef(false);
-
-  const generatePhasesFromType = async () => {
-    if (autoGenPhasesRef.current) return;
-    autoGenPhasesRef.current = true;
-    setGeneratingPhases(true);
-    const fa = project.field_assessment || {};
-    const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
-    const selectedTrades = [
-      ...(fa.selected_trades || []),
-      ...(project.trades || []).map(t => t.trade).filter(Boolean),
-    ].filter((v, i, a) => v && a.indexOf(v) === i);
-
-    try {
-      const templates = phaseTemplatesForType(workType, selectedTrades);
-      let cursor = project.start_date ? new Date(project.start_date) : new Date();
-
-      const createdPhases = [];
-      for (let i = 0; i < templates.length; i++) {
-        const tpl = templates[i];
-        const startDate = new Date(cursor);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + Math.max(1, tpl.durationDays) - 1);
-        const { data: created } = await projectsApi.addPhase(id, {
-          name: tpl.name,
-          trade_name: tpl.trade_name || '',
-          color: PHASE_COLORS[i % PHASE_COLORS.length],
-          progress_pct: 0,
-          status: 'not_started',
-          start_date: startDate.toISOString().slice(0, 10),
-          end_date: endDate.toISOString().slice(0, 10),
-          display_order: i,
-        });
-        createdPhases.push(created);
-        cursor = new Date(endDate);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-
-      await ensureProjectTradesExist(createdPhases.map(ph => ph.trade_name));
-
-      // Persiste un drapeau pour ne pas regénérer (ex: si l'utilisateur supprime des phases).
-      const nextFa = { ...fa, phases_autogenerated: true };
-      try {
-        await projectsApi.update(id, { field_assessment: nextFa });
-      } catch {}
-      setProject(p => ({ ...p, phases: createdPhases, field_assessment: nextFa }));
-    } catch (err) {
-      console.error('generatePhasesFromType', err);
-      autoGenPhasesRef.current = false; // permettre une nouvelle tentative
-    } finally { setGeneratingPhases(false); }
-  };
-
-  // Régénération manuelle depuis le type : efface les phases existantes puis recrée.
-  const regeneratePhasesFromType = async () => {
-    if (generatingPhases) return;
-    if ((project.phases || []).length > 0 &&
-        !confirm('Régénérer les phases à partir du type de projet ? Les phases actuelles seront remplacées.')) return;
-    setGeneratingPhases(true);
-    try {
-      for (const ph of (project.phases || [])) {
-        try { await projectsApi.deletePhase(id, ph.id); } catch {}
-      }
-      setProject(p => ({ ...p, phases: [] }));
-    } finally { setGeneratingPhases(false); }
-    autoGenPhasesRef.current = false;
-    await generatePhasesFromType();
-  };
-
-  // Auto-affichage des phases dès que : type de travaux connu + estimation entamée + aucune phase.
-  useEffect(() => {
-    if (!project || autoGenPhasesRef.current) return;
-    const fa = project.field_assessment || {};
-    if (fa.phases_autogenerated) return;            // déjà généré une fois
-    if ((project.phases || []).length > 0) return;  // phases déjà présentes
-    const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
-    if (!workType) return;                            // besoin du type de projet
-    const estimateStarted =
-      (fa.approx_lines || []).length > 0 ||
-      (fa.selected_trades || []).length > 0 ||
-      (project.trades || []).length > 0 ||
-      !!project.estimated_price;
-    if (!estimateStarted) return;                     // attendre la soumission approximative
-    generatePhasesFromType();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id, project?.field_assessment, project?.phases?.length, project?.trades?.length, project?.estimated_price]);
 
   const addTemplatePhase = async (tpl) => {
     setAddingTemplatePhase(tpl.name);
@@ -3612,73 +3375,34 @@ Règles :
               onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
-          {/* ── Gantt chart ou empty state ── */}
-          {/* ── Barre phases auto (type de projet) + Flo en option + templates ── */}
-          {(() => {
-            const fa = project.field_assessment || {};
-            const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
-            const estimateStarted =
-              (fa.approx_lines || []).length > 0 ||
-              (fa.selected_trades || []).length > 0 ||
-              (project.trades || []).length > 0 ||
-              !!project.estimated_price;
-            const hasPhases = project.phases?.length > 0;
-            const ready = workType && estimateStarted;
-
-            let title, subtitle;
-            if (hasPhases) {
-              title = 'Phases générées automatiquement';
-              subtitle = `D'après le type « ${workType || 'projet'} ». Modifie les dates ou corps de métier au besoin.`;
-            } else if (generatingPhases) {
-              title = 'Génération des phases…';
-              subtitle = 'Création du calendrier à partir du type de projet.';
-            } else if (!workType) {
-              title = 'En attente du type de projet';
-              subtitle = 'Choisis le type de travaux dans l\'estimation pour afficher les phases automatiquement.';
-            } else if (!estimateStarted) {
-              title = 'En attente de l\'estimation approximative';
-              subtitle = 'Complète une ligne de soumission ou un corps de métier — les phases s\'afficheront alors toutes seules.';
-            } else {
-              title = 'Phases prêtes à générer';
-              subtitle = `Type « ${workType} » détecté. Génère le calendrier des travaux.`;
-            }
-
-            return (
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '16px 20px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: hasPhases ? 14 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <div style={{ width: 32, height: 32, borderRadius: 9, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                {generatingPhases ? <Loader2 size={15} color="#fff" className="animate-spin"/> : <HardHat size={15} color="#fff"/>}
+                <Sparkles size={15} color="#fff"/>
               </div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{title}</p>
-                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>{subtitle}</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>
+                  {project.phases?.length > 0 ? 'Ajuster les phases avec Florence' : 'Générer les phases avec Florence'}
+                </p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>
+                  Flo analyse le contexte du projet et construit un planning plus proche du chantier réel.
+                </p>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                {(ready || hasPhases) && (
-                  <button onClick={regeneratePhasesFromType} disabled={generatingPhases}
-                    style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <HardHat size={12}/>}
-                    {hasPhases ? 'Régénérer du type' : 'Générer les phases'}
-                  </button>
-                )}
-                {hasPhases && (
-                  <button onClick={generatePhasesFromAI} disabled={generatingPhases} title="Laisser Florence affiner les phases selon le contexte précis du projet"
-                    style={{ padding: '8px 14px', borderRadius: 9, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: '#3A3D44', cursor: generatingPhases ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Sparkles size={12} color={BRAND}/> Affiner avec Flo
-                  </button>
-                )}
-              </div>
+              <button onClick={generatePhasesFromAI} disabled={generatingPhases}
+                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Régénérer avec Flo' : 'Générer avec Flo'}
+              </button>
             </div>
-            {/* Phases types — toujours affichées */}
             {(() => {
-              const existing = new Set((project.phases||[]).map(p => p.name?.toLowerCase()));
-              const available = PHASE_TEMPLATES.filter(t => !existing.has(t.name.toLowerCase()));
+              const existing = new Set((project.phases || []).map((p) => p.name?.toLowerCase()));
+              const available = PHASE_TEMPLATES.filter((tpl) => !existing.has(tpl.name.toLowerCase()));
               if (!available.length) return null;
               return (
-                <div style={{ borderTop: project.phases?.length > 0 ? '1px solid #F4F5F6' : 'none', paddingTop: project.phases?.length > 0 ? 12 : 0 }}>
+                <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 12 }}>
                   <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Ajouter une phase type</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {available.map(tpl => (
+                    {available.map((tpl) => (
                       <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
                         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
                         {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
@@ -3690,151 +3414,161 @@ Règles :
               );
             })()}
           </div>
-            );
-          })()}
 
-          {/* ── Gantt ── */}
-          {project.phases?.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
+          {project.phases?.length > 0 ? (
+            <div style={{ marginBottom: 18 }}>
               <GanttChart
                 phases={project.phases}
                 projectStart={project.start_date}
                 projectEnd={project.end_date}
-                trades={(() => {
-                  const fa = project.field_assessment || {};
-                  const fromTrades = (project.trades || []).map(t => t.trade).filter(Boolean);
-                  const fromEstim = fa.selected_trades || [];
-                  return [...new Set([...fromTrades, ...fromEstim])];
-                })()}
-                onUpdatePhase={async (phId, patch) => {
-                  try {
-                    const { data } = await projectsApi.updatePhase(id, phId, patch);
-                    setProject(p => ({ ...p, phases: p.phases.map(ph => ph.id === phId ? data : ph) }));
-                    if (patch.trade_name) {
-                      await ensureProjectTradesExist([patch.trade_name]);
-                    }
-                  } catch {}
-                }}
                 onDeletePhase={removePhase}
                 onEditPhase={(ph) => setEditPhase(ph)}
               />
             </div>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '22px 20px', textAlign: 'center', marginBottom: 18 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
+              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
+            </div>
           )}
 
-          {/* ── Tableau corps de métier (conduit par les phases) ── */}
           {(() => {
             const phases = project.phases || [];
-            const STATUS_COLOR = { to_find: '#9CA3AF', contacted: '#3b82f6', quoted: '#f59e0b', confirmed: '#16a34a', done: '#16a34a', relanced: '#f97316' };
-            const STATUS_LABEL = { to_find: 'À trouver', contacted: 'Contacté', quoted: 'Soumissionné', confirmed: 'Confirmé', done: 'Terminé', relanced: 'Relancé' };
+            const phaseTradeNames = [...new Set(phases.map((ph) => ph.trade_name).filter(Boolean))];
+            const tradesFromProject = project.trades || [];
+            const rowNames = [...new Set([
+              ...tradesFromProject.map((trade) => trade.trade).filter(Boolean),
+              ...phaseTradeNames,
+            ])];
 
-            // Clé de certif par phase.id
-            const toggleCertif = (phaseId, key) => {
-              const next = { ...tradeCertifs, [phaseId]: { ...(tradeCertifs[phaseId] || {}), [key]: !(tradeCertifs[phaseId]?.[key]) } };
-              setTradeCertifs(next);
-              localStorage.setItem(`monflux-trade-certifs-${id}`, JSON.stringify(next));
+            if (!rowNames.length) return null;
+
+            const statusMeta = {
+              to_find: { label: 'A trouver', color: '#9CA3AF', bg: '#F3F4F6' },
+              contacted: { label: 'Contacté', color: '#F59E0B', bg: '#FFF7E8' },
+              quoted: { label: 'Soumissionné', color: '#3B82F6', bg: '#EFF6FF' },
+              confirmed: { label: 'Confirmé', color: '#16A34A', bg: '#ECFDF3' },
+              done: { label: 'Terminé', color: '#2563EB', bg: '#EEF2FF' },
             };
-
-            // Statut de la phase dans le tableau: on stocke dans localStorage par phase.id
-            const getPhaseTradeStatus = (phaseId) => {
-              try { return JSON.parse(localStorage.getItem(`monflux-phase-status-${id}`) || '{}')[phaseId] || 'to_find'; } catch { return 'to_find'; }
-            };
-            const setPhaseTradeStatus = (phaseId, status) => {
-              try {
-                const all = JSON.parse(localStorage.getItem(`monflux-phase-status-${id}`) || '{}');
-                localStorage.setItem(`monflux-phase-status-${id}`, JSON.stringify({ ...all, [phaseId]: status }));
-                setProject(p => ({ ...p, _phaseStatusTs: Date.now() })); // force re-render
-              } catch {}
-            };
-
-            if (!phases.length) return null;
-
-            // On ne montre que les phases qui ont un corps de métier assigné
-            const rows = phases.filter(ph => ph.trade_name);
-            if (!rows.length) return (
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '20px', textAlign: 'center', marginTop: 0 }}>
-                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Les phases générées n'ont pas de corps de métier assigné. Modifie les phases pour ajouter les corps de métier.</p>
-              </div>
-            );
 
             return (
-              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
-                {/* Header */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 56px', background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 16px', alignItems: 'center' }}>
-                  {['Corps de métier', 'Phase', 'Contact', 'Téléphone', 'Courriel', 'RBQ', 'CCQ', 'Statut', ''].map((h, i) => (
-                    <div key={i} style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF' }}>{h}</div>
-                  ))}
-                </div>
-                {/* Rows — une par phase avec trade_name */}
-                {rows.map((ph, idx) => {
-                  const color = ph.color || PHASE_COLORS[idx % PHASE_COLORS.length];
-                  // Cherche un sous-traitant assigné via project.trades
-                  const matchedTrade = (project.trades || []).find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase());
-                  const sub = matchedTrade ? subs.find(s => s.id === matchedTrade.chosen_subcontractor_id) : null;
-                  const certif = tradeCertifs[ph.id] || {};
-                  const tradeStatus = getPhaseTradeStatus(ph.id);
-                  const sc = STATUS_COLOR[tradeStatus] || '#9CA3AF';
-                  const isEven = idx % 2 === 0;
-                  return (
-                    <div key={ph.id} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 56px', padding: '11px 16px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < rows.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
-                      {/* Corps de métier */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ph.trade_name}</span>
-                      </div>
-                      {/* Phase */}
-                      <div>
-                        <span style={{ fontSize: 11.5, fontWeight: 600, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.name}</span>
-                      </div>
-                      {/* Contact */}
-                      <div style={{ overflow: 'hidden' }}>
-                        {sub
-                          ? <div>
-                              <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</p>
-                              {sub.company_name && <p style={{ fontSize: 10.5, color: '#9CA3AF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.company_name}</p>}
-                            </div>
-                          : <span style={{ fontSize: 11.5, color: '#C8CACD', fontStyle: 'italic' }}>Non assigné</span>}
-                      </div>
-                      {/* Téléphone */}
-                      <div>
-                        {sub?.phone
-                          ? <a href={`tel:${sub.phone}`} style={{ fontSize: 12, color: '#3b82f6', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{sub.phone}</a>
-                          : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
-                      </div>
-                      {/* Courriel */}
-                      <div style={{ overflow: 'hidden' }}>
-                        {sub?.email
-                          ? <a href={`mailto:${sub.email}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{sub.email}</a>
-                          : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
-                      </div>
-                      {/* RBQ */}
-                      <div>
-                        <button onClick={() => toggleCertif(ph.id, 'rbq')}
-                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 6px', borderRadius: 6, border: `1.5px solid ${certif.rbq ? '#16a34a' : '#E0E4E8'}`, background: certif.rbq ? '#DCFCE7' : '#F9FAFB', color: certif.rbq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                          {certif.rbq ? <CheckCircle size={10}/> : <span style={{ fontSize: 9 }}>✗</span>} RBQ
-                        </button>
-                      </div>
-                      {/* CCQ */}
-                      <div>
-                        <button onClick={() => toggleCertif(ph.id, 'ccq')}
-                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 6px', borderRadius: 6, border: `1.5px solid ${certif.ccq ? '#16a34a' : '#E0E4E8'}`, background: certif.ccq ? '#DCFCE7' : '#F9FAFB', color: certif.ccq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                          {certif.ccq ? <CheckCircle size={10}/> : <span style={{ fontSize: 9 }}>✗</span>} CCQ
-                        </button>
-                      </div>
-                      {/* Statut */}
-                      <div>
-                        <select value={tradeStatus} onChange={e => setPhaseTradeStatus(ph.id, e.target.value)}
-                          style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 5px', borderRadius: 7, border: `1.5px solid ${sc}40`, background: sc+'14', color: sc, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%' }}>
-                          {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
-                      </div>
-                      {/* Actions */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" title="Modifier" onClick={() => setEditPhase(ph)}><Pencil size={12}/></button>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" title="Supprimer" onClick={() => removePhase(ph.id)}><X size={13}/></button>
-                      </div>
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
+                <div style={{ padding: '18px 20px 8px', borderBottom: '1px solid #F1F3F5' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 11, background: '#FFF4EC', display: 'grid', placeItems: 'center', fontSize: 18 }}>👷</div>
+                    <div>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & sous-traitants</p>
+                      <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Assigne les bons intervenants à chaque métier actif du projet.</p>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
+
+                <div>
+                  {rowNames.map((tradeName, idx) => {
+                    const tradeRow = tradesFromProject.find((trade) => trade.trade?.toLowerCase() === tradeName.toLowerCase()) || null;
+                    const tradePhases = phases.filter((ph) => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
+                    const assignedSub = tradeRow ? subs.find((sub) => sub.id === tradeRow.chosen_subcontractor_id) : null;
+                    const status = statusMeta[tradeRow?.status || 'to_find'] || statusMeta.to_find;
+                    const suggestedSubs = subs.filter((sub) => {
+                      const haystack = [
+                        sub.name,
+                        sub.company_name,
+                        sub.specialty,
+                        ...(sub.trades || []),
+                      ].filter(Boolean).join(' ').toLowerCase();
+                      const needle = tradeName.toLowerCase();
+                      return haystack.includes(needle);
+                    });
+
+                    const ensureTradeRow = async () => {
+                      if (tradeRow) return tradeRow;
+                      const { data } = await projectsApi.addTrade(id, {
+                        trade: tradeName,
+                        status: 'to_find',
+                        chosen_subcontractor_id: null,
+                        estimated_cost: null,
+                      });
+                      setProject((p) => ({ ...p, trades: [...(p.trades || []), data] }));
+                      return data;
+                    };
+
+                    return (
+                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(180px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                            {tradePhases.length ? tradePhases.map((phase) => (
+                              <span key={phase.id} onClick={() => setEditPhase(phase)}
+                                style={{ fontSize: 10.5, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '3px 8px', cursor: 'pointer' }}>
+                                {phase.name}
+                              </span>
+                            )) : (
+                              <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                          {assignedSub ? (
+                            <div>
+                              <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{assignedSub.name}</p>
+                              <p style={{ fontSize: 11.5, color: '#8F95A0', margin: '2px 0 0' }}>{assignedSub.company_name || 'Sous-traitant assigné'}</p>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                                {assignedSub.phone && <a href={`tel:${assignedSub.phone}`} style={{ fontSize: 11.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.phone}</a>}
+                                {assignedSub.email && <a href={`mailto:${assignedSub.email}`} style={{ fontSize: 11.5, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.email}</a>}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Aucun sous-traitant assigné</p>
+                              <p style={{ fontSize: 11.5, color: '#A0A6AF', margin: '2px 0 0' }}>Choisis un contact existant ou laisse Flo te suggérer des pistes.</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <select
+                            value={tradeRow?.chosen_subcontractor_id || ''}
+                            onChange={async (e) => {
+                              const row = await ensureTradeRow();
+                              await patchTrade(row.id, { chosen_subcontractor_id: e.target.value || null, status: e.target.value ? 'contacted' : row.status });
+                            }}
+                            style={{ width: '100%', fontSize: 12, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '7px 10px', background: '#fff', color: '#3A3D44' }}>
+                            <option value="">Assigner un sous-traitant</option>
+                            {suggestedSubs.map((sub) => (
+                              <option key={sub.id} value={sub.id}>{sub.name}{sub.company_name ? ` — ${sub.company_name}` : ''}</option>
+                            ))}
+                          </select>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => scrollToSection('s-media')}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #E0E4E8', background: '#fff', fontSize: 11.5, fontWeight: 700, color: '#7C8089', cursor: 'pointer' }}>
+                              Médias
+                            </button>
+                            <button onClick={fetchTradeRecos}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #F3D3C2', background: '#FFF7F3', fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: 'pointer' }}>
+                              Suggestions Flo
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ justifySelf: 'end' }}>
+                          <select
+                            value={tradeRow?.status || 'to_find'}
+                            onChange={async (e) => {
+                              const row = await ensureTradeRow();
+                              await patchTrade(row.id, { status: e.target.value });
+                            }}
+                            style={{ fontSize: 11.5, fontWeight: 700, padding: '7px 10px', borderRadius: 999, border: `1px solid ${status.color}33`, background: status.bg, color: status.color, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer' }}>
+                            {Object.entries(statusMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })()}
