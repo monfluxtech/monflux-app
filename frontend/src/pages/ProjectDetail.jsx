@@ -1402,22 +1402,62 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
     }
     setProject(p => ({ ...p, phases: [] }));
 
-    const trades = (fa.selected_trades || []).join(', ') || (project.trades||[]).map(t=>t.trade).join(', ') || 'non précisé';
-    const startD = project.start_date ? new Date(project.start_date).toLocaleDateString('fr-CA') : (fa.start_label || 'non précisée');
-    const endD   = project.end_date   ? new Date(project.end_date).toLocaleDateString('fr-CA')   : (fa.end_label   || 'non précisée');
-    const tradeList = (fa.selected_trades || []).length > 0 ? fa.selected_trades : ['Général'];
-    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
-Génère un plan de phases réaliste pour ce projet :
-- Description : ${project.description || fa.work_type || project.name || 'Rénovation'}
-- Corps de métier disponibles : ${trades}
-- Début : ${startD} · Fin : ${endD}
+    const fa = project.field_assessment || {};
+    const tradeList = [
+      ...(fa.selected_trades || []),
+      ...(project.trades || []).map(t => t.trade).filter(Boolean),
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
 
-IMPORTANT : chaque phase doit avoir trade_name = exactement l'un de ces corps de métier : ${tradeList.join(', ')}.
-Si une phase implique plusieurs corps de métier, crée une phase par corps de métier.
+    const startD = project.start_date
+      ? new Date(project.start_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })
+      : fa.start_label || 'non précisée';
+    const endD = project.end_date
+      ? new Date(project.end_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })
+      : fa.end_label || 'non précisée';
 
-Réponds UNIQUEMENT en JSON (aucun texte avant ou après) :
-{"phases":[{"name":"Démolition","trade_name":"Démolition","start_date":"2026-07-01","end_date":"2026-07-05","progress_pct":0,"status":"not_started"},{"name":"Électricité brute","trade_name":"Électricité","start_date":"2026-07-06","end_date":"2026-07-12","progress_pct":0,"status":"not_started"}]}
-Génère 4 à 8 phases. Dates ISO (AAAA-MM-JJ). Ne jamais laisser trade_name vide.`;
+    // Contexte complet du projet
+    const visitAnswers = fa.visite_answers
+      ? Object.entries(fa.visite_answers).map(([k, v]) => `  - ${k}: ${v}`).join('\n')
+      : '';
+    const approxLines = (fa.approx_lines || []).map(l => `  - ${l.name}: ${l.qty || ''} ${l.unit || ''}`).join('\n');
+
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en gestion de chantier au Québec.
+
+CONTEXTE DU PROJET :
+- Nom : ${project.name || ''}
+- Description : ${project.description || ''}
+- Type de travaux : ${fa.work_type || ''}
+- Adresse : ${project.address || 'Non précisée'}
+- Client : ${project.client_name || ''}
+- Début prévu : ${startD}
+- Fin prévue : ${endD}
+- Budget estimé : ${project.budget ? `${Number(project.budget).toLocaleString('fr-CA')} $` : 'non précisé'}
+- Corps de métier identifiés : ${tradeList.length ? tradeList.join(', ') : 'à déterminer selon le type de travaux'}
+${visitAnswers ? `- Observations terrain :\n${visitAnswers}` : ''}
+${approxLines ? `- Lignes d'estimation :\n${approxLines}` : ''}
+${project.notes ? `- Notes : ${project.notes}` : ''}
+
+CONGÉS ET JOURS FÉRIÉS AU QUÉBEC (construction — à éviter pour les fins de phase) :
+- 1 jan : Jour de l'An
+- 18 avr 2025 / 3 avr 2026 : Vendredi saint
+- 19 mai 2025 / 18 mai 2026 : Journée nationale des Patriotes
+- 24 juin : Fête nationale du Québec (St-Jean-Baptiste)
+- 1 juil : Fête du Canada
+- 14–25 juil 2025 / 13–24 juil 2026 : Congé annuel de la construction (CCQ) — chantiers arrêtés 2 semaines
+- 1er lun sept : Fête du Travail (1 sept 2025 / 7 sept 2026)
+- 2e lun oct : Action de grâces (13 oct 2025 / 12 oct 2026)
+- 25 déc : Noël · 26 déc : Lendemain de Noël
+
+INSTRUCTIONS :
+1. Analyse le contexte complet et détermine les phases réalistes selon le type de travaux.
+2. Assigne un trade_name précis à chaque phase, choisi parmi : ${tradeList.length ? tradeList.join(', ') : 'les corps de métier typiques de ce type de chantier'}.
+3. Si aucune liste de corps de métier n'est fournie, déduis-les du type de travaux.
+4. NE planifie PAS de fin de phase durant le congé CCQ ni les fériés majeurs.
+5. Génère entre 4 et 9 phases logiques et séquentielles.
+6. trade_name ne doit jamais être vide.
+
+Réponds UNIQUEMENT en JSON, aucun texte avant ou après :
+{"phases":[{"name":"Démolition","trade_name":"Démolition","start_date":"2026-07-01","end_date":"2026-07-10","progress_pct":0,"status":"not_started"}]}`;
 
     try {
       const token = localStorage.getItem('token');
