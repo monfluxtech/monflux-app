@@ -1172,6 +1172,13 @@ export default function ProjectDetail() {
     setShowPhase(false); setEditPhase(null);
   };
 
+  const removePhase = async (phaseId) => {
+    try {
+      await projectsApi.deletePhase(id, phaseId);
+      setProject(p => ({ ...p, phases: (p.phases||[]).filter(ph => ph.id !== phaseId) }));
+    } catch (err) { console.error('deletePhase', err); }
+  };
+
   const printQR = () => {
     if (!qrData) return;
     const w = window.open('', '_blank', 'width=420,height=520');
@@ -3286,40 +3293,50 @@ Règles :
           )}
 
           {/* ── Gantt chart ou empty state ── */}
-          {project.phases?.length > 0 ? (
-            <div style={{ marginBottom: 20 }}>
-              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
+          {/* ── Barre Flo + templates — toujours visible ── */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '16px 20px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: project.phases?.length > 0 ? 14 : 0 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <Sparkles size={15} color="#fff"/>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>
+                  {project.phases?.length > 0 ? 'Regénérer les phases avec Florence' : 'Générer les phases avec Florence'}
+                </p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>Flo analyse l'estimation et crée un plan de phases avec les dates et corps de métier.</p>
+              </div>
+              <button onClick={generatePhasesFromAI} disabled={generatingPhases}
+                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Regénérer' : 'Générer'}
+              </button>
             </div>
-          ) : (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '28px 24px', marginBottom: 20 }}>
-              {/* Générer avec Flo */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: `${BRAND}08`, border: `1.5px solid ${BRAND}25`, borderRadius: 12, marginBottom: 20 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 11, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  <Sparkles size={18} color="#fff"/>
+            {/* Phases types — toujours affichées */}
+            {(() => {
+              const existing = new Set((project.phases||[]).map(p => p.name?.toLowerCase()));
+              const available = PHASE_TEMPLATES.filter(t => !existing.has(t.name.toLowerCase()));
+              if (!available.length) return null;
+              return (
+                <div style={{ borderTop: project.phases?.length > 0 ? '1px solid #F4F5F6' : 'none', paddingTop: project.phases?.length > 0 ? 12 : 0 }}>
+                  <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Ajouter une phase type</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {available.map(tpl => (
+                      <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                        {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
+                        {tpl.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Générer les phases avec Florence</p>
-                  <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0' }}>Flo analyse l'estimation et crée automatiquement un plan de phases avec les dates et corps de métier.</p>
-                </div>
-                <button onClick={generatePhasesFromAI} disabled={generatingPhases}
-                  style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: BRAND, fontSize: 13, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {generatingPhases ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
-                  {generatingPhases ? 'Génération…' : 'Générer'}
-                </button>
-              </div>
-              {/* Lignes types */}
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 10px' }}>Ou ajouter des phases types</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {PHASE_TEMPLATES.map(tpl => (
-                    <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer', transition: 'all .12s' }}>
-                      {addingTemplatePhase === tpl.name ? <Loader2 size={11} className="animate-spin"/> : <Plus size={11} color={BRAND}/>}
-                      {tpl.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              );
+            })()}
+          </div>
+
+          {/* ── Gantt ── */}
+          {project.phases?.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
             </div>
           )}
 
@@ -3361,7 +3378,7 @@ Règles :
             return (
               <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
                 {/* Header */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 32px', background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 16px', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 56px', background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 16px', alignItems: 'center' }}>
                   {['Corps de métier', 'Phase', 'Contact', 'Téléphone', 'Courriel', 'RBQ', 'CCQ', 'Statut', ''].map((h, i) => (
                     <div key={i} style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF' }}>{h}</div>
                   ))}
@@ -3377,7 +3394,7 @@ Règles :
                   const sc = STATUS_COLOR[tradeStatus] || '#9CA3AF';
                   const isEven = idx % 2 === 0;
                   return (
-                    <div key={ph.id} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 32px', padding: '11px 16px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < rows.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
+                    <div key={ph.id} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 150px 120px 160px 56px 56px 110px 56px', padding: '11px 16px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < rows.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
                       {/* Corps de métier */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>
@@ -3429,9 +3446,10 @@ Règles :
                           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                       </div>
-                      {/* Modifier */}
-                      <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" onClick={() => setEditPhase(ph)}><Pencil size={12}/></button>
+                      {/* Actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" title="Modifier" onClick={() => setEditPhase(ph)}><Pencil size={12}/></button>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" title="Supprimer" onClick={() => removePhase(ph.id)}><X size={13}/></button>
                       </div>
                     </div>
                   );
