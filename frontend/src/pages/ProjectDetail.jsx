@@ -2,12 +2,410 @@ import { useEffect, useState, useRef } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic } from 'lucide-react';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
 const money = (v) => (Number(v) || 0).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
+const BRAND = '#E8794E';
+const BRAND_DARK = '#C85A2B';
+const BRAND_SOFT = '#FFF1EB';
+const BRAND_BORDER = '#F9D5C0';
+
+const DETAIL_TOC_SECTIONS = [
+  { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
+  { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
+  { id: 's-media', icon: '📷', label: 'Photos & médias' },
+  { id: 's-expenses', icon: '💸', label: 'Dépenses' },
+  { id: 's-punch', icon: '⏱️', label: 'Punch' },
+  { id: 's-orders', icon: '📦', label: 'Commandes' },
+  { id: 's-soumission', icon: '📄', label: 'Devis précis' },
+  { id: 's-rfqs', icon: '📨', label: 'RFQ' },
+  { id: 's-contracts', icon: '✍️', label: 'Contrats' },
+  { id: 's-invoices', icon: '🧾', label: 'Factures' },
+  { id: 's-quotes', icon: '📋', label: 'Soumissions' },
+  { id: 's-documents', icon: '📁', label: 'Documents' },
+  { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
+  { id: 's-portal', icon: '🌐', label: 'Portails d\'accès' },
+  { id: 's-feed', icon: '📰', label: 'Fil du chantier' },
+  { id: 's-plans', icon: '🏛', label: 'Plans & rendus', badge: 'B8' },
+  { id: 's-comms', icon: '✉', label: 'Courriels & comms', badge: 'B9' },
+  { id: 's-co', icon: '📝', label: 'Avenants' },
+];
+
+function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || '');
+  const [committed, setCommitted] = useState(value || '');
+  const inputRef = useRef(null);
+  // Sync from parent only when value prop changes — NOT when editing toggles (prevents committed reset before API responds)
+  useEffect(() => { if (!editing) { setVal(value || ''); setCommitted(value || ''); } }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
+  const cancel = () => { setVal(committed); setEditing(false); };
+  const save = () => {
+    const trimmed = val.trim();
+    setCommitted(trimmed);
+    setEditing(false);
+    if (trimmed !== (value || '').trim()) onSave(trimmed);
+  };
+  const base = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', padding: 0, ...style };
+  if (editing) return multiline
+    ? <textarea ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => e.key === 'Escape' && cancel()} style={{ ...base, width: '100%', minHeight: 48, resize: 'vertical' }} />
+    : <input ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%' }} />;
+  const display = committed;
+  return (
+    <span onClick={start} title="Cliquer pour modifier" style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', ...displayStyle }}
+      onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+      {display || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
+    </span>
+  );
+}
+
+// ── Capture multimodale : texte, dictée vocale (Web Speech API), photo, vidéo, document ──
+function CaptureModal({ projectId, projectName, onClose, onAdded }) {
+  const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
+  const MAX_BYTES = 45 * 1024 * 1024; // ~45 Mo (limite body 50 Mo côté serveur)
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState([]); // { uid, kind:'photo'|'video'|'document', name, mime, dataUrl, size }
+  const [listening, setListening] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const recogRef = useRef(null);
+  const baseTextRef = useRef('');
+  const finalRef = useRef('');
+  const uidRef = useRef(0);
+  const photoInput = useRef(null), videoInput = useRef(null), docInput = useRef(null);
+
+  useEffect(() => () => { try { recogRef.current?.stop(); } catch {} }, []);
+
+  const fmtSize = (b) => b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} Mo` : `${Math.round(b / 1024)} Ko`;
+
+  const readFiles = (fileList, kind) => {
+    setError('');
+    Array.from(fileList).forEach(file => {
+      if (file.size > MAX_BYTES) { setError(`« ${file.name} » dépasse 45 Mo — trop volumineux.`); return; }
+      const reader = new FileReader();
+      reader.onload = () => setFiles(prev => [...prev, {
+        uid: ++uidRef.current, kind, name: file.name, mime: file.type || 'application/octet-stream',
+        dataUrl: reader.result, size: file.size,
+      }]);
+      reader.onerror = () => setError(`Impossible de lire « ${file.name} ».`);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeFile = (uid) => setFiles(prev => prev.filter(f => f.uid !== uid));
+
+  const toggleDictation = () => {
+    if (listening) { try { recogRef.current?.stop(); } catch {} return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setError("La dictée vocale n'est pas supportée par ce navigateur. Essayez Chrome ou Safari, ou tapez votre texte."); return; }
+    setError('');
+    const recog = new SR();
+    recogRef.current = recog;
+    recog.lang = 'fr-CA';
+    recog.continuous = true;
+    recog.interimResults = true;
+    baseTextRef.current = text ? text.replace(/\s+$/, '') + ' ' : '';
+    finalRef.current = '';
+    recog.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const seg = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalRef.current += seg + ' ';
+        else interim += seg;
+      }
+      setText(baseTextRef.current + finalRef.current + interim);
+    };
+    recog.onerror = (e) => {
+      setError(e.error === 'not-allowed' || e.error === 'service-not-allowed'
+        ? "Accès au micro refusé. Autorisez le micro dans votre navigateur pour dicter."
+        : `Erreur de dictée : ${e.error}`);
+      setListening(false);
+    };
+    recog.onend = () => setListening(false);
+    try { recog.start(); setListening(true); } catch { setError('Impossible de démarrer la dictée.'); }
+  };
+
+  const submit = async () => {
+    if (!text.trim() && files.length === 0) { setError('Ajoutez du texte, une photo, une vidéo ou un document.'); return; }
+    if (listening) { try { recogRef.current?.stop(); } catch {} }
+    setSaving(true); setError('');
+    try {
+      const createdMedia = [];
+      if (text.trim()) {
+        const { data } = await siteMediaApi.create({
+          project_id: projectId, type: 'note',
+          transcript: text.trim(), caption: text.trim().slice(0, 90),
+        });
+        createdMedia.push(data);
+      }
+      for (const f of files) {
+        if (f.kind === 'document') {
+          await documentsApi.upload({
+            project_id: projectId, type: 'other', name: f.name,
+            file_url: f.dataUrl, mime_type: f.mime, file_size: f.size,
+          });
+        } else {
+          const { data } = await siteMediaApi.create({
+            project_id: projectId, type: f.kind,
+            url: f.dataUrl, mime_type: f.mime, caption: f.name,
+          });
+          createdMedia.push(data);
+        }
+      }
+      onAdded(createdMedia, files.some(f => f.kind === 'document'));
+      onClose();
+    } catch {
+      setError("Échec de l'enregistrement. Vérifiez votre connexion et réessayez.");
+    } finally { setSaving(false); }
+  };
+
+  const inputs = [
+    { ref: photoInput, kind: 'photo', accept: 'image/*', icon: Camera, label: 'Photo' },
+    { ref: videoInput, kind: 'video', accept: 'video/*', icon: Video, label: 'Vidéo' },
+    { ref: docInput, kind: 'document', accept: '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,application/pdf', icon: Paperclip, label: 'Document' },
+  ];
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, boxShadow: '0 24px 70px rgba(0,0,0,.3)', overflow: 'hidden' }}>
+        {/* Entête */}
+        <div style={{ background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff', padding: '18px 22px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Sparkles size={22} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>Ajouter au projet</h3>
+            <p style={{ fontSize: 12, margin: '2px 0 0', color: 'rgba(255,255,255,.9)' }}>{projectName}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.18)', border: 'none', borderRadius: 9, padding: 7, cursor: 'pointer', color: '#fff', display: 'grid', placeItems: 'center' }}><X size={16} /></button>
+        </div>
+
+        <div style={{ padding: 22 }}>
+          {/* Zone texte + dictée */}
+          <div style={{ position: 'relative' }}>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Écris ou dicte une note, une mesure, une observation… L'IA classera l'info au bon endroit."
+              rows={5}
+              style={{ width: '100%', border: '1px solid #E8EAED', borderRadius: 12, padding: '14px 14px 44px', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', boxSizing: 'border-box' }}
+            />
+            <button onClick={toggleDictation} title={listening ? 'Arrêter la dictée' : 'Dicter (micro)'}
+              style={{ position: 'absolute', left: 10, bottom: 10, display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 9, padding: '7px 12px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, transition: 'all .15s',
+                background: listening ? '#FEE2E2' : '#F4F4F5', color: listening ? '#DC2626' : '#52525B' }}>
+              {listening ? <><Square size={13} fill="#DC2626" /> Arrêter</> : <><Mic size={14} /> Dicter</>}
+              {listening && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#DC2626', animation: 'pulse 1s infinite' }} />}
+            </button>
+          </div>
+
+          {/* Boutons multimodaux */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            {inputs.map(({ ref, kind, accept, icon: Icon, label }) => (
+              <span key={kind}>
+                {/* capture="environment" on photo/video opens rear camera on mobile; no multiple (breaks capture on iOS) */}
+                {kind === 'photo' && <input ref={ref} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
+                {kind === 'video' && <input ref={ref} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
+                {kind === 'document' && <input ref={ref} type="file" accept={accept} multiple style={{ display: 'none' }} onChange={e => { readFiles(e.target.files, kind); e.target.value = ''; }} />}
+                <button onClick={() => ref.current?.click()}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid #E8EAED', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#3F3F46' }}>
+                  <Icon size={15} /> {label}
+                </button>
+              </span>
+            ))}
+          </div>
+
+          {/* Aperçu des pièces jointes */}
+          {files.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
+              {files.map(f => (
+                <div key={f.uid} style={{ position: 'relative', border: '1px solid #E8EAED', borderRadius: 10, padding: 8, width: 110, background: '#FAFAFA' }}>
+                  <button onClick={() => removeFile(f.uid)} style={{ position: 'absolute', top: -8, right: -8, background: '#15171C', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 11 }}><X size={11} /></button>
+                  {f.kind === 'photo'
+                    ? <img src={f.dataUrl} alt={f.name} style={{ width: '100%', height: 64, objectFit: 'cover', borderRadius: 6 }} />
+                    : <div style={{ width: '100%', height: 64, borderRadius: 6, background: '#EEF0F3', display: 'grid', placeItems: 'center', color: '#7C8089' }}>{f.kind === 'video' ? <Video size={26} /> : <FileText size={26} />}</div>}
+                  <p style={{ fontSize: 10.5, color: '#52525B', margin: '6px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={f.name}>{f.name}</p>
+                  <p style={{ fontSize: 9.5, color: '#A1A1AA', margin: 0 }}>{fmtSize(f.size)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <p style={{ color: '#DC2626', fontSize: 12.5, margin: '14px 0 0', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px' }}>{error}</p>}
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+            <button onClick={onClose} disabled={saving} style={{ flex: '0 0 auto', padding: '11px 18px', border: '1px solid #E8EAED', borderRadius: 11, background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6B7280' }}>Annuler</button>
+            <button onClick={submit} disabled={saving} style={{ flex: 1, padding: '11px 0', border: 'none', borderRadius: 11, background: BRAND, cursor: saving ? 'wait' : 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: saving ? .7 : 1 }}>
+              {saving ? <><Loader2 size={15} className="animate-spin" /> Enregistrement…</> : <><Upload size={15} /> Ajouter au projet</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Chat IA contextuel du projet (streaming SSE) ──
+const PROJ_API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+
+function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
+  const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: `Bonjour! Je suis **Florence**, l'assistante IA de MONFLUX. Je suis là pour t'aider avec le projet **${projectName}** — questions, résumés, notes, actions. Comment puis-je t'aider?` }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recogRef = useRef(null);
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => () => { try { recogRef.current?.stop(); } catch {} }, []);
+
+  const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const toggleVoice = () => {
+    if (!SpeechRec) { alert("Dictée non supportée sur ce navigateur. Essayez Chrome."); return; }
+    if (listening) { recogRef.current?.stop(); return; }
+    const rec = new SpeechRec();
+    recogRef.current = rec;
+    rec.lang = 'fr-CA'; rec.interimResults = true; rec.continuous = false;
+    let final = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t; else interim += t;
+      }
+      setInput((final + interim).trim());
+    };
+    rec.onend = () => { setListening(false); if (final.trim()) setTimeout(() => inputRef.current?.focus(), 50); };
+    rec.onerror = () => setListening(false);
+    rec.start(); setListening(true);
+  };
+
+  const send = async (text) => {
+    const typed = (text || input).trim();
+    if (!typed || loading) return;
+    setInput('');
+    const userMsg = { role: 'user', content: typed };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setLoading(true);
+    const aiMsg = { role: 'assistant', content: '' };
+    setMessages(m => [...m, aiMsg]);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: next, context_type: 'project', project_id: projectId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:d.error||"Erreur. Réessayez."}; return c; });
+        return;
+      }
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.type === 'text') setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:c[c.length-1].content+evt.text}; return c; });
+          } catch {}
+        }
+      }
+    } catch {
+      setMessages(m => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:"Erreur de connexion. Réessayez."}; return c; });
+    } finally { setLoading(false); }
+  };
+
+  const SUGGESTIONS = ['Résume l\'état du projet', 'Quelles sont les prochaines étapes?', 'Rédige une note de chantier', 'Quel est le budget restant?'];
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 299 }} />
+      <div className="ai-chat-drawer">
+        {/* Header */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)` }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Sparkles size={18} color="#fff" /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>Florence ✦ Flo</p>
+            <p style={{ fontSize: 11.5, color: 'rgba(255,255,255,.85)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projectName}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.18)', border: 'none', borderRadius: 9, padding: 7, cursor: 'pointer', color: '#fff', display: 'grid', placeItems: 'center' }}><X size={16} /></button>
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '85%', padding: '10px 14px', borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                background: m.role === 'user' ? BRAND : '#F4F5F6',
+                color: m.role === 'user' ? '#fff' : '#15171C', fontSize: 13.5, lineHeight: 1.5,
+              }}>
+                {m.content || (loading && i === messages.length - 1 ? <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span> : '…')}
+              </div>
+            </div>
+          ))}
+          {/* Suggestions sur message vide */}
+          {messages.length === 1 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 4 }}>
+              {SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => send(s)} style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 20, padding: '6px 12px', fontSize: 12, color: '#3F3F46', cursor: 'pointer', fontWeight: 500 }}>{s}</button>
+              ))}
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: '12px 14px', borderTop: '1px solid #E8EAED', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, background: '#fff' }}>
+          <button onClick={toggleVoice} title={listening ? 'Arrêter la dictée' : 'Dicter'}
+            style={{ width: 38, height: 38, borderRadius: 10, border: 'none', background: listening ? '#FEE2E2' : '#F4F5F6', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0, color: listening ? '#DC2626' : '#52525B', position: 'relative' }}>
+            {listening ? <Square size={14} fill="#DC2626" /> : <Mic size={16} />}
+            {listening && <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#DC2626', animation: 'pulse 1s infinite' }} />}
+          </button>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Pose une question ou donne une instruction…"
+            rows={1}
+            style={{ flex: 1, border: '1px solid #E8EAED', borderRadius: 11, padding: '10px 12px', fontSize: 13.5, fontFamily: 'inherit', resize: 'none', outline: 'none', color: '#15171C', lineHeight: 1.5, minHeight: 38, maxHeight: 120, overflowY: 'auto' }}
+            onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+          />
+          <button onClick={() => send()} disabled={!input.trim() || loading}
+            style={{ width: 38, height: 38, borderRadius: 10, border: 'none', background: (!input.trim() || loading) ? '#F4F5F6' : BRAND, cursor: (!input.trim() || loading) ? 'default' : 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0, color: (!input.trim() || loading) ? '#B0B3BA' : '#fff', transition: 'all .15s' }}>
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function parsePaymentTerms(terms) {
+  if (!terms) return [];
+  const matches = String(terms).match(/\d+(?:[.,]\d+)?/g) || [];
+  const values = matches.map((value) => Number(value.replace(',', '.'))).filter((value) => value > 0);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (!values.length || total > 100.5) return [];
+  return values;
+}
+
+function paymentStepLabel(index, total) {
+  if (index === 0) return 'Dépôt';
+  if (index === total - 1) return total === 2 ? 'Solde final' : 'Fin des travaux';
+  if (index === 1) return 'Mi-chantier';
+  return `Versement ${index + 1}`;
+}
 
 const TRADE_STATUS = {
   to_find:   { label: 'À trouver', badge: 'badge-gray' },
@@ -54,129 +452,102 @@ function DocPreview({ doc, onClose }) {
 
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
-const PHASE_COLORS = ['#F26522','#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
+const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
+const PHASE_TEMPLATES = [
+  { name: 'Démolition',        trade_name: 'Démolition',   durationDays: 5  },
+  { name: 'Préparation',       trade_name: null,           durationDays: 3  },
+  { name: 'Structure',         trade_name: 'Charpenterie', durationDays: 14 },
+  { name: 'Électricité',       trade_name: 'Électricité',  durationDays: 7  },
+  { name: 'Plomberie',         trade_name: 'Plomberie',    durationDays: 7  },
+  { name: 'CVCA',              trade_name: 'Chauffage / CVC', durationDays: 5  },
+  { name: 'Isolation',         trade_name: 'Isolation',    durationDays: 5  },
+  { name: 'Gypse & finition',  trade_name: 'Gypse / cloisons', durationDays: 10 },
+  { name: 'Peinture',          trade_name: 'Peinture',     durationDays: 7  },
+  { name: 'Plancher',          trade_name: 'Planchers',    durationDays: 5  },
+  { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
+];
 
-function AssigneeTag({ member, rfqResponses, onHover }) {
-  const rfqResp = rfqResponses?.find(r => r.subcontractor_id === member.subcontractor_id);
-  const statuses = {
-    invited: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-700', label: 'Invité' },
-    sent: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', label: 'Envoyé' },
-    viewed: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', label: 'Consulté' },
-    accepted: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', label: 'Accepté' },
-    declined: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', label: 'Décliné' },
-  };
-  const st = rfqResp?.status || 'invited';
-  const style = statuses[st] || statuses.invited;
-  const name = member.sub_name || member.name || 'Inconnu';
-
-  return (
-    <div
-      className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium ${style.bg} ${style.border} ${style.text} cursor-pointer`}
-      onMouseEnter={() => onHover?.(member, rfqResp)}
-      title={`${name} — ${style.label}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full`} style={{background: st === 'accepted' ? '#22c55e' : st === 'declined' ? '#ef4444' : st === 'viewed' ? '#f59e0b' : st === 'sent' ? '#3b82f6' : '#9ca3af'}}/>
-      <span className="truncate max-w-[140px]">{name}</span>
-    </div>
-  );
-}
-
-function GanttChart({ phases, projectStart, projectEnd, projectMembers, rfqResponses, selectedPhaseIds, onSelectionChange, columnWidths, onColumnResize }) {
+function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPhase }) {
   if (!phases || phases.length === 0) return null;
 
-  const refStart = projectStart ? new Date(projectStart) : new Date();
-  const refEnd   = projectEnd   ? new Date(projectEnd)   : new Date(refStart.getTime() + 90*86400000);
-  const totalMs  = refEnd - refStart || 1;
+  const datedStarts = phases.map((ph) => ph.start_date).filter(Boolean).map((d) => new Date(d));
+  const datedEnds = phases.map((ph) => ph.end_date).filter(Boolean).map((d) => new Date(d));
+  const fallbackStart = datedStarts.length ? new Date(Math.min(...datedStarts)) : new Date();
+  const fallbackEnd = datedEnds.length
+    ? new Date(Math.max(...datedEnds))
+    : new Date(fallbackStart.getTime() + 90 * 86400000);
+  const refStart = projectStart ? new Date(projectStart) : fallbackStart;
+  const refEnd = projectEnd ? new Date(projectEnd) : fallbackEnd;
+  const totalMs  = Math.max(refEnd - refStart, 1);
 
   const months = [];
   const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
-  while (cur <= refEnd) {
-    months.push(new Date(cur));
-    cur.setMonth(cur.getMonth() + 1);
-  }
+  while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
 
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const width = (s, e) => Math.max(1, pct(e) - pct(s));
+  const barW = (s, e) => Math.max(0.5, pct(e) - pct(s));
+  const todayPct = pct(new Date());
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
 
-  // Obtenir les assignations pour chaque phase
-  const getPhaseAssignments = (phaseId) => {
-    if (!projectMembers) return [];
-    return projectMembers.filter(m => m.phase_id === phaseId);
-  };
-
-  const leftWidth = columnWidths.name + columnWidths.assignees + columnWidths.dates + 48; // +48 pour checkbox
+  const labelWidth = 210;
 
   return (
-    <div className="overflow-x-auto">
-      <div style={{ minWidth: 800 }}>
-        {/* Month headers */}
-        <div className="flex mb-1" style={{ marginLeft: leftWidth }}>
-          {months.map((m, i) => {
-            const left = pct(m);
-            const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
-            const w = Math.min(pct(nextM), 100) - left;
-            return (
-              <div key={i} className="text-xs text-gray-400 border-l border-gray-100 pl-1" style={{ width:`${Math.max(w,0)}%`, minWidth: 30 }}>
-                {m.toLocaleDateString('fr-CA',{month:'short'})}
-              </div>
-            );
-          })}
-        </div>
-        {/* Today line + rows */}
-        <div className="relative" style={{ marginLeft: leftWidth }}>
-          <div className="absolute top-0 bottom-0 w-px bg-brand z-10" style={{ left:`${pct(new Date())}%` }}/>
+    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 18px 14px' }}>
+      <div style={{ fontSize: 12, color: '#7C8089', background: '#F7F8FA', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+        Vue planning du chantier. Clique une phase pour la modifier; les liaisons avancées et dépendances viendront plus tard.
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 760 }}>
+          <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 4 }}>
+            <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
+              Phase
+            </div>
+            <div style={{ flex: 1, display: 'flex', borderBottom: '1px solid #EEF0F2', paddingBottom: 8 }}>
+            {months.map((m, i) => {
+              const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
+              const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
+              return (
+                  <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 70, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', paddingLeft: 10, borderLeft: i > 0 ? '1px solid #F0F1F3' : 'none' }}>
+                    {m.toLocaleDateString('fr-CA',{ month:'long' })}
+                    <span style={{ opacity: .65, fontSize: 9.5, marginLeft: 4 }}>{m.getFullYear()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {phases.map((ph, i) => {
             const s = ph.start_date ? new Date(ph.start_date) : refStart;
-            const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+14*86400000);
+            const e = ph.end_date ? new Date(ph.end_date) : new Date(s.getTime()+14*86400000);
             const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-            const pct_left  = pct(s);
-            const pct_width = width(s, e);
-            const isSelected = selectedPhaseIds.has(ph.id);
+            const pL = pct(s);
+            const pW = barW(s, e);
+            const isEven = i % 2 === 0;
+            const barLabel = ph.trade_name || ph.name;
 
             return (
-              <div key={ph.id} className={`flex items-center mb-2 gap-2 -ml-[${leftWidth}px] hover:bg-gray-50 rounded py-1 px-2 transition-colors`} style={{marginLeft: -leftWidth}}>
-                {/* Checkbox */}
-                <div className="w-6 flex-shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={(e) => {
-                      const newSel = new Set(selectedPhaseIds);
-                      if (e.target.checked) newSel.add(ph.id);
-                      else newSel.delete(ph.id);
-                      onSelectionChange?.(newSel);
-                    }}
-                    className="rounded border-gray-300"
-                  />
+              <div key={ph.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, background: isEven ? '#FBFCFD' : '#fff', borderRadius: 10, marginBottom: 6 }}>
+                <div style={{ width: labelWidth, flexShrink: 0, padding: '10px 14px 10px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
+                    style={{ width: 18, height: 18, borderRadius: 6, border: '1px solid #E4E7EB', background: '#fff', color: '#C1C6CE', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}
+                    title="Supprimer la phase">
+                    <X size={10}/>
+                  </button>
+                  <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Modifier la phase">
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
+                    <div style={{ fontSize: 10.5, color: '#A0A6AF', marginTop: 2, whiteSpace: 'nowrap' }}>
+                      {fmtDate(ph.start_date)}{ph.end_date ? ` → ${fmtDate(ph.end_date)}` : ''}
+                    </div>
+                  </div>
                 </div>
-                {/* Phase name */}
-                <div style={{ width: columnWidths.name }} className="flex-shrink-0">
-                  <p className="text-xs font-medium text-gray-700 truncate">{ph.name}</p>
-                </div>
-                {/* Assignés avec couleurs */}
-                <div style={{ width: columnWidths.assignees }} className="flex-shrink-0 flex gap-1 flex-wrap">
-                  {getPhaseAssignments(ph.id).map((m, idx) => (
-                    <AssigneeTag key={idx} member={m} rfqResponses={rfqResponses} onHover={()=>{}}/>
-                  ))}
-                  {getPhaseAssignments(ph.id).length === 0 && <span className="text-[11px] text-gray-400">—</span>}
-                </div>
-                {/* Dates */}
-                <div style={{ width: columnWidths.dates }} className="text-right flex-shrink-0">
-                  {ph.start_date && (
-                    <p className="text-[11px] text-gray-400 truncate">
-                      {new Date(ph.start_date).toLocaleDateString('fr-CA', {month:'short', day:'numeric'})}
-                      {ph.end_date && ` → ${new Date(ph.end_date).toLocaleDateString('fr-CA', {month:'short', day:'numeric'})}`}
-                    </p>
+                <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'hidden' }}>
+                  {todayPct >= 0 && todayPct <= 100 && (
+                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .45, zIndex: 2 }}/>
                   )}
-                </div>
-                {/* Gantt bar */}
-                <div className="flex-1 relative h-6">
-                  <div
-                    className="absolute h-full rounded-full flex items-center px-2 overflow-hidden"
-                    style={{ left:`${pct_left}%`, width:`${pct_width}%`, minWidth:4, background:color+'33', border:`1.5px solid ${color}` }}
-                  >
-                    <div className="h-full rounded-full absolute left-0 top-0" style={{ width:`${ph.progress_pct||0}%`, background:color+'66' }}/>
-                    {pct_width > 8 && <span className="relative text-xs font-medium z-10 truncate" style={{color}}>{ph.progress_pct||0}%</span>}
+                  <div onClick={() => onEditPhase && onEditPhase(ph)}
+                    title={`${fmtDate(ph.start_date)} → ${fmtDate(ph.end_date)}`}
+                    style={{ position: 'absolute', top: 4, bottom: 4, left: `${pL}%`, width: `${pW}%`, minWidth: 22, borderRadius: 999, background: color, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', zIndex: 1, boxShadow: '0 1px 2px rgba(0,0,0,.08)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>
                   </div>
                 </div>
               </div>
@@ -188,12 +559,12 @@ function GanttChart({ phases, projectStart, projectEnd, projectMembers, rfqRespo
   );
 }
 
-function PhaseModal({ projectId, phase, onClose, onSave }) {
+function PhaseModal({ projectId, phase, onClose, onSave, trades }) {
   const [form, setForm] = useState(phase ? {
     name:phase.name||'', start_date:phase.start_date?phase.start_date.slice(0,10):'',
     end_date:phase.end_date?phase.end_date.slice(0,10):'', progress_pct:phase.progress_pct||0,
-    status:phase.status||'not_started'
-  } : { name:'', start_date:'', end_date:'', progress_pct:0, status:'not_started' });
+    status:phase.status||'not_started', trade_name:phase.trade_name||''
+  } : { name:'', start_date:'', end_date:'', progress_pct:0, status:'not_started', trade_name:'' });
   const [saving, setSaving] = useState(false);
   const f = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
@@ -221,6 +592,17 @@ function PhaseModal({ projectId, phase, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')}/></div>
             <div><label className="label">Fin</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')}/></div>
+          </div>
+          <div>
+            <label className="label">Corps de métier (optionnel)</label>
+            {trades?.length ? (
+              <select className="input" value={form.trade_name} onChange={f('trade_name')}>
+                <option value="">— Aucun —</option>
+                {trades.map(t => <option key={t.id} value={t.trade}>{t.trade}</option>)}
+              </select>
+            ) : (
+              <input className="input" value={form.trade_name} onChange={f('trade_name')} placeholder="Ex: Électricité"/>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -454,6 +836,28 @@ function FieldEstimation({ project, onUpdated }) {
   );
 }
 
+function KvTooltipChip({ chip }) {
+  const [show, setShow] = useState(false);
+  const pos = chip.label.includes('Marge') && chip.value ? parseFloat(chip.value) >= 0 : null;
+  return (
+    <div className="kv" style={{ background: chip.bg, border: chip.border, position: 'relative', userSelect: 'none' }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <div className="kv-k">{chip.label}</div>
+      <div className="kv-v" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: pos === false ? '#DC2626' : pos === true ? '#16a34a' : undefined }}>
+        {chip.dot && <span style={{ width: 9, height: 9, borderRadius: '50%', background: chip.dot, display: 'inline-block', flexShrink: 0 }}/>}
+        {chip.value}
+        {chip.extra && <span style={{ fontSize: 11, opacity: .7 }}>· {chip.extra}</span>}
+      </div>
+      {show && chip.tooltip && (
+        <div style={{ position: 'absolute', bottom: 'calc(100% + 9px)', left: '50%', transform: 'translateX(-50%)', background: '#15171C', color: '#fff', fontSize: 11.5, padding: '6px 12px', borderRadius: 8, whiteSpace: 'nowrap', zIndex: 500, pointerEvents: 'none', boxShadow: '0 4px 14px rgba(0,0,0,.22)', lineHeight: 1.5 }}>
+          {chip.tooltip}
+          <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #15171C' }}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const t = useT();
   const { id } = useParams();
@@ -462,9 +866,16 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
   const [genQr, setGenQr] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [timesheets, setTimesheets] = useState([]);
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
+  const [tradeRecos, setTradeRecos] = useState(null);
+  const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
+  const [autoAddingTrades, setAutoAddingTrades] = useState(false);
+  const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
+  const [generatingPhases, setGeneratingPhases] = useState(false);
+  const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
   const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
@@ -493,6 +904,27 @@ export default function ProjectDetail() {
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [tocSections, setTocSections] = useState(() => {
+    const validIds = new Set(DETAIL_TOC_SECTIONS.map(s => s.id));
+    try {
+      const saved = JSON.parse(localStorage.getItem(`monflux-toc-order-${id}`) || 'null');
+      if (saved) {
+        // Toujours utiliser les labels/icônes du code (pas du localStorage qui peut être périmé)
+        const filtered = saved
+          .filter(s => validIds.has(s.id))
+          .map(s => DETAIL_TOC_SECTIONS.find(d => d.id === s.id) || s);
+        const savedIds = new Set(filtered.map(s => s.id));
+        const missing = DETAIL_TOC_SECTIONS.filter(s => !savedIds.has(s.id));
+        return [...filtered, ...missing];
+      }
+    } catch {}
+    return DETAIL_TOC_SECTIONS;
+  });
+  const [hiddenSections, setHiddenSections] = useState(() => {
+    try { const s = localStorage.getItem(`monflux-toc-hidden-${id}`); if (s) return JSON.parse(s); } catch {}
+    return [];
+  });
+  const [dragSrcIdx, setDragSrcIdx] = useState(null);
   // B4 — Vente
   const scrollToSection = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -518,7 +950,10 @@ export default function ProjectDetail() {
   const [orderForm, setOrderForm] = useState({ supplier: '', order_number: '', description: '', total_amount: '', order_date: '', expected_date: '' });
   // B7 — IA chantier
   const [media, setMedia] = useState([]);
+  const [lightboxItem, setLightboxItem] = useState(null);
   const [showMediaForm, setShowMediaForm] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
   const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
   const [purchasePlan, setPurchasePlan] = useState(null);
@@ -526,18 +961,34 @@ export default function ProjectDetail() {
   const [coImpact, setCoImpact] = useState({});   // { [coId]: impactObj }
   const [analyzingCoId, setAnalyzingCoId] = useState(null);
   const [aiNotice, setAiNotice] = useState('');
-  // Phases recommandées par IA
-  const [recommendedPhases, setRecommendedPhases] = useState([]);
-  const [generatingPhases, setGeneratingPhases] = useState(false);
-  const [projectMembers, setProjectMembers] = useState([]);
-  const [rfqResponses, setRfqResponses] = useState([]);
-  const [selectedPhaseIds, setSelectedPhaseIds] = useState(new Set());
-  const [columnWidths, setColumnWidths] = useState({ name: 180, assignees: 240, dates: 120 });
+  const [activeSection, setActiveSection] = useState('s-ai');
+  const [statusPopup, setStatusPopup] = useState(null);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [estimTab, setEstimTab] = useState('voieB');
+  const [showClientReply, setShowClientReply] = useState(false);
+  const [clientReplyText, setClientReplyText] = useState('');
+  const [autreTexts, setAutreTexts] = useState({});
+  const [estimMsg, setEstimMsg] = useState('');
+  const [estimInspoPhotos, setEstimInspoPhotos] = useState([]);
+  const [estimInspoInput, setEstimInspoInput] = useState('');
+  const [relanceCount, setRelanceCount] = useState(() => { try { return Number(localStorage.getItem(`monflux-relances-count-${id}`) || 2); } catch { return 2; } });
+  const [relanceMethods, setRelanceMethods] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-relances-methods-${id}`) || '["email"]'); } catch { return ['email']; } });
+  const [relanceFrequency, setRelanceFrequency] = useState(() => { try { return Number(localStorage.getItem(`monflux-relances-freq-${id}`) || 7); } catch { return 7; } });
+  const [estimMsgCopied, setEstimMsgCopied] = useState(false);
+  const estimMsgRef = useRef(null);
+  const userEditedEstimMsg = useRef(false);
+  const [clientMsgCopied, setClientMsgCopied] = useState(false);
+  const [searchingPrices, setSearchingPrices] = useState(false);
+  const [aiPriceResult, setAiPriceResult] = useState(null); // { comments, sources: [{label,url}] }
+  const [sqUnit, setSqUnit] = useState('sqft');
+  const [sqRate, setSqRate] = useState('');
+  const [sqArea, setSqArea] = useState('');
+  const clientMsgRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }, { data: projMembers }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -555,7 +1006,6 @@ export default function ProjectDetail() {
       ]);
       setProject(proj);
       setTimesheets(ts);
-      setProjectMembers(proj.members || []);
       setProjectInvoices(invs);
       setProjectQuotes(qs.filter(q => q.project_id === id));
       setQuittance(quits?.[0] || null);
@@ -577,19 +1027,19 @@ export default function ProjectDetail() {
       const impacts = {};
       (cos || []).forEach(co => { if (co.ai_impact) impacts[co.id] = co.ai_impact; });
       setCoImpact(impacts);
-      // Charge les RFQ responses pour le statut des sous-traitants
-      try {
-        const { data: rfqs } = await rfqsApi.byProject(id);
-        const allResponses = [];
-        if (rfqs?.length) {
-          rfqs.forEach(rfq => {
-            if (rfq.responses?.length) {
-              allResponses.push(...rfq.responses);
-            }
-          });
-        }
-        setRfqResponses(allResponses);
-      } catch {};
+      // QR punch — restore from field_assessment (permanent) or generate once
+      const fa = proj.field_assessment || {};
+      if (fa.qr_image) {
+        setQrData({ qr_image: fa.qr_image, url: fa.qr_url });
+      } else {
+        try {
+          const { data: qr } = await punchApi.generate({ project_id: id, label: proj.name });
+          setQrData(qr);
+          const nextFa = { ...fa, qr_image: qr.qr_image, qr_url: qr.url };
+          await projectsApi.update(id, { field_assessment: nextFa });
+          setProject(p => ({ ...p, field_assessment: nextFa }));
+        } catch {}
+      }
     } catch {} finally { setLoading(false); }
   };
 
@@ -609,7 +1059,121 @@ export default function ProjectDetail() {
     notesTimer.current = setTimeout(() => saveNotes(val), 1200);
   };
 
+  const saveField = async (field, value) => {
+    try {
+      const payload = Array.isArray(project[field])
+        ? { [field]: String(value).split(',').map(s => s.trim()).filter(Boolean) }
+        : { [field]: value || null };
+      const { data } = await projectsApi.update(id, payload);
+      setProject(p => ({ ...p, ...data }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), ...payload } }));
+    } catch {}
+  };
+
+  const saveAssessmentField = async (key, value) => {
+    const next = { ...(project.field_assessment || {}), [key]: value };
+    try {
+      await projectsApi.update(id, { field_assessment: next });
+      setProject(p => ({ ...p, field_assessment: next }));
+    } catch {}
+  };
+
+  const saveClientField = async (field, value) => {
+    const map = { name: 'client_name', email: 'client_email', phone: 'client_phone', notes: 'client_notes' };
+    const stateKey = map[field] || `client_${field}`;
+    setProject(p => ({ ...p, [stateKey]: value }));
+    // Toujours sauvegarder sur le projet — garantit la persistance au rechargement
+    try {
+      const { data } = await projectsApi.update(id, { [stateKey]: value || null });
+      setProject(p => ({ ...p, ...data }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), [stateKey]: value } }));
+    } catch {}
+    // Si un contact est lié, mettre aussi à jour le contact
+    if (project.client_id) {
+      try { await contactsApi.update(project.client_id, { [field]: value || null }); } catch {}
+    }
+  };
+
   useEffect(() => { load(); }, [id]);
+
+  // Auto-générer le message d'estimation quand le projet ou les résultats IA changent
+  const buildEstimMsg = (proj, aiResult) => {
+    if (!proj) return '';
+    const fa = proj.field_assessment || {};
+    const approxLines = fa.approx_lines || [];
+    const aiScenarios = aiResult?.scenarios || [];
+    const total = approxLines.reduce((s, l) => s + (Number(l.total) || 0), 0);
+    const mid = aiScenarios.find(s => (s.label||'').toLowerCase().includes('moyen')) || aiScenarios[1] || aiScenarios[0];
+    const estAmount = total > 0 ? money(total) : mid ? `${money(mid.min)} – ${money(mid.max)}` : null;
+    const startLabel = fa.start_label || (proj.start_date ? proj.start_date.slice(0,10) : '');
+    const endLabel = fa.end_label || (proj.end_date ? proj.end_date.slice(0,10) : '');
+    const trades = resolveTradeLabels(fa.selected_trades || []);
+    const descContext = proj.description || fa.work_type || '';
+
+    const lines = [];
+    const prenom = (proj.client_name || '').split(' ')[0] || 'toi';
+    lines.push(`Bonjour ${prenom},`);
+    lines.push('');
+    if (descContext) {
+      lines.push(`J'ai bien regardé ta demande pour ${descContext.toLowerCase().startsWith('réno') || descContext.toLowerCase().startsWith('remo') ? descContext : `les travaux de ${descContext}`}.${proj.address ? ` Je voulais te faire un retour rapide sur le projet à ${proj.address}.` : ''}`);
+    } else {
+      lines.push(`Je voulais te faire un retour rapide concernant ton projet${proj.address ? ` à ${proj.address}` : ''}.`);
+    }
+    lines.push('');
+    if (estAmount) {
+      lines.push(`Selon les informations que j'ai en main, mon estimation approximative se situe autour de **${estAmount}**.`);
+    } else {
+      lines.push(`Je finalise encore les détails de mon estimation et je reviens vers toi très bientôt avec un montant.`);
+    }
+    if (trades.length) {
+      lines.push(`Ça couvre : ${trades.join(', ')}.`);
+    }
+    if (startLabel || endLabel) {
+      lines.push(`Pour le calendrier, je vise ${startLabel && endLabel ? `une réalisation entre le ${startLabel} et le ${endLabel}` : startLabel ? `un début autour du ${startLabel}` : `une fin autour du ${endLabel}`}.`);
+    }
+    lines.push('');
+    lines.push(`Garde en tête que c'est une estimation approximative — pour un prix ferme, je te prépare une soumission complète après ma visite.`);
+    lines.push('');
+    lines.push(`N'hésite pas à me contacter si tu as des questions ou si tu veux qu'on planifie une visite.`);
+    lines.push('');
+    lines.push(`À bientôt,`);
+    lines.push(proj.project_manager || '');
+    return lines.filter((l, i, arr) => !(l === '' && arr[i-1] === '')).join('\n');
+  };
+
+  useEffect(() => {
+    if (userEditedEstimMsg.current) return;
+    const msg = buildEstimMsg(project, aiPriceResult);
+    if (msg) setEstimMsg(msg);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, aiPriceResult]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+
+    const sections = tocSections
+      .map((section) => document.getElementById(section.id))
+      .filter(Boolean);
+
+    if (!sections.length) return undefined;
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+      if (visible?.target?.id) {
+        setActiveSection(visible.target.id);
+      }
+    }, {
+      root: null,
+      rootMargin: '-18% 0px -62% 0px',
+      threshold: [0.15, 0.35, 0.6],
+    });
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [loading, profit, projectInvoices.length, projectQuotes.length, media.length, materialOrders.length, projectContracts.length, changeOrdersList.length]);
 
   const generateQR = async () => {
     setGenQr(true);
@@ -624,53 +1188,17 @@ export default function ProjectDetail() {
         ? p.phases.map(ph => ph.id === data.id ? data : ph)
         : [...(p.phases||[]), data]
     }));
+    if (data?.trade_name) {
+      void ensureProjectTradesExist([data.trade_name]);
+    }
     setShowPhase(false); setEditPhase(null);
   };
 
-  const generateRecommendedPhases = async () => {
-    setGeneratingPhases(true);
+  const removePhase = async (phaseId) => {
     try {
-      const { data } = await aiApi.generatePhases({
-        description: project.description || project.name,
-        project_type: project.type || 'other',
-        start_date: project.start_date || null,
-      });
-      setRecommendedPhases(data.phases || []);
-    } catch (err) {
-      if (err.response?.data?.code === 'ai_not_configured') {
-        setAiNotice(err.response.data.hint || 'Florence n\'est pas configurée.');
-      } else {
-        setAiNotice('Erreur lors de la génération des phases.');
-      }
-    } finally {
-      setGeneratingPhases(false);
-    }
-  };
-
-  const addAllRecommendedPhases = async () => {
-    setGeneratingPhases(true);
-    try {
-      const promises = (recommendedPhases || []).map((ph, idx) =>
-        projectsApi.addPhase(id, {
-          name: ph.name,
-          description: ph.description || '',
-          status: 'not_started',
-          color: ph.color || PHASE_COLORS[idx % PHASE_COLORS.length],
-          progress_pct: 0,
-        })
-      );
-      const results = await Promise.all(promises);
-      setProject(p => ({
-        ...p,
-        phases: [...(p.phases||[]), ...results.map(r => r.data)]
-      }));
-      setRecommendedPhases([]);
-      setAiNotice('');
-    } catch {
-      setAiNotice('Erreur lors de l\'ajout des phases.');
-    } finally {
-      setGeneratingPhases(false);
-    }
+      await projectsApi.deletePhase(id, phaseId);
+      setProject(p => ({ ...p, phases: (p.phases||[]).filter(ph => ph.id !== phaseId) }));
+    } catch (err) { console.error('deletePhase', err); }
   };
 
   const printQR = () => {
@@ -767,6 +1295,349 @@ export default function ProjectDetail() {
     await projectsApi.deleteTrade(id, tradeId);
     setProject(p => ({ ...p, trades: p.trades.filter(t => t.id !== tradeId) }));
     refreshProfit();
+  };
+
+  const normalizeTradeName = (value) => String(value || '').trim();
+
+  const toTradeLabel = (value) => {
+    const normalized = normalizeTradeName(value);
+    if (!normalized) return '';
+    if (TRADE_KEY_TO_NAME[normalized]) return TRADE_KEY_TO_NAME[normalized];
+    const alias = TRADE_NAME_ALIASES[normalized.toLowerCase()];
+    return alias || normalized;
+  };
+
+  const resolveTradeLabels = (values = []) => {
+    const unique = [];
+    const seen = new Set();
+    for (const value of values) {
+      const label = toTradeLabel(value);
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(label);
+    }
+    return unique;
+  };
+
+  const getProjectWorkType = () => {
+    const fa = project.field_assessment || {};
+    return fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+  };
+
+  const getProjectTypePlaybook = (workType = getProjectWorkType()) => (
+    PROJECT_TYPE_PHASE_LIBRARY[workType] || null
+  );
+
+  const normalizePhaseDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  };
+
+  const ensureProjectTradesExist = async (tradeNames = []) => {
+    const existing = new Set((project.trades || []).map(t => normalizeTradeName(t.trade).toLowerCase()).filter(Boolean));
+    const missing = [...new Set(tradeNames.map(normalizeTradeName).filter(Boolean))]
+      .filter((trade) => !existing.has(trade.toLowerCase()));
+    if (!missing.length) return;
+
+    const added = [];
+    for (const trade of missing) {
+      try {
+        const { data } = await projectsApi.addTrade(id, {
+          trade,
+          estimated_cost: null,
+          chosen_subcontractor_id: null,
+        });
+        added.push(data);
+        existing.add(trade.toLowerCase());
+      } catch (err) {
+        console.error('ensureProjectTradesExist', err);
+      }
+    }
+
+    if (added.length) {
+      setProject((p) => ({ ...p, trades: [...(p.trades || []), ...added] }));
+    }
+  };
+
+  const normalizeGeneratedPhases = (phases = []) => (
+    (Array.isArray(phases) ? phases : [])
+      .map((ph, index) => {
+        const name = String(ph?.name || '').trim();
+        const tradeName = toTradeLabel(ph?.trade_name || ph?.trade);
+        const startDate = normalizePhaseDate(ph?.start_date);
+        const endDate = normalizePhaseDate(ph?.end_date);
+        return {
+          name,
+          trade_name: tradeName,
+          start_date: startDate,
+          end_date: endDate,
+          progress_pct: 0,
+          status: 'not_started',
+          display_order: Number.isFinite(Number(ph?.display_order)) ? Number(ph.display_order) : index,
+          color: ph?.color || PHASE_COLORS[index % PHASE_COLORS.length],
+        };
+      })
+      .filter((ph) => ph.name)
+      .sort((a, b) => {
+        if (a.display_order !== b.display_order) return a.display_order - b.display_order;
+        if (a.start_date && b.start_date) return new Date(a.start_date) - new Date(b.start_date);
+        return 0;
+      })
+  );
+
+  const buildPhaseDates = (existingPhases = [], durationDays = 1) => {
+    const datedPhases = existingPhases
+      .map((ph) => normalizePhaseDate(ph?.end_date || ph?.start_date))
+      .filter(Boolean)
+      .map((value) => new Date(value));
+    const latestBoundary = datedPhases.length ? new Date(Math.max(...datedPhases)) : null;
+    const defaultStart = normalizePhaseDate(project.start_date) || new Date().toISOString().slice(0, 10);
+    const startDate = latestBoundary ? new Date(latestBoundary) : new Date(defaultStart);
+    if (latestBoundary) startDate.setDate(startDate.getDate() + 1);
+    const safeDuration = Math.max(Number(durationDays) || 1, 1);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + safeDuration - 1);
+    return {
+      start_date: startDate.toISOString().slice(0, 10),
+      end_date: endDate.toISOString().slice(0, 10),
+    };
+  };
+
+  const ensureAssessmentTradeKeys = async (tradeKeys = []) => {
+    const current = Array.isArray(project.field_assessment?.selected_trades)
+      ? project.field_assessment.selected_trades
+      : [];
+    const merged = [...new Set([...current, ...tradeKeys.map((value) => String(value || '').trim()).filter(Boolean)])];
+    if (merged.length === current.length && merged.every((value, index) => value === current[index])) return;
+    const nextAssessment = { ...(project.field_assessment || {}), selected_trades: merged };
+    try {
+      await projectsApi.update(id, { field_assessment: nextAssessment });
+      setProject((p) => ({ ...p, field_assessment: nextAssessment }));
+    } catch (err) {
+      console.error('ensureAssessmentTradeKeys', err);
+    }
+  };
+
+  const addTemplatePhasesBatch = async (templates = [], options = {}) => {
+    const { replaceExisting = false } = options;
+    const sourcePhases = replaceExisting ? [] : [...(project.phases || [])];
+    const existingNames = new Set(sourcePhases.map((ph) => String(ph?.name || '').trim().toLowerCase()).filter(Boolean));
+    const queue = (Array.isArray(templates) ? templates : [])
+      .map((tpl) => ({
+        ...tpl,
+        name: String(tpl?.name || '').trim(),
+        trade_name: toTradeLabel(tpl?.trade_name),
+        durationDays: Math.max(Number(tpl?.durationDays) || 1, 1),
+      }))
+      .filter((tpl) => tpl.name)
+      .filter((tpl) => replaceExisting || !existingNames.has(tpl.name.toLowerCase()));
+
+    if (!queue.length) return [];
+
+    setAddingTemplatePhase('__batch__');
+    try {
+      if (replaceExisting) {
+        for (const ph of (project.phases || [])) {
+          await projectsApi.deletePhase(id, ph.id);
+        }
+      }
+
+      const createdPhases = [];
+      const timeline = [...sourcePhases];
+      for (const tpl of queue) {
+        const dates = buildPhaseDates(timeline, tpl.durationDays);
+        const { data } = await projectsApi.addPhase(id, {
+          name: tpl.name,
+          trade_name: tpl.trade_name || '',
+          progress_pct: 0,
+          status: 'not_started',
+          ...dates,
+        });
+        createdPhases.push(data);
+        timeline.push(data);
+      }
+
+      await ensureProjectTradesExist(createdPhases.map((ph) => ph.trade_name));
+      setProject((p) => ({
+        ...p,
+        phases: replaceExisting ? createdPhases : [...(p.phases || []), ...createdPhases],
+      }));
+      return createdPhases;
+    } catch (err) {
+      console.error('addTemplatePhasesBatch', err);
+      throw err;
+    } finally {
+      setAddingTemplatePhase(null);
+    }
+  };
+
+  const applyProjectTypePlaybook = async (options = {}) => {
+    const { replaceExisting = false, source = 'manual' } = options;
+    const workType = getProjectWorkType();
+    const playbook = getProjectTypePlaybook(workType);
+    if (!playbook?.phases?.length) {
+      setAiNotice("Choisis d'abord un type de projet pour obtenir des étapes adaptées.");
+      return [];
+    }
+
+    await ensureAssessmentTradeKeys(playbook.selectedTradeKeys || []);
+    await ensureProjectTradesExist(resolveTradeLabels(playbook.selectedTradeKeys || []));
+    const created = await addTemplatePhasesBatch(playbook.phases, { replaceExisting });
+
+    if (source === 'fallback' && created.length) {
+      setAiNotice(`Florence est indisponible pour l'instant — plan type appliqué pour ${workType}.`);
+    } else if (source === 'manual') {
+      setAiNotice(created.length
+        ? `${created.length} phase(s) recommandée(s) ajoutée(s) pour ${workType}.`
+        : `Toutes les étapes recommandées pour ${workType} sont déjà présentes.`);
+    } else if (!created.length) {
+      setAiNotice(`Toutes les étapes recommandées pour ${workType} sont déjà présentes.`);
+    } else {
+      setAiNotice('');
+    }
+
+    return created;
+  };
+
+  // Auto-ajouter les corps de métier depuis fa.selected_trades
+  const autoAddTradesFromEstim = async () => {
+    const fa = project.field_assessment || {};
+    setAutoAddingTrades(true);
+    try { await ensureProjectTradesExist(resolveTradeLabels(fa.selected_trades || [])); }
+    finally { setAutoAddingTrades(false); }
+  };
+
+  useEffect(() => {
+    if (!project?.phases?.length) return;
+    const phaseTrades = project.phases.map((ph) => ph.trade_name).filter(Boolean);
+    if (!phaseTrades.length) return;
+    void ensureProjectTradesExist(phaseTrades);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.phases]);
+
+  // Florence recommande des sous-traitants pour les corps non assignés
+  const fetchTradeRecos = async () => {
+    const missingTrades = (project.trades || []).filter(t => t.status === 'to_find' || !t.chosen_subcontractor_id);
+    if (!missingTrades.length) return;
+    setLoadingTradeRecos(true);
+    const fa = project.field_assessment || {};
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
+Je cherche des sous-traitants pour ce projet :
+- Projet : ${project.description || project.name || ''}
+- Adresse : ${project.address || 'Non précisée'}
+- Corps de métier requis : ${missingTrades.map(t => t.trade).join(', ')}
+
+Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec (vraisemblables, pas inventés si incertains — tu peux suggérer des types d'entreprises à chercher). Réponds en JSON UNIQUEMENT dans ce format :
+{"trades":{"Électricité":[{"name":"Électro-Pro QC","note":"Spécialiste résidentiel Montréal","phone":"","website":"electricien.ca"}]}}`;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
+        method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+        body: JSON.stringify({ messages:[{role:'user',content:prompt}] }),
+      });
+      if (!res.ok) { setTradeRecos({}); return; }
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let raw = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l=>l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type==='text') raw += evt.text; } catch {}
+        }
+      }
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { const parsed = JSON.parse(match[0]); setTradeRecos(parsed.trades || {}); } catch { setTradeRecos({}); }
+      } else { setTradeRecos({}); }
+    } catch { setTradeRecos({}); } finally { setLoadingTradeRecos(false); }
+  };
+
+  const generatePhasesFromAI = async () => {
+    setGeneratingPhases(true);
+    setAiNotice('');
+    const fa = project.field_assessment || {};
+    const playbook = getProjectTypePlaybook();
+    const tradeList = [
+      ...resolveTradeLabels(fa.selected_trades || []),
+      ...resolveTradeLabels(playbook?.selectedTradeKeys || []),
+      ...(project.trades || []).map(t => t.trade).filter(Boolean),
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    try {
+      const { data } = await aiApi.generatePhases({
+        description: project.description || project.name || '',
+        project_name: project.name || '',
+        project_type: fa.work_type || project.type || '',
+        start_date: project.start_date || null,
+        end_date: project.end_date || null,
+        address: project.address || '',
+        client_name: project.client_name || '',
+        budget: project.budget || project.contract_value || null,
+        notes: project.notes || '',
+        trades: tradeList,
+        visit_answers: fa.visite_answers || {},
+        approx_lines: fa.approx_lines || [],
+      });
+      const nextPhases = normalizeGeneratedPhases(data?.phases || []);
+      if (!nextPhases.length) {
+        const fallback = await applyProjectTypePlaybook({
+          replaceExisting: (project.phases || []).length > 0,
+          source: 'fallback',
+        });
+        if (!fallback.length) {
+          alert("Flo n'a pas réussi à générer des phases valides pour ce projet.");
+        }
+        return;
+      }
+
+      for (const ph of (project.phases || [])) {
+        await projectsApi.deletePhase(id, ph.id);
+      }
+
+      const createdPhases = [];
+      for (const ph of nextPhases) {
+        const { data: created } = await projectsApi.addPhase(id, ph);
+        createdPhases.push(created);
+      }
+
+      await ensureAssessmentTradeKeys(playbook?.selectedTradeKeys || []);
+      await ensureProjectTradesExist(createdPhases.map((ph) => ph.trade_name));
+      setProject((p) => ({ ...p, phases: createdPhases }));
+      setAiNotice('');
+    } catch (err) {
+      console.error('generatePhasesFromAI', err);
+      try {
+        const fallback = await applyProjectTypePlaybook({
+          replaceExisting: (project.phases || []).length > 0,
+          source: 'fallback',
+        });
+        if (!fallback.length) {
+          alert("Impossible de générer les phases avec Florence pour l'instant.");
+        }
+      } catch {
+        alert("Impossible de générer les phases avec Florence pour l'instant.");
+      }
+    } finally { setGeneratingPhases(false); }
+  };
+
+  const addTemplatePhase = async (tpl) => {
+    setAddingTemplatePhase(tpl.name);
+    try {
+      const dates = buildPhaseDates(project.phases || [], tpl.durationDays);
+      const { data } = await projectsApi.addPhase(id, {
+        name: tpl.name,
+        trade_name: toTradeLabel(tpl.trade_name) || '',
+        progress_pct: 0,
+        status: 'not_started',
+        ...dates,
+      });
+      setProject(p => ({ ...p, phases: [...(p.phases||[]), data] }));
+      await ensureProjectTradesExist([data.trade_name || toTradeLabel(tpl.trade_name)]);
+    } catch {} finally { setAddingTemplatePhase(null); }
   };
 
   // ── Dépenses ────────────────────────────────────────────────────────────────
@@ -906,6 +1777,150 @@ export default function ProjectDetail() {
     setProjectContracts((cs) => cs.filter((c) => c.id !== contractId));
   };
 
+  /* Constante API pour les appels fetch directs (SSE) */
+  const PROJ_CHAT_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+
+  const changeProjectStatus = async () => {
+    if (!statusPopup) return;
+    setChangingStatus(true);
+    try {
+      const { data } = await projectsApi.update(id, { status: statusPopup.key });
+      // Persiste la date du changement de statut dans field_assessment.status_dates
+      const prevFa = project.field_assessment || {};
+      const prevDates = prevFa.status_dates || {};
+      const nextDates = { ...prevDates, [statusPopup.key]: new Date().toISOString() };
+      const nextFa = { ...prevFa, status_dates: nextDates };
+      await projectsApi.update(id, { field_assessment: nextFa });
+      setProject(p => ({ ...p, status: data.status, field_assessment: nextFa }));
+      setStatusPopup(null);
+    } catch {} finally { setChangingStatus(false); }
+  };
+
+  /* Construction d'URL de recherche garantie sans 404 */
+  const buildSourceUrl = (fournisseur, mots_cles) => {
+    const q = encodeURIComponent(mots_cles + ' prix Québec');
+    const siteMap = {
+      'Rona':          `https://www.rona.ca/fr/recherche?q=${encodeURIComponent(mots_cles)}`,
+      'Canac':         `https://www.canac.ca/catalogsearch/result/?q=${encodeURIComponent(mots_cles)}`,
+      'Home Dépôt':    `https://www.homedepot.ca/recherche#${encodeURIComponent(mots_cles)}`,
+      'BMR':           `https://www.bmr.qc.ca/recherche?q=${encodeURIComponent(mots_cles)}`,
+      'Patrick Morin': `https://www.patrickmorin.com/recherche?q=${encodeURIComponent(mots_cles)}`,
+    };
+    return siteMap[fournisseur] || `https://www.google.ca/search?q=${q}`;
+  };
+
+  const searchMaterialPrices = async () => {
+    if (!project) return;
+    setSearchingPrices(true);
+    setAiPriceResult(null);
+    try {
+      const fa = project.field_assessment || {};
+      const workType = fa.work_type || project.name || 'rénovation générale';
+
+      /* Compiler tout le contexte disponible */
+      const ctxParts = [];
+      if (project.description) ctxParts.push(`Résumé de la demande : ${project.description}`);
+      if (project.client_name)  ctxParts.push(`Client : ${project.client_name}`);
+      if (project.address)      ctxParts.push(`Adresse : ${project.address}`);
+      const trades = resolveTradeLabels(fa.selected_trades || []);
+      if (trades.length) ctxParts.push(`Corps de métier : ${trades.join(', ')}`);
+      const va = fa.visite_answers || {};
+      if (va.area)   ctxParts.push(`Superficie : ${va.area} ${va.area_unit || 'pi²'}`);
+      if (va.notes)  ctxParts.push(`Observations sur place : ${va.notes}`);
+      const qaLines = Object.entries(va).filter(([k,v]) => v && !['area','area_unit','notes'].includes(k))
+        .map(([k,v]) => `${k}: ${v}`);
+      if (qaLines.length) ctxParts.push(`Réponses visite sur place :\n${qaLines.join('\n')}`);
+      const clientMsg = clientMsgRef.current?.value;
+      if (clientMsg && clientMsg.length > 50) ctxParts.push(`Message envoyé au client :\n${clientMsg.substring(0, 400)}`);
+      const contextBlock = ctxParts.length ? `\n\nCONTEXTE DU PROJET :\n${ctxParts.join('\n')}` : '';
+
+      const prompt = `Tu es Florence, assistante IA de MONFLUX. Génère une estimation pour un projet de construction québécois : "${workType}"${project.address ? ` à ${project.address}` : ''}.${contextBlock}
+
+INSTRUCTION STRICTE : Retourne UNIQUEMENT un objet JSON valide. Aucun texte avant ou après. Aucune balise markdown. Structure exacte :
+{
+  "lignes": [
+    {
+      "poste": "Nom du poste",
+      "source": "Rona",
+      "inclus": "Ce qui est inclus",
+      "non_inclus": "Ce qui n'est pas inclus",
+      "duree": "2 j",
+      "cout": 1200,
+      "prix_vente": 1560
+    }
+  ],
+  "scenarios": [
+    { "nom": "Économique", "description": "Matériaux de base, pose simple", "cout": 8000, "prix_vente": 10400 },
+    { "nom": "Standard", "description": "Rapport qualité-prix optimal, finitions soignées", "cout": 15000, "prix_vente": 19500 },
+    { "nom": "Haut de gamme", "description": "Matériaux premium, finitions haut de gamme", "cout": 28000, "prix_vente": 36400 }
+  ],
+  "commentaires": "2-3 phrases sur la fiabilité de l'estimation, variations possibles. Factuel, pas de prochaines étapes.",
+  "source_refs": [
+    { "label": "Armoires de cuisine", "fournisseur": "Rona", "mots_cles": "armoires cuisine" },
+    { "label": "Comptoir quartz", "fournisseur": "Home Dépôt", "mots_cles": "comptoir cuisine quartz" }
+  ]
+}
+
+Règles :
+- 6 à 10 lignes pour ce projet
+- "cout" = coût de revient total (matériaux + main-d'œuvre), entier CAD
+- "prix_vente" = cout × marge (20–35% selon le corps de métier)
+- Prix réalistes marché québécois 2025-2026
+- "source" dans chaque ligne : uniquement parmi Rona / Canac / Home Dépôt / BMR / Patrick Morin
+- "source_refs" : 3 à 5 références de recherche, mots-clés courts en français`;
+
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context_type: 'estimation', project_id: id }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let rawText = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const chunk of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const e = JSON.parse(chunk.slice(6)); if (e.type === 'text') rawText += e.text; } catch {}
+        }
+      }
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        /* Ajouter les lignes dans le tableau */
+        const lignes = Array.isArray(parsed.lignes) ? parsed.lignes : [];
+        if (lignes.length > 0) {
+          const currentFa = project.field_assessment || {};
+          const currentLines = currentFa.approx_lines || [];
+          const newLines = lignes.map((l, i) => ({
+            id: Date.now() + i,
+            poste: l.poste || '', source: l.source || '',
+            inclus: l.inclus || '', non_inclus: l.non_inclus || '',
+            duree: l.duree || '', cout: l.cout || '', prix_vente: l.prix_vente || '',
+          }));
+          const nextFa = { ...currentFa, approx_lines: [...currentLines, ...newLines] };
+          await projectsApi.update(id, { field_assessment: nextFa });
+          setProject(p => ({ ...p, field_assessment: nextFa }));
+        }
+        /* Construire les sources avec URLs garanties */
+        const sourceRefs = Array.isArray(parsed.source_refs) ? parsed.source_refs : [];
+        const sources = sourceRefs.map(s => ({
+          label: s.label,
+          fournisseur: s.fournisseur,
+          url: buildSourceUrl(s.fournisseur, s.mots_cles),
+        }));
+        setAiPriceResult({
+          comments:  parsed.commentaires || '',
+          scenarios: Array.isArray(parsed.scenarios) ? parsed.scenarios : [],
+          sources,
+        });
+      } else {
+        setAiPriceResult({ comments: 'Florence n\'a pas pu générer une estimation structurée. Réessaie.', scenarios: [], sources: [] });
+      }
+    } catch { setAiPriceResult({ comments: 'Impossible de récupérer les prix. Vérifie ta connexion et réessaie.', scenarios: [], sources: [] }); }
+    finally { setSearchingPrices(false); }
+  };
+
   // B6 — handlers Chantier
   const approveTs = async (tsId) => {
     try {
@@ -995,324 +2010,2062 @@ export default function ProjectDetail() {
 
   const pct = project.progress_pct || 0;
   const activeTs = timesheets.filter(t=>!t.clock_out);
+  const contractValue = Number(project.contract_value || 0);
+  const billedInvoices = projectInvoices.filter((inv) => inv.status !== 'cancelled');
+  const totalBilled = billedInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+  const totalCollected = billedInvoices
+    .filter((inv) => inv.status === 'paid')
+    .reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+  const totalOutstanding = billedInvoices
+    .filter((inv) => ['sent', 'viewed', 'partial', 'overdue'].includes(inv.status))
+    .reduce((sum, inv) => sum + Number(inv.amount_due ?? inv.total ?? 0), 0);
+  const paymentTerms = parsePaymentTerms(project.payment_terms);
+  let runningPct = 0;
+  const installments = paymentTerms.map((pctValue, index) => {
+    const previousPct = runningPct;
+    runningPct += pctValue;
+    const amount = contractValue ? (contractValue * pctValue) / 100 : 0;
+    const paid = contractValue > 0 && totalCollected >= (contractValue * runningPct) / 100 - 1;
+    const current = !paid && totalCollected >= (contractValue * previousPct) / 100 - 1;
+    return {
+      label: paymentStepLabel(index, paymentTerms.length),
+      pct: pctValue,
+      amount,
+      paid,
+      current,
+    };
+  });
+  const nextInstallment = installments.find((item) => !item.paid) || null;
+  const nextDueInvoice = billedInvoices
+    .filter((inv) => ['sent', 'viewed', 'partial', 'overdue'].includes(inv.status) && inv.due_date)
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0] || null;
+  const heroNextPaymentAmount = nextInstallment?.amount || totalOutstanding || Math.max(contractValue - totalCollected, 0);
+  const heroDueDate = nextDueInvoice?.due_date || project.end_date || null;
+
+  const PIPELINE_LABELS = {
+    brouillon: 'Brouillon', estimation: 'Estimation terrain', prix_envoye: 'Prix envoyé',
+    accepte: 'Accepté', planifie: 'Planifié', en_chantier: 'En chantier',
+    a_facturer: 'À facturer', paye: 'Payé', clos: 'Clos',
+  };
+  const WORK_TYPE_LABELS = {
+    kitchen: 'Cuisine', bathroom: 'Salle de bain', basement: 'Sous-sol',
+    addition: 'Agrandissement', new_build: 'Construction neuve', roofing: 'Toiture',
+    exterior: 'Extérieur', commercial: 'Commercial', interior: 'Intérieur', other: '',
+  };
+
+  const WORK_TYPE_OPTIONS = [
+    { group: 'Résidentiel — Intérieur', value: 'Cuisine', label: 'Cuisine' },
+    { group: 'Résidentiel — Intérieur', value: 'Salle de bain', label: 'Salle de bain' },
+    { group: 'Résidentiel — Intérieur', value: 'Sous-sol', label: 'Sous-sol' },
+    { group: 'Résidentiel — Intérieur', value: 'Planchers', label: 'Planchers' },
+    { group: 'Résidentiel — Intérieur', value: 'Peinture intérieure', label: 'Peinture intérieure' },
+    { group: 'Résidentiel — Intérieur', value: 'Rénovation complète', label: 'Rénovation complète' },
+    { group: 'Résidentiel — Intérieur', value: 'Fenêtres et portes', label: 'Fenêtres et portes' },
+    { group: 'Résidentiel — Intérieur', value: 'Escaliers', label: 'Escaliers' },
+    { group: 'Résidentiel — Intérieur', value: 'Armoires / cuisines', label: 'Armoires / cuisines' },
+    { group: 'Résidentiel — Extérieur', value: 'Toiture', label: 'Toiture / couverture' },
+    { group: 'Résidentiel — Extérieur', value: 'Agrandissement', label: 'Agrandissement' },
+    { group: 'Résidentiel — Extérieur', value: 'Terrasse / balcon', label: 'Terrasse / balcon / patio' },
+    { group: 'Résidentiel — Extérieur', value: 'Paysagement', label: 'Paysagement / aménagement extérieur' },
+    { group: 'Résidentiel — Extérieur', value: 'Fondation', label: 'Fondation / imperméabilisation' },
+    { group: 'Résidentiel — Extérieur', value: 'Piscine / spa', label: 'Piscine / spa' },
+    { group: 'Résidentiel — Extérieur', value: 'Revêtement extérieur', label: 'Revêtement extérieur' },
+    { group: 'Résidentiel — Extérieur', value: 'Clôture', label: 'Clôture / portail' },
+    { group: 'Systèmes du bâtiment', value: 'Électricité', label: 'Électricité' },
+    { group: 'Systèmes du bâtiment', value: 'Plomberie', label: 'Plomberie' },
+    { group: 'Systèmes du bâtiment', value: 'Chauffage / climatisation (CVC)', label: 'Chauffage / Climatisation (CVC / HVAC)' },
+    { group: 'Systèmes du bâtiment', value: 'Isolation', label: 'Isolation thermique' },
+    { group: 'Systèmes du bâtiment', value: 'Domotique / sécurité', label: 'Domotique / sécurité / caméras' },
+    { group: 'Travaux spécialisés', value: 'Démolition', label: 'Démolition' },
+    { group: 'Travaux spécialisés', value: 'Excavation', label: 'Excavation / terrassement' },
+    { group: 'Travaux spécialisés', value: 'Maçonnerie / béton', label: 'Maçonnerie / béton' },
+    { group: 'Travaux spécialisés', value: 'Construction neuve', label: 'Construction neuve' },
+    { group: 'Travaux spécialisés', value: 'Ingénierie structurelle', label: 'Ingénierie structurelle' },
+    { group: 'Commercial / Institutionnel', value: 'Commercial', label: 'Commercial / bureaux / retail' },
+    { group: 'Commercial / Institutionnel', value: 'Industriel', label: 'Industriel / entrepôt' },
+    { group: 'Commercial / Institutionnel', value: 'Institutionnel', label: 'Institutionnel (école, clinique)' },
+    { group: 'Autre', value: 'Autre', label: 'Autre' },
+  ];
+
+  const ALL_TRADES = [
+    { key: 'charpenterie', label: 'Charpenterie', emoji: '🪵' },
+    { key: 'electricite', label: 'Électricité', emoji: '⚡' },
+    { key: 'plomberie', label: 'Plomberie', emoji: '🔧' },
+    { key: 'hvac', label: 'Chauffage / CVC', emoji: '🌡️' },
+    { key: 'peinture', label: 'Peinture', emoji: '🎨' },
+    { key: 'gypse', label: 'Gypse / cloisons', emoji: '📐' },
+    { key: 'ceramique', label: 'Céramique', emoji: '🏠' },
+    { key: 'plancher', label: 'Planchers', emoji: '🪵' },
+    { key: 'couverture', label: 'Couverture / toiture', emoji: '🏚️' },
+    { key: 'isolation', label: 'Isolation', emoji: '🧱' },
+    { key: 'fenetres', label: 'Fenêtres / portes', emoji: '🪟' },
+    { key: 'demolition', label: 'Démolition', emoji: '💥' },
+    { key: 'excavation', label: 'Excavation', emoji: '🚜' },
+    { key: 'fondation', label: 'Fondation / maçonnerie', emoji: '🏗️' },
+    { key: 'paysagement', label: 'Paysagement', emoji: '🌿' },
+    { key: 'ebenisterie', label: 'Ébénisterie / armoires', emoji: '🪑' },
+    { key: 'escaliers', label: 'Escaliers / rampes', emoji: '🔼' },
+    { key: 'securite', label: 'Sécurité / domotique', emoji: '🔒' },
+    { key: 'gicleurs', label: 'Gicleurs / incendie', emoji: '🚒' },
+    { key: 'impermeabilisation', label: 'Imperméabilisation', emoji: '💧' },
+    { key: 'piscine', label: 'Piscine / spa', emoji: '🏊' },
+    { key: 'ingenierie', label: 'Ingénierie structurelle', emoji: '📐' },
+    { key: 'autre', label: 'Autre spécialité', emoji: '➕' },
+  ];
+  const TRADE_KEY_TO_NAME = Object.fromEntries(ALL_TRADES.map((trade) => [trade.key, trade.label]));
+  const TRADE_NAME_ALIASES = {
+    'structure': 'Charpenterie',
+    'cvca': 'Chauffage / CVC',
+    'cvc': 'Chauffage / CVC',
+    'gypse': 'Gypse / cloisons',
+    'plancher': 'Planchers',
+    'peinture intérieure': 'Peinture',
+  };
+
+  /* Questions universelles + banques par type de travaux */
+  const VISITE_QUESTIONS_UNIVERSAL = [
+    /* ── Contexte général ── */
+    { id: 'occupied',  q: 'Le bâtiment est-il occupé pendant les travaux ?', opts: ['Oui — résidents/locataires présents', 'Non — vacant', 'Partiellement occupé'] },
+    { id: 'permit',    q: 'Un permis municipal est-il requis ?',             opts: ['Oui — en cours', 'Oui — à demander', 'Non requis', 'À vérifier avec la ville'] },
+    { id: 'hazmat',    q: 'Présence suspectée de matériaux dangereux ?',     opts: ['Amiante (bâtiment avant 1980)', 'Peinture au plomb', 'Aucun à ma connaissance', 'Test requis avant démarrage'] },
+    { id: 'access',    q: 'Accessibilité du chantier',                       opts: ['Facile — accès direct rue', 'Stationnement limité', 'Accès arrière seulement', 'Contraintes importantes (escaliers, ruelle)'] },
+    /* ── Préparation des lieux ── */
+    { id: 'prep_protection', q: 'Protection des surfaces à préserver ?',     opts: ['Meubles à protéger sur place', 'Planchers à couvrir', 'Pièces adjacentes à isoler', 'Aucune contrainte'] },
+    { id: 'prep_debarras',   q: 'Débarras ou déménagement avant travaux ?',  opts: ['Client s\'en charge', 'À inclure dans la soumission', 'Partiellement — voir observations', 'Non requis'] },
+    { id: 'prep_dust',       q: 'Confinement de la poussière requis ?',      opts: ['Oui — zone de travail à fermer', 'Protections légères suffisantes', 'Non requis (extérieur)'] },
+    /* ── Actions connexes possibles ── */
+    { id: 'connexe_floor',   q: 'Remplacement de plancher à prévoir ?',      opts: ['Oui — zone touchée', 'À évaluer', 'Non'] },
+    { id: 'connexe_paint',   q: 'Peinture incluse ou connexe ?',             opts: ['Oui — pièces complètes', 'Retouches seulement', 'Exclu de la soumission'] },
+    { id: 'connexe_drywall', q: 'Réparations de gypse nécessaires ?',        opts: ['Oui — trous et joints', 'Remplacement de panneaux', 'Non'] },
+    { id: 'connexe_cleanup', q: 'Nettoyage post-travaux ?',                  opts: ['Inclus dans la soumission', 'À la charge du client', 'Non précisé'] },
+  ];
+
+  const VISITE_QUESTIONS_BY_TYPE = {
+    'Cuisine': [
+      { id: 'cabinet_type', q: 'Type d\'armoires souhaitées', opts: ['Stock standard (IKEA, Home Dépot)', 'Semi-custom', 'Sur mesure / ébénisterie', 'À conseiller'] },
+      { id: 'island', q: 'Îlot de cuisine ?', opts: ['Oui — nouveau', 'Modifier l\'existant', 'Non'] },
+      { id: 'plumbing_relocate', q: 'Déplacement de l\'évier ou drain ?', opts: ['Oui', 'Non', 'À confirmer'] },
+      { id: 'ventilation_k', q: 'Hotte raccordée vers l\'extérieur ?', opts: ['Conduit existant à utiliser', 'Nouveau conduit à percer', 'Recirculation (sans conduit)'] },
+      { id: 'appliances', q: 'Électroménagers inclus dans la commande ?', opts: ['Fourniture + installation', 'Installation seulement', 'Non inclus'] },
+      { id: 'countertop', q: 'Comptoir souhaité', opts: ['Quartz engineered', 'Granit naturel', 'Stratifié / Formica', 'Béton / autre', 'À conseiller'] },
+    ],
+    'Salle de bain': [
+      { id: 'shower_type', q: 'Type de douche', opts: ['Bain-douche standard', 'Douche à l\'italienne (plancher nivelant)', 'Baignoire séparée', 'Les deux (bain + douche séparée)'] },
+      { id: 'plumbing_relocate_bath', q: 'Déplacement de plomberie ?', opts: ['Oui — déplacement majeur', 'Légère modification', 'Non — même position'] },
+      { id: 'tile_format', q: 'Format de céramique', opts: ['Grand format (60×120 cm+)', 'Standard (30×60 cm)', 'Mosaïque', 'Pierre naturelle'] },
+      { id: 'vanity_type', q: 'Type de vanité', opts: ['Au mur (suspendue)', 'Avec pieds', 'Meuble-lavabo standard', 'Double lavabo'] },
+      { id: 'ventilation_bath', q: 'Ventilation (VRC / VMC)', opts: ['Existante conforme', 'À remplacer', 'À installer'] },
+    ],
+    'Sous-sol': [
+      { id: 'basement_height', q: 'Hauteur libre actuelle', opts: ['Moins de 7 pi (bas)', '7–7,5 pi (borderline)', '7,5 pi et + (correct)', 'Plus de 8 pi (excellent)'] },
+      { id: 'humidity', q: 'Problèmes d\'humidité ou infiltration ?', opts: ['Oui — à corriger avant tout', 'Traces légères', 'Aucun problème apparent'] },
+      { id: 'bathroom_basement', q: 'Salle de bain à ajouter ?', opts: ['Oui — complet', 'Oui — demi-bain seulement', 'Non'] },
+      { id: 'ceiling_type', q: 'Type de plafond souhaité', opts: ['Gyproc / plafond plein', 'Plafond suspendu (T-bar)', 'Plafond exposé / industriel', 'À conseiller'] },
+    ],
+    'Toiture': [
+      { id: 'roof_slope', q: 'Type de pente', opts: ['Toiture plate (< 2/12)', 'Faible pente (2–4/12)', 'Standard (4–8/12)', 'Abrupte (8/12+)'] },
+      { id: 'roof_material', q: 'Matériau souhaité', opts: ['Bardeau d\'asphalte', 'Tôle à la baguette (métal)', 'Tôle plate / standing seam', 'EPDM/TPO (toiture plate)', 'À conseiller'] },
+      { id: 'layers', q: 'Nombre de couches existantes', opts: ['1 couche', '2 couches', '3+ couches (dépose totale)', 'Inconnue'] },
+      { id: 'insulation_roof', q: 'Isolation à améliorer ?', opts: ['Oui — insuffisante', 'Non — conforme', 'À évaluer'] },
+      { id: 'gutters', q: 'Gouttières à inclure', opts: ['Oui — remplacement complet', 'Oui — partiel', 'Non'] },
+    ],
+    'Électricité': [
+      { id: 'panel_amp', q: 'Ampérage du panneau actuel', opts: ['100A (vieux)', '150A', '200A (standard)', '400A (gros bâtiment)', 'Inconnu'] },
+      { id: 'panel_replace', q: 'Remplacement du panneau ?', opts: ['Oui', 'Non — ajout de circuits', 'À évaluer'] },
+      { id: 'old_wiring', q: 'Type de câblage existant', opts: ['Knob-and-tube (avant 1960)', 'Aluminium (1965–1980)', 'Cuivre conforme', 'Inconnu'] },
+      { id: 'ev_charger', q: 'Borne de recharge VE', opts: ['Niveau 2 — 240V résidentiel', 'Niveau 3 — rapide commercial', 'Non requis'] },
+      { id: 'smart_home', q: 'Domotique / éclairage intelligent', opts: ['Oui — étendu', 'Partiel (quelques pièces)', 'Non'] },
+    ],
+    'Plomberie': [
+      { id: 'pipe_material', q: 'Matériau des conduites existantes', opts: ['Cuivre (bon état)', 'PEX (moderne)', 'Galvanisé (vieux)', 'Polybutylène / Kitec (urgent!)', 'Inconnu'] },
+      { id: 'pipe_scope', q: 'Étendue des travaux', opts: ['Remplacement complet', 'Remplacement partiel', 'Raccordement / ajout seulement'] },
+      { id: 'water_heater', q: 'Chauffe-eau', opts: ['À remplacer — réservoir', 'Thermopompe eau chaude', 'Sans réservoir (tankless)', 'À conserver'] },
+      { id: 'sewer_issue', q: 'Problème d\'égout ou drain', opts: ['Drain obstrué régulièrement', 'Backwater valve requise', 'Aucun problème connu'] },
+    ],
+    'Chauffage / climatisation (CVC)': [
+      { id: 'current_system', q: 'Système de chauffage actuel', opts: ['Plinthes électriques', 'Fournaise au gaz', 'Fournaise à l\'huile', 'Thermopompe centrale', 'Thermopompe murale (split)', 'Géothermie'] },
+      { id: 'desired_system', q: 'Système souhaité', opts: ['Thermopompe centrale', 'Thermopompe murale (mini-split)', 'Fournaise + CA', 'Géothermie', 'Maintenir existant'] },
+      { id: 'ductwork', q: 'Conduits existants', opts: ['En bon état — à utiliser', 'À remplacer', 'Aucun conduit (nouveau)'] },
+      { id: 'vrc', q: 'VRC / Ventilateur récupérateur de chaleur', opts: ['À installer', 'Existant — OK', 'À remplacer'] },
+    ],
+    'Démolition': [
+      { id: 'demo_scope', q: 'Étendue de la démolition', opts: ['Partielle — intérieure ciblée', 'Complète — vider le bâtiment', 'Démolition totale du bâtiment'] },
+      { id: 'hazmat_test', q: 'Test amiante/plomb effectué ?', opts: ['Oui — rapport disponible', 'Non — à faire avant démarrage', 'Bâtiment après 1990 (faible risque)'] },
+      { id: 'waste_mgmt', q: 'Gestion des débris', opts: ['Benne sur place à coordonner', 'Service inclus dans le prix', 'Client gère lui-même'] },
+    ],
+    'Paysagement': [
+      { id: 'landscape_area', q: 'Superficie approximative', opts: ['Petit (<100 m²)', 'Moyen (100–300 m²)', 'Grand (300+ m²)', 'À mesurer'] },
+      { id: 'lawn_type', q: 'Type de pelouse', opts: ['Gazon naturel ensemencement', 'Gazon en rouleau', 'Gazon artificiel', 'Couvre-sol / prairie', 'Pas de gazon'] },
+      { id: 'irrigation_sys', q: 'Système d\'irrigation ?', opts: ['Oui — nouveau', 'Existant à modifier', 'Non requis'] },
+      { id: 'hardscape', q: 'Pavage / entrée / patio', opts: ['Béton', 'Pavé uni', 'Asphalte', 'Gravier', 'Non inclus'] },
+    ],
+    'Fondation': [
+      { id: 'foundation_type', q: 'Type de fondation', opts: ['Béton coulé (moderne)', 'Blocs de béton (parpaings)', 'Pierre (vieux bâtiment)', 'Radier / dalle sur sol'] },
+      { id: 'crack_severity', q: 'Fissures observées', opts: ['Aucune', 'Fissures fines (cosmétiques)', 'Fissures horizontales (préoccupant)', 'Importantes — ingénieur requis'] },
+      { id: 'waterproof_type', q: 'Type d\'imperméabilisation souhaitée', opts: ['Intérieure (drain français)', 'Extérieure (excavation)', 'Les deux', 'À évaluer'] },
+    ],
+    'Agrandissement': [
+      { id: 'addition_type', q: 'Type d\'agrandissement', opts: ['Horizontal — expansion latérale', 'Vertical — ajout d\'étage', 'Surélévation', 'Annexe détachée (garage/suite)'] },
+      { id: 'engineer_required', q: 'Ingénieur structurel requis ?', opts: ['Oui — travaux majeurs', 'Probablement', 'Non — agrandissement simple'] },
+      { id: 'foundation_addition', q: 'Nouvelle fondation requise ?', opts: ['Oui — sous-sol inclus', 'Oui — dalle seulement', 'Non'] },
+    ],
+    'Construction neuve': [
+      { id: 'build_type', q: 'Type de construction', opts: ['Maison unifamiliale', 'Duplex / triplex', 'Multiplex / condo', 'Commercial / industriel'] },
+      { id: 'lot_status', q: 'État du terrain', opts: ['Lot vierge', 'Démolition préalable requise', 'Infrastructure partielle existante'] },
+      { id: 'foundation_new', q: 'Type de fondation prévu', opts: ['Sous-sol complet', 'Vide sanitaire', 'Dalle sur sol (radier)', 'Pieux vissés'] },
+      { id: 'plans_available', q: 'Plans architecturaux disponibles ?', opts: ['Oui — approuvés par la ville', 'Oui — en cours d\'approbation', 'Non — à préparer', 'Croquis seulement'] },
+    ],
+    'Commercial': [
+      { id: 'commercial_use', q: 'Type d\'usage', opts: ['Bureau / coworking', 'Restaurant / bar', 'Commerce de détail', 'Clinique / médical', 'Entrepôt / industriel léger', 'Hôtel / hébergement'] },
+      { id: 'fire_code', q: 'Gicleurs / alarme incendie', opts: ['Conformes', 'À mettre à niveau', 'À installer'] },
+      { id: 'accessibility', q: 'Accessibilité PMR (handicapés)', opts: ['Conforme', 'À améliorer', 'Non applicable'] },
+    ],
+    'Ingénierie structurelle': [
+      { id: 'structural_issue', q: 'Nature du problème', opts: ['Mur porteur à modifier', 'Poutre/colonne à remplacer', 'Plancher affaissé', 'Fondation endommagée', 'Évaluation préventive'] },
+      { id: 'stamps', q: 'Sceau d\'ingénieur requis par la ville ?', opts: ['Oui — exigé', 'Oui — par prudence', 'Non', 'À confirmer'] },
+      { id: 'urgency', q: 'Niveau d\'urgence', opts: ['Urgent — sécurité compromise', 'Modéré — corriger sous peu', 'Planifié — rénovation future'] },
+    ],
+  };
+
+  /* Banque d'étapes + métiers recommandés par type de projet.
+     Même logique que les questions par type dans la soumission approximative. */
+  const PROJECT_TYPE_PHASE_LIBRARY = {
+    'Cuisine': {
+      selectedTradeKeys: ['demolition', 'plomberie', 'electricite', 'gypse', 'ebenisterie', 'plancher', 'peinture'],
+      phases: [
+        { name: 'Planification cuisine', trade_name: null, durationDays: 2 },
+        { name: 'Démolition cuisine', trade_name: 'Démolition', durationDays: 2 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 3 },
+        { name: 'Pose des armoires', trade_name: 'Ébénisterie / armoires', durationDays: 3 },
+        { name: 'Comptoir & dosseret', trade_name: 'Ébénisterie / armoires', durationDays: 2 },
+        { name: 'Plancher', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Finition plomberie & électricité', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Salle de bain': {
+      selectedTradeKeys: ['demolition', 'plomberie', 'electricite', 'gypse', 'ceramique', 'peinture'],
+      phases: [
+        { name: 'Planification salle de bain', trade_name: null, durationDays: 2 },
+        { name: 'Démolition salle de bain', trade_name: 'Démolition', durationDays: 1 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Gypse & membrane', trade_name: 'Gypse / cloisons', durationDays: 2 },
+        { name: 'Céramique', trade_name: 'Céramique', durationDays: 3 },
+        { name: 'Vanité & accessoires', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 1 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Sous-sol': {
+      selectedTradeKeys: ['charpenterie', 'plomberie', 'electricite', 'isolation', 'gypse', 'plancher', 'peinture'],
+      phases: [
+        { name: 'Planification sous-sol', trade_name: null, durationDays: 2 },
+        { name: 'Charpente & divisions', trade_name: 'Charpenterie', durationDays: 4 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 4 },
+        { name: 'Planchers', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Planchers': {
+      selectedTradeKeys: ['demolition', 'plancher'],
+      phases: [
+        { name: 'Préparation des surfaces', trade_name: null, durationDays: 1 },
+        { name: 'Dépose revêtement existant', trade_name: 'Démolition', durationDays: 1 },
+        { name: 'Nivellement / correction', trade_name: 'Planchers', durationDays: 1 },
+        { name: 'Pose du plancher', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Plinthes & ajustements', trade_name: 'Planchers', durationDays: 1 },
+      ],
+    },
+    'Peinture intérieure': {
+      selectedTradeKeys: ['gypse', 'peinture'],
+      phases: [
+        { name: 'Préparation & protections', trade_name: null, durationDays: 1 },
+        { name: 'Réparations de surfaces', trade_name: 'Gypse / cloisons', durationDays: 1 },
+        { name: 'Peinture', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Retouches & nettoyage', trade_name: 'Peinture intérieure', durationDays: 1 },
+      ],
+    },
+    'Rénovation complète': {
+      selectedTradeKeys: ['demolition', 'charpenterie', 'plomberie', 'electricite', 'hvac', 'isolation', 'gypse', 'plancher', 'peinture', 'ebenisterie'],
+      phases: [
+        { name: 'Planification générale', trade_name: null, durationDays: 3 },
+        { name: 'Démolition', trade_name: 'Démolition', durationDays: 3 },
+        { name: 'Structure & charpente', trade_name: 'Charpenterie', durationDays: 5 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 3 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 3 },
+        { name: 'CVC', trade_name: 'Chauffage / CVC', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 5 },
+        { name: 'Armoires & menuiserie', trade_name: 'Ébénisterie / armoires', durationDays: 3 },
+        { name: 'Planchers', trade_name: 'Planchers', durationDays: 2 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+        { name: 'Nettoyage final', trade_name: null, durationDays: 1 },
+      ],
+    },
+    'Toiture': {
+      selectedTradeKeys: ['couverture', 'charpenterie'],
+      phases: [
+        { name: 'Préparation toiture', trade_name: null, durationDays: 1 },
+        { name: 'Dépose couverture', trade_name: 'Couverture / toiture', durationDays: 1 },
+        { name: 'Réparations structurelles', trade_name: 'Charpenterie', durationDays: 1 },
+        { name: 'Membrane & couverture', trade_name: 'Couverture / toiture', durationDays: 2 },
+        { name: 'Solins & finitions', trade_name: 'Couverture / toiture', durationDays: 1 },
+      ],
+    },
+    'Agrandissement': {
+      selectedTradeKeys: ['excavation', 'fondation', 'charpenterie', 'electricite', 'plomberie', 'isolation', 'gypse', 'peinture'],
+      phases: [
+        { name: 'Planification & permis', trade_name: null, durationDays: 4 },
+        { name: 'Excavation', trade_name: 'Excavation', durationDays: 2 },
+        { name: 'Fondation', trade_name: 'Fondation / maçonnerie', durationDays: 3 },
+        { name: 'Structure', trade_name: 'Charpenterie', durationDays: 5 },
+        { name: 'Plomberie rough-in', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Électricité rough-in', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Isolation', trade_name: 'Isolation', durationDays: 2 },
+        { name: 'Gypse & finition', trade_name: 'Gypse / cloisons', durationDays: 4 },
+        { name: 'Peinture finale', trade_name: 'Peinture intérieure', durationDays: 2 },
+      ],
+    },
+    'Électricité': {
+      selectedTradeKeys: ['electricite'],
+      phases: [
+        { name: 'Diagnostic électrique', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Préparation & sécurisation', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Travaux électriques', trade_name: 'Électricité', durationDays: 2 },
+        { name: 'Tests & mise en service', trade_name: 'Électricité', durationDays: 1 },
+      ],
+    },
+    'Plomberie': {
+      selectedTradeKeys: ['plomberie'],
+      phases: [
+        { name: 'Diagnostic plomberie', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Préparation du chantier', trade_name: 'Plomberie', durationDays: 1 },
+        { name: 'Travaux de plomberie', trade_name: 'Plomberie', durationDays: 2 },
+        { name: 'Tests & finition', trade_name: 'Plomberie', durationDays: 1 },
+      ],
+    },
+    'Chauffage / climatisation (CVC)': {
+      selectedTradeKeys: ['hvac', 'electricite'],
+      phases: [
+        { name: 'Diagnostic CVC', trade_name: 'Chauffage / CVC', durationDays: 1 },
+        { name: 'Préparation & raccordements', trade_name: 'Électricité', durationDays: 1 },
+        { name: 'Installation CVC', trade_name: 'Chauffage / CVC', durationDays: 2 },
+        { name: 'Mise en service', trade_name: 'Chauffage / CVC', durationDays: 1 },
+      ],
+    },
+  };
+  const projectWorkType = getProjectWorkType();
+  const projectTypePlaybook = getProjectTypePlaybook(projectWorkType);
+  const recommendedPhaseTemplates = projectTypePlaybook?.phases?.length ? projectTypePlaybook.phases : PHASE_TEMPLATES;
+
+  /* Lignes pré-remplies suggérées par type de travaux */
+  const SUGGESTED_LINES = {
+    'Cuisine': [
+      { poste:'Démolition cuisine', inclus:'Armoires, comptoir, revêtement sol', non_inclus:'Désamiantage', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Armoires', inclus:'Fourniture + pose', non_inclus:'Électroménagers', duree:'3-5 j', cout:'', prix_vente:'' },
+      { poste:'Comptoir', inclus:'Fourniture + pose + dosseret', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie cuisine', inclus:'Évier, robinetterie, branchements', non_inclus:'Déplacement drain', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Électricité cuisine', inclus:'Circuits sous-comptoir, hotte', non_inclus:'Panneau', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Revêtement de sol', inclus:'Fourniture + pose', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Peinture', inclus:'Murs, plafond', non_inclus:'Portes', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Salle de bain': [
+      { poste:'Démolition SDB', inclus:'Céramique, bain, vanité', non_inclus:'Amiante', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie', inclus:'Tuyauterie, branchements', non_inclus:'Déplacement drain', duree:'2 j', cout:'', prix_vente:'' },
+      { poste:'Douche / bain', inclus:'Fourniture + installation', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Céramique murs + plancher', inclus:'Fourniture + pose', non_inclus:'Pierre naturelle', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Vanité + miroir', inclus:'Fourniture + installation', non_inclus:'Éclairage encastré', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Électricité SDB', inclus:'Éclairage, ventilateur, prises GFCI', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Gypse / plafond', inclus:'Cloisons humides, mastic, peinture', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Sous-sol': [
+      { poste:'Ossature / cloisons', inclus:'Montants acier ou bois, seuils', non_inclus:'', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Isolation périmètre', inclus:'Murs extérieurs', non_inclus:'Plancher', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Gypse', inclus:'Pose, mastic, sablage', non_inclus:'Peinture', duree:'3-4 j', cout:'', prix_vente:'' },
+      { poste:'Plafond suspendu', inclus:'Grille T-bar + tuiles', non_inclus:'Luminaires encastrés', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Revêtement de sol', inclus:'LVP ou céramique, sous-plancher', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Électricité', inclus:'Circuits, sorties, éclairage', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Peinture', inclus:'Murs, plafond', non_inclus:'', duree:'1-2 j', cout:'', prix_vente:'' },
+    ],
+    'Toiture': [
+      { poste:'Dépose ancienne couverture', inclus:'Retrait + disposition débris', non_inclus:'Décontamination', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Réparation pontage/OSB', inclus:'Sections endommagées', non_inclus:'', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Membrane sous-toiture', inclus:'Ice & Water, feutre', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'Couverture', inclus:'Bardeaux ou tôle, pose', non_inclus:'Puits de lumière', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Solins', inclus:'Cheminée, lucarnes — aluminium', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'Gouttières', inclus:'Fourniture + installation + descentes', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+    ],
+    'Rénovation complète': [
+      { poste:'Démolition sélective', inclus:'Finitions, cloisons ciblées', non_inclus:'Décontamination', duree:'2-3 j', cout:'', prix_vente:'' },
+      { poste:'Plomberie — rough-in + finition', inclus:'Tuyauterie complète', non_inclus:'Déplacement majeur', duree:'', cout:'', prix_vente:'' },
+      { poste:'Électricité — rough-in + finition', inclus:'Circuits + finition', non_inclus:'Panneau principal', duree:'', cout:'', prix_vente:'' },
+      { poste:'Gypse / cloisons', inclus:'Pose, mastic, sablage', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Revêtements de sol', inclus:'Toutes pièces — fourniture + pose', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Peinture complète', inclus:'Murs, plafonds, boiseries', non_inclus:'Extérieur', duree:'', cout:'', prix_vente:'' },
+      { poste:'Cuisine (armoires + comptoir)', inclus:'Fourniture + pose', non_inclus:'Électroménagers', duree:'', cout:'', prix_vente:'' },
+      { poste:'Main-d\'œuvre & coordination', inclus:'Supervision, nettoyage final', non_inclus:'Heures supp.', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Électricité': [
+      { poste:'Remplacement panneau électrique', inclus:'Panneau + fils + branchements', non_inclus:'Entrée Hydro-Québec', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Câblage — nouveaux circuits', inclus:'Romex, conduits, prises, interrupteurs', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Éclairage encastré LED', inclus:'Fourniture + installation', non_inclus:'Luminaires décoratifs', duree:'', cout:'', prix_vente:'' },
+      { poste:'Borne VE 240V', inclus:'Circuit dédié + prise NEMA 14-50', non_inclus:'Mise à niveau entrée', duree:'0.5 j', cout:'', prix_vente:'' },
+    ],
+    'Plomberie': [
+      { poste:'Remplacement tuyauterie', inclus:'PEX ou cuivre, eau froide/chaude', non_inclus:'Égout principal', duree:'', cout:'', prix_vente:'' },
+      { poste:'Chauffe-eau', inclus:'Fourniture + installation', non_inclus:'', duree:'0.5 j', cout:'', prix_vente:'' },
+      { poste:'SDB — rough-in plomberie', inclus:'Rough-in + raccordements', non_inclus:'Accessoires', duree:'1 j', cout:'', prix_vente:'' },
+    ],
+    'Démolition': [
+      { poste:'Démolition intérieure', inclus:'Cloisons, revêtements, plafonds', non_inclus:'Structure portante', duree:'', cout:'', prix_vente:'' },
+      { poste:'Disposition des débris (benne)', inclus:'Location benne + transport', non_inclus:'Matériaux dangereux', duree:'', cout:'', prix_vente:'' },
+      { poste:'Décontamination amiante/plomb', inclus:'Selon rapport environnemental', non_inclus:'Tests de laboratoire', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Paysagement': [
+      { poste:'Nivellement / terrassement', inclus:'Machinerie légère', non_inclus:'Excavation profonde', duree:'', cout:'', prix_vente:'' },
+      { poste:'Gazon en rouleau', inclus:'Pose, terreautage', non_inclus:'Ensemencement', duree:'', cout:'', prix_vente:'' },
+      { poste:'Plantation (arbres, arbustes)', inclus:'Fourniture + installation', non_inclus:'Entretien annuel', duree:'', cout:'', prix_vente:'' },
+      { poste:'Pavé uni / entrée', inclus:'Fourniture + pose', non_inclus:'Excavation', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Chauffage / climatisation': [
+      { poste:'Thermopompe centrale', inclus:'Fourniture + installation + réfrigérant', non_inclus:'Remplacement conduits', duree:'1-2 j', cout:'', prix_vente:'' },
+      { poste:'Thermopompettes (mini-split)', inclus:'Unités intérieures + extérieure', non_inclus:'Raccordement électrique', duree:'1 j', cout:'', prix_vente:'' },
+      { poste:'Conduits / grilles', inclus:'Remplacement ou ajout', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Fondation': [
+      { poste:'Excavation extérieure', inclus:'Machinerie, terre excavée', non_inclus:'Remblayage', duree:'', cout:'', prix_vente:'' },
+      { poste:'Imperméabilisation fondation', inclus:'Membrane + drain agricole', non_inclus:'Injection fissures', duree:'', cout:'', prix_vente:'' },
+      { poste:'Coulée béton / réparation', inclus:'Matériaux + main-d\'œuvre', non_inclus:'Ingénierie', duree:'', cout:'', prix_vente:'' },
+    ],
+    'Agrandissement': [
+      { poste:'Fondation agrandissement', inclus:'Excavation + coulée', non_inclus:'Ingénierie structurelle', duree:'', cout:'', prix_vente:'' },
+      { poste:'Charpente (ossature bois)', inclus:'Murs, plancher, toit', non_inclus:'Dessins d\'architecte', duree:'', cout:'', prix_vente:'' },
+      { poste:'Revêtement extérieur', inclus:'Bardage, fenêtres, porte', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+      { poste:'Isolation + gypse intérieur', inclus:'Murs + plafond', non_inclus:'', duree:'', cout:'', prix_vente:'' },
+    ],
+  };
+
+  const PIPE = [
+    { key: 'brouillon', label: 'Brouillon' }, { key: 'estimation', label: 'Estimation' },
+    { key: 'prix_envoye', label: 'Prix envoyé' }, { key: 'accepte', label: 'Accepté' },
+    { key: 'planifie', label: 'Planifié' }, { key: 'en_chantier', label: 'En chantier' },
+    { key: 'a_facturer', label: 'À facturer' }, { key: 'paye', label: 'Payé' },
+    { key: 'clos', label: 'Clos' },
+  ];
+  const pipeActiveIdx = PIPE.findIndex(s => s.key === project.status);
+
+  const toggleSectionVisibility = (sectionId) => {
+    setHiddenSections(prev => {
+      const next = prev.includes(sectionId) ? prev.filter(x => x !== sectionId) : [...prev, sectionId];
+      localStorage.setItem(`monflux-toc-hidden-${id}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const onTocDragStart = (e, idx) => {
+    setDragSrcIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', idx);
+  };
+
+  const onTocDragOver = (e, idx) => {
+    e.preventDefault();
+    if (dragSrcIdx === null || dragSrcIdx === idx) return;
+    const next = [...tocSections];
+    const [item] = next.splice(dragSrcIdx, 1);
+    next.splice(idx, 0, item);
+    setTocSections(next);
+    setDragSrcIdx(idx);
+  };
+
+  const onTocDrop = (e) => {
+    e.preventDefault();
+    setDragSrcIdx(null);
+    localStorage.setItem(`monflux-toc-order-${id}`, JSON.stringify(tocSections));
+  };
+
+  const ProjectTOC = () => (
+    <>
+      <div className="app-sidebar-section-label">Fiche projet</div>
+      <div className="app-sidebar-section-title">{project.name}</div>
+      <div className="project-toc-list">
+        {tocSections.map((s, idx) => {
+          const isHidden = hiddenSections.includes(s.id);
+          return (
+            <div
+              key={s.id}
+              draggable
+              onDragStart={e => onTocDragStart(e, idx)}
+              onDragOver={e => onTocDragOver(e, idx)}
+              onDrop={onTocDrop}
+              style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isHidden ? 0.4 : 1 }}
+            >
+              <span style={{ cursor: 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}
+                title="Glisser pour réordonner">
+                <GripVertical size={12} />
+              </span>
+              <button
+                type="button"
+                className={`project-toc-item ${activeSection === s.id && !isHidden ? 'active' : ''}`}
+                style={{ flex: 1, opacity: isHidden ? 0.5 : 1 }}
+                onClick={() => !isHidden && scrollToSection(s.id)}
+              >
+                <span className="project-toc-icon">{s.icon}</span>
+                <span className="project-toc-label">{s.label}</span>
+                {s.badge && <span className="project-toc-badge">{s.badge}</span>}
+              </button>
+              <button
+                type="button"
+                title={isHidden ? 'Afficher la section' : 'Masquer la section'}
+                onClick={() => toggleSectionVisibility(s.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
+                className="toc-eye-btn"
+              >
+                {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="app-sidebar-bottom pt-3">
+        <button
+          className="btn-ghost w-full text-xs"
+          onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
+        >
+          <GitBranch size={12}/> {t('create_change_order')}
+        </button>
+      </div>
+    </>
+  );
 
   return (
-    <Layout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <button className="btn-ghost text-sm" onClick={()=>navigate('/projets')}>
-            <ArrowLeft size={14}/> Projets
-          </button>
-          <button
-            className="btn-secondary text-xs"
-            onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
-          >
-            <GitBranch size={13}/> {t('create_change_order')}
-          </button>
-        </div>
+    <Layout toc={<ProjectTOC />} noTopbar>
+      <style>{
+        tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
+        hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
+        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
+      }</style>
+      {/* ── Project Topbar ── */}
+      <div style={{
+        position: 'sticky', top: 0, height: 54,
+        background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
+        gap: 10, padding: '0 20px', zIndex: 15,
+      }}>
+        <button
+          onClick={() => navigate('/projets')}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
+        >
+          Projets
+        </button>
+        <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
+        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
+        <div style={{ flex: 1 }} />
+        <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
+          📥 Exporter PDF
+        </button>
+        <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
+          if (project.portal_token) {
+            navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
+          }
+        }}>
+          Envoyer →
+        </button>
+      </div>
 
-        {/* Header */}
-        <div className="card mb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-gray-900 mb-1">{project.name}</h1>
-              <div className="flex flex-wrap gap-3 text-sm text-gray-400">
-                {project.address && <span className="flex items-center gap-1"><MapPin size={13}/>{project.address}</span>}
-                {project.start_date && <span className="flex items-center gap-1"><Calendar size={13}/>{new Date(project.start_date).toLocaleDateString('fr-CA')}{project.end_date && ` → ${new Date(project.end_date).toLocaleDateString('fr-CA')}`}</span>}
-                {project.contract_value && <span className="flex items-center gap-1"><DollarSign size={13}/>{Number(project.contract_value).toLocaleString('fr-CA')}$</span>}
-              </div>
+      {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
+      <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
+        <button onClick={() => setShowCapture(true)}
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
+            background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
+            boxShadow: '0 10px 28px rgba(200,90,43,.26)', display: 'flex', alignItems: 'center', gap: 18,
+            transition: 'transform .15s, box-shadow .15s' }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 14px 34px rgba(200,90,43,.32)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(200,90,43,.26)'; }}>
+          <div style={{ width: 52, height: 52, borderRadius: 15, background: 'rgba(255,255,255,.18)', border: '2px solid rgba(255,255,255,.4)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <Sparkles size={26} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Ajoute n'importe quoi au projet</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'rgba(255,255,255,.92)', lineHeight: 1.5 }}>
+              Écris, dicte, parle, prends une photo ou une vidéo, dépose un document — l'IA analyse, classe au bon endroit et propose la suite.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, color: 'rgba(255,255,255,.8)' }}>
+            <Mic size={18} /><Camera size={18} /><FileText size={18} /><Pencil size={18} />
+          </div>
+        </button>
+      </div>
+
+      {/* ── Hero ── */}
+      {(() => {
+        const fa = project.field_assessment || {};
+        const startLabel = fa.start_label || (project.start_date ? project.start_date.slice(0,10) : '');
+        const endLabel   = fa.end_label   || (project.end_date   ? project.end_date.slice(0,10)   : '');
+        const workType   = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+        const addr       = project.address || '';
+
+        const overdue = projectInvoices.some(inv => inv.status === 'overdue');
+        const healthStatus = (overdue || ['brouillon','estimation'].includes(project.status)) ? 'red'
+          : ['accepte','planifie','en_chantier','paye','clos'].includes(project.status) ? 'green' : 'yellow';
+        const HC = { green: { bg:'#DCFCE7', dot:'#16a34a', label:'En bonne santé' }, yellow: { bg:'#FEF9C3', dot:'#CA8A04', label:'Attention requise' }, red: { bg:'#FEE2E2', dot:'#DC2626', label:'Action requise' } };
+        const hc = HC[healthStatus];
+
+        const IFS = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
+        const IFD = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
+
+        return (
+          <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
+
+            {/* Statut */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px', marginBottom: 16 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,.72)', display: 'inline-block' }} />
+              Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-3xl font-bold text-brand">{pct}%</div>
-              <div className="text-xs text-gray-400">Avancement</div>
-            </div>
-          </div>
-          {/* Overall progress bar */}
-          <div className="mt-3 w-full h-2 bg-gray-100 rounded-full">
-            <div className="h-full rounded-full bg-brand transition-all" style={{width:`${pct}%`}}/>
-          </div>
-        </div>
 
-        {/* Infos du projet — termes de paiement en haut + en-tête riche */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900 text-sm">Infos du projet</h2>
-            <button className="btn-ghost text-xs text-gray-400 hover:text-brand" onClick={() => setShowInfo(true)}><Pencil size={12}/> Modifier</button>
-          </div>
-          <div className="mb-3 p-3 rounded-xl bg-orange-50 border border-orange-100 flex items-center gap-2">
-            <CreditCard size={16} className="text-brand flex-shrink-0"/>
-            <div>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wide">Termes de paiement</p>
-              <p className="text-sm font-medium text-gray-900">{project.payment_terms || 'À définir'}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-sm">
-            {[
-              ['Chargé de projet', project.project_manager],
-              ['Acheteur matériaux', project.materials_buyer],
-              ['Approbateurs', (project.approvers || []).join(', ')],
-              ['Responsable permis', project.permits_responsible],
-              ['Permis requis', project.permits_required ? 'Oui' : 'Non'],
-              ['Machines', (project.machines || []).join(', ')],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
-                <p className="text-gray-800 truncate">{value || '—'}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+            {/* Titre composé — format : Type de travaux | Adresse | Début - Fin */}
+            <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.2, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 4px' }}>
+              <InlineField value={workType} onSave={v => saveAssessmentField('work_type', v)} placeholder="Type de travaux"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {addr && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
+              <InlineField value={addr} onSave={v => saveField('address', v)} placeholder="Adresse"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {(startLabel || endLabel) && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
+              <InlineField value={startLabel} onSave={v => saveAssessmentField('start_label', v)} placeholder="Début"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+              {startLabel && endLabel && <span style={{ color: '#C8CACD', fontWeight: 400 }}> -</span>}
+              {endLabel && <span> </span>}
+              <InlineField value={endLabel} onSave={v => saveAssessmentField('end_label', v)} placeholder="Fin"
+                style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
+                displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
+            </h1>
 
-        {/* Estimation terrain */}
-        <FieldEstimation project={project} onUpdated={load} />
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-gray-900">{project.phases?.length || 0}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Phases</p>
-          </div>
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-green-500">{activeTs.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Pointés maintenant</p>
-          </div>
-          <div className="card text-center py-3">
-            <p className="text-xl font-bold text-gray-900">{timesheets.length}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Total punchs</p>
-          </div>
-        </div>
-
-        {/* Rentabilité */}
-        {profit && (
-          <div className="card mb-4">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Rentabilité</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Client — sans fond, mise en valeur typographique */}
+            <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: '12px 32px', alignItems: 'flex-start' }}>
               {[
-                { label: 'Théorique', d: profit.theoretical, sub: 'Commande − coûts estimés (budgets + métiers)' },
-                { label: 'Réelle', d: profit.actual, sub: 'Factures émises − punch & dépenses' },
-              ].map(({ label, d, sub }) => {
-                const pos = (d.margin || 0) >= 0;
-                return (
-                  <div key={label} className="rounded-xl border border-gray-100 p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-gray-500">Marge {label.toLowerCase()}</p>
-                      {d.margin_pct != null && <span className={`badge ${pos ? 'badge-green' : 'badge-red'}`}>{d.margin_pct}%</span>}
-                    </div>
-                    <p className={`text-2xl font-bold mt-1 ${pos ? 'text-green-600' : 'text-red-500'}`}>{money(d.margin)}</p>
-                    <p className="text-xs text-gray-400 mb-2">{sub}</p>
-                    <div className="pt-2 border-t border-gray-50 space-y-0.5 text-xs text-gray-500">
-                      <div className="flex justify-between"><span>Revenus</span><span className="font-medium text-gray-700">{money(d.revenue)}</span></div>
-                      <div className="flex justify-between"><span>Coûts</span><span className="font-medium text-gray-700">{money(d.cost)}</span></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">Taux de coût main d'œuvre interne (punch)&nbsp;:</span>
-              <div className="flex items-center gap-1">
-                <input
-                  className="input py-1 text-xs" style={{ width: 80 }} type="number" min="0" step="0.5"
-                  value={laborRate} onChange={e => setLaborRate(e.target.value)} placeholder="0"
-                />
-                <span className="text-xs text-gray-400">$/h</span>
-                <button className="btn-secondary text-xs py-1 px-2" onClick={saveLaborRate} disabled={savingRate}>
-                  {savingRate ? <Loader2 size={12} className="animate-spin" /> : 'Enregistrer'}
-                </button>
-              </div>
-              <span className="text-[11px] text-gray-400">{profit.actual.cost_breakdown.hours_logged || 0}h pointées · main d'œuvre {money(profit.actual.cost_breakdown.labor_punch)} · dépenses {money(profit.actual.cost_breakdown.expenses)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Phases — Section fusionnée avec Florence */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900 text-sm">Phases du projet</h2>
-            <div className="flex gap-2">
-              {!recommendedPhases.length && project.description && (
-                <button className="btn-secondary text-xs py-1.5" onClick={generateRecommendedPhases} disabled={generatingPhases}>
-                  {generatingPhases ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>} Générer avec Florence
-                </button>
-              )}
-              <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowPhase(true)}>
-                <Plus size={13}/> Ajouter une phase
-              </button>
-            </div>
-          </div>
-
-          {/* Phases recommandées */}
-          {recommendedPhases.length > 0 && (
-            <div className="mb-4 p-3 rounded-xl bg-orange-50 border border-orange-100">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Wand2 size={14} className="text-brand"/>
-                  <span className="text-sm font-semibold text-gray-800">Étapes recommandées par Florence</span>
-                  <span className="badge badge-orange text-xs">{recommendedPhases.length}</span>
+                { label: 'Client', value: project.client_name, field: 'name', save: v => saveClientField('name', v), placeholder: 'Nom du client', w: 160 },
+                { label: 'Téléphone', value: project.client_phone, field: 'phone', save: v => saveClientField('phone', v), placeholder: '—', w: 130 },
+                { label: 'Courriel', value: project.client_email, field: 'email', save: v => saveClientField('email', v), placeholder: '—', w: 190 },
+                { label: 'Remarque contact', value: fa.client_note, field: 'note', save: v => saveAssessmentField('client_note', v), placeholder: 'meilleur moment, mode de contact…', w: 220 },
+              ].map(({ label, value, save, placeholder, w }) => (
+                <div key={label} style={{ minWidth: w }}>
+                  <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 3px' }}>{label}</p>
+                  <p style={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C', margin: 0 }}>
+                    <InlineField value={value} onSave={save} placeholder={placeholder}
+                      style={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C' }}
+                      displayStyle={{ fontSize: 15, fontWeight: label === 'Client' ? 700 : 500, color: '#15171C' }} />
+                  </p>
                 </div>
-                <button
-                  className="btn-ghost text-xs text-gray-400 hover:text-gray-600"
-                  onClick={() => setRecommendedPhases([])}
-                  title="Masquer"
-                >
-                  <X size={14}/>
-                </button>
-              </div>
+              ))}
+            </div>
 
-              <div className="space-y-2 mb-3">
-                {recommendedPhases.map((ph, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 p-2 rounded border border-orange-100 bg-white"
-                  >
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length]}}/>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{ph.name}</p>
-                      {ph.description && <p className="text-xs text-gray-400 truncate">{ph.description}</p>}
-                    </div>
-                    {ph.estimated_duration_days && <span className="text-xs text-gray-500 flex-shrink-0">≈ {ph.estimated_duration_days}j</span>}
+            {/* Métriques non-éditables + rentabilité + QR */}
+            {(() => {
+              const kvChips = [
+                contractValue > 0 && {
+                  label: 'Valeur contrat', value: money(contractValue),
+                  tooltip: projectContracts.length > 0 ? `${projectContracts.length} contrat${projectContracts.length > 1 ? 's' : ''} signé${projectContracts.length > 1 ? 's' : ''}` : 'Montant total du contrat',
+                  bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
+                },
+                heroNextPaymentAmount > 0 && {
+                  label: 'Prochain versement', value: money(heroNextPaymentAmount),
+                  tooltip: nextInstallment ? `${nextInstallment.label} — ${nextInstallment.pct}% du contrat` : (project.payment_terms ? `Termes : ${project.payment_terms}` : null),
+                  bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
+                },
+                {
+                  label: 'Santé du chantier', value: hc.label,
+                  tooltip: overdue
+                    ? `Tu as ${projectInvoices.filter(i => i.status === 'overdue').length} facture${projectInvoices.filter(i => i.status === 'overdue').length > 1 ? 's' : ''} en retard`
+                    : ['brouillon','estimation'].includes(project.status)
+                      ? `Statut actuel : ${PIPELINE_LABELS[project.status] || project.status}`
+                      : null,
+                  bg: hc.bg, border: `1px solid ${hc.dot}33`, dot: hc.dot,
+                },
+                profit && profit.theoretical.margin_pct != null && {
+                  label: 'Marge théorique',
+                  value: `${profit.theoretical.margin_pct}%`,
+                  tooltip: `Revenus ${money(profit.theoretical.revenue)} − Coûts ${money(profit.theoretical.cost)}`,
+                  bg: profit.theoretical.margin_pct >= 0 ? '#DCFCE7' : '#FEE2E2',
+                  border: `1px solid ${profit.theoretical.margin_pct >= 0 ? '#16a34a33' : '#DC262633'}`,
+                  dot: null,
+                  extra: profit.theoretical.margin != null ? money(profit.theoretical.margin) : null,
+                },
+                profit && profit.actual.margin_pct != null && {
+                  label: 'Marge réelle',
+                  value: `${profit.actual.margin_pct}%`,
+                  tooltip: profit.actual.cost_breakdown?.hours_logged > 0
+                    ? `${profit.actual.cost_breakdown.hours_logged}h pointées · MO ${money(profit.actual.cost_breakdown.labor_punch)} · dépenses ${money(profit.actual.cost_breakdown.expenses)}`
+                    : `Facturé ${money(profit.actual.revenue)} − dépenses ${money(profit.actual.cost)}`,
+                  bg: profit.actual.margin_pct >= 0 ? '#DCFCE7' : '#FEE2E2',
+                  border: `1px solid ${profit.actual.margin_pct >= 0 ? '#16a34a33' : '#DC262633'}`,
+                  dot: null,
+                  extra: profit.actual.margin != null ? money(profit.actual.margin) : null,
+                },
+              ].filter(Boolean);
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24, alignItems: 'center' }}>
+                  {kvChips.map((chip, ci) => (
+                    <KvTooltipChip key={ci} chip={chip} />
+                  ))}
+                  {qrData && (
+                    <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
+                      style={{ marginLeft: 'auto', background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)', flexShrink: 0 }}>
+                      <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
+
+            {/* Grille éditables — ordre optimisé, responsable permis conditionnel */}
+            <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
+                {[
+                  { label: 'Type de travaux', fn: null, value: workType, isWorkType: true },
+                  { label: 'Adresse',               fn: v => saveField('address', v),               value: addr },
+                  { label: 'Date début',            fn: v => saveAssessmentField('start_label', v), value: startLabel },
+                  { label: 'Date fin',              fn: v => saveAssessmentField('end_label', v),   value: endLabel },
+                  { label: 'Termes paiement',       fn: v => saveField('payment_terms', v),         value: project.payment_terms },
+                  { label: 'Chargé de projet',      fn: v => saveField('project_manager', v),       value: project.project_manager },
+                  { label: 'Acheteur matériaux',    fn: v => saveField('materials_buyer', v),       value: project.materials_buyer },
+                  { label: 'Approbateurs',          fn: v => saveField('approvers', v),             value: (project.approvers || []).join(', ') },
+                  { label: 'Machines / équipements',fn: v => saveField('machines', v),              value: (project.machines || []).join(', ') },
+                ].map(({ label, fn, value, isWorkType }) => (
+                  <div key={label}>
+                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>{label}</p>
+                    {isWorkType ? (
+                      <select value={value || ''} onChange={e => saveAssessmentField('work_type', e.target.value)}
+                        style={{ fontSize: 13.5, color: value ? '#15171C' : '#B0B3BA', fontWeight: 500, background: 'none', border: 'none', padding: '3px 0', cursor: 'pointer', outline: 'none', fontFamily: 'inherit', width: '100%', marginTop: 3 }}>
+                        <option value="">— Choisir —</option>
+                        {WORK_TYPE_OPTIONS.reduce((acc, opt) => {
+                          const last = acc[acc.length - 1];
+                          if (!last || last.group !== opt.group) acc.push({ group: opt.group, items: [opt] });
+                          else last.items.push(opt);
+                          return acc;
+                        }, []).map(g => (
+                          <optgroup key={g.group} label={g.group}>
+                            {g.items.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </optgroup>
+                        ))}
+                        <option value="Autre">Autre…</option>
+                      </select>
+                    ) : (
+                      <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                        <InlineField value={value} onSave={fn} placeholder="—" style={IFS} displayStyle={IFD} />
+                      </p>
+                    )}
                   </div>
                 ))}
-              </div>
-
-              <button
-                className="btn-primary w-full text-xs py-2"
-                onClick={addAllRecommendedPhases}
-                disabled={generatingPhases}
-              >
-                {generatingPhases ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin"/> Ajout en cours…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle size={13}/> Ajouter toutes les étapes
-                  </>
+                {/* Permis requis — toggle */}
+                <div>
+                  <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>Permis requis</p>
+                  <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                    <button onClick={() => saveField('permits_required', !project.permits_required)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13.5, color: '#15171C', fontWeight: 500, padding: 0, borderBottom: '1px dashed transparent', transition: 'border-color .15s' }}
+                      onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+                      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+                      {project.permits_required ? 'Oui' : 'Non'}
+                    </button>
+                  </p>
+                </div>
+                {/* Responsable permis — visible seulement si permis requis */}
+                {project.permits_required && (
+                  <div>
+                    <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>Responsable permis</p>
+                    <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                      <InlineField value={project.permits_responsible} onSave={v => saveField('permits_responsible', v)} placeholder="—" style={IFS} displayStyle={IFD} />
+                    </p>
+                  </div>
                 )}
+              </div>
+            </div>
+
+            {/* ── Pipeline — fusionné dans l'entête ── */}
+            {(() => {
+              const statusDates = (project.field_assessment || {}).status_dates || {};
+              const fmtDate = iso => {
+                if (!iso) return null;
+                const d = new Date(iso);
+                return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+              };
+              return (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
+                  <div style={{ position: 'relative', padding: '8px 0 0' }}>
+                    <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: 'rgba(0,0,0,.1)', zIndex: 0 }} />
+                    <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
+                      {PIPE.map((s, i) => {
+                        const isDone = i < pipeActiveIdx;
+                        const isActive = i === pipeActiveIdx;
+                        const dateStr = fmtDate(statusDates[s.key]);
+                        return (
+                          <div key={s.key}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1, cursor: isActive ? 'default' : 'pointer' }}
+                            onClick={() => { if (!isActive) setStatusPopup({ key: s.key, label: s.label }); }}
+                            title={isActive ? 'Étape en cours' : `Passer à : ${s.label}`}
+                          >
+                            <div style={{
+                              width: isActive ? 22 : 18, height: isActive ? 22 : 18, borderRadius: '50%',
+                              border: `3px solid ${isDone ? '#16a34a' : isActive ? BRAND : 'rgba(0,0,0,.15)'}`,
+                              background: isDone ? '#16a34a' : isActive ? BRAND : 'rgba(255,255,255,.7)',
+                              display: 'grid', placeItems: 'center', transition: '.2s',
+                              boxShadow: isActive ? '0 0 0 4px rgba(232,121,78,.2)' : 'none',
+                            }}>
+                              {isDone && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                              {isActive && <span style={{ color: '#fff', fontSize: 8 }}>●</span>}
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: isActive ? 800 : 600, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.55)', textAlign: 'center', lineHeight: 1.3 }}>{s.label}</span>
+                            {dateStr
+                              ? <span style={{ fontSize: 9.5, color: isDone ? '#16a34a' : isActive ? BRAND_DARK : 'rgba(21,23,28,.35)', fontWeight: 500, textAlign: 'center', marginTop: -2 }}>{dateStr}</span>
+                              : <span style={{ fontSize: 9.5, color: 'transparent', userSelect: 'none' }}>·</span>
+                            }
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          </div>
+        );
+      })()}
+
+      {/* ── Capture multimodale ── */}
+      {showCapture && (
+        <CaptureModal
+          projectId={id}
+          projectName={project.name}
+          onClose={() => setShowCapture(false)}
+          onAdded={(createdMedia, hadDocs) => {
+            if (createdMedia.length) setMedia(prev => [...createdMedia, ...prev]);
+            if (hadDocs) load();
+          }}
+        />
+      )}
+
+      {/* ── Chat IA du projet ── */}
+      {showAIChat && (
+        <ProjectAIChat
+          projectId={id}
+          projectName={project.name}
+          onClose={() => setShowAIChat(false)}
+        />
+      )}
+
+      {/* ── Bouton flottant Chat IA ── */}
+      {!showAIChat && (
+        <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à Florence — assistante IA">
+          <Sparkles size={22} />
+        </button>
+      )}
+
+      {/* ── QR Modal ── */}
+      {showQrModal && qrData && (
+        <div onClick={() => setShowQrModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, padding: '32px 36px', maxWidth: 380, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 8px' }}>QR Punch</p>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#15171C', margin: '0 0 20px', lineHeight: 1.3 }}>{project.name}</h3>
+            <img src={qrData.qr_image} alt="QR Punch" style={{ width: 220, height: 220, borderRadius: 12, border: '1px solid #E8EAED', display: 'block', margin: '0 auto 20px' }} />
+            <p style={{ fontSize: 12, color: '#7C8089', margin: '0 0 20px' }}>Affichez ce QR à l'entrée du chantier. Les travailleurs scannent pour pointer entrée/sortie.</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowQrModal(false)} style={{ flex: 1, padding: '10px 0', border: '1px solid #E8EAED', borderRadius: 10, background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#6B7280' }}>Fermer</button>
+              <button onClick={printQR} style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: BRAND, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>🖨 Imprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Lightbox — media & documents ── */}
+      {lightboxItem && (
+        <div onClick={() => setLightboxItem(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.88)', zIndex: 9000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <button onClick={() => setLightboxItem(null)}
+            style={{ position: 'absolute', top: 20, right: 20, width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,.15)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', zIndex: 1 }}>
+            <X size={18} color="#fff"/>
+          </button>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', maxWidth: 860, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,.4)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Preview */}
+            <div style={{ background: '#1C1C1E', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, maxHeight: '60vh', overflow: 'hidden' }}>
+              {lightboxItem.type === 'photo' && lightboxItem.url
+                ? <img src={lightboxItem.url} alt={lightboxItem.caption || ''} style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}/>
+                : lightboxItem.type === 'video' && lightboxItem.url
+                  ? <video src={lightboxItem.url} controls style={{ maxWidth: '100%', maxHeight: '60vh' }}/>
+                  : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 40 }}>
+                      <span style={{ fontSize: 64 }}>{lightboxItem.type === 'voice' ? '🎙' : lightboxItem.type === 'note' ? '📌' : '📄'}</span>
+                      {lightboxItem.transcript && <p style={{ fontSize: 14, color: '#fff', textAlign: 'center', maxWidth: 480, margin: 0, lineHeight: 1.6 }}>{lightboxItem.transcript}</p>}
+                    </div>}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {lightboxItem.caption || lightboxItem.name || lightboxItem.filename || lightboxItem.transcript?.slice(0, 60) || '—'}
+                </p>
+                {lightboxItem.created_at && (
+                  <p style={{ fontSize: 11.5, color: '#7C8089', margin: '3px 0 0' }}>
+                    {new Date(lightboxItem.created_at).toLocaleDateString('fr-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              {lightboxItem.url && (
+                <>
+                  <button onClick={() => {
+                    if (navigator.share) { navigator.share({ url: lightboxItem.url, title: lightboxItem.caption || 'Document' }).catch(() => {}); }
+                    else { navigator.clipboard.writeText(lightboxItem.url); }
+                  }}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', fontSize: 12.5, fontWeight: 700, color: '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <Share2 size={13}/> Partager
+                  </button>
+                  <a href={lightboxItem.url} download target="_blank" rel="noreferrer"
+                    style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none', flexShrink: 0 }}>
+                    <Download size={13}/> Télécharger
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Doc sections ── */}
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+
+        {/* ── Résumé de la demande + médias client ── */}
+        <div style={{ background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+          {/* Zone description */}
+          <div style={{ padding: '18px 56px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: 0 }}>Résumé de la demande</p>
+              <button
+                onClick={() => { setShowClientReply(s => !s); setClientReplyText(''); }}
+                style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: BRAND, background: 'rgba(232,121,78,.08)', border: `1px solid rgba(232,121,78,.25)`, borderRadius: 20, padding: '3px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                {showClientReply ? <X size={11}/> : <MessageSquare size={11}/>}
+                {showClientReply ? 'Annuler' : 'Coller réponse client'}
+              </button>
+            </div>
+            <InlineField
+              value={project.description || ''}
+              onSave={v => saveField('description', v)}
+              placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
+              multiline
+              style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+              displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
+            />
+
+            {/* Zone coller réponse client */}
+            {showClientReply && (
+              <div style={{ marginTop: 12, padding: 14, background: '#F8FAFB', borderRadius: 10, border: '1px solid #E8EAED' }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: '#4B5563', margin: '0 0 8px' }}>Colle ici la réponse reçue du client — elle remplacera le résumé actuel.</p>
+                <textarea
+                  value={clientReplyText}
+                  onChange={e => setClientReplyText(e.target.value)}
+                  placeholder="Copie-colle le courriel ou message du client ici…"
+                  style={{ width: '100%', minHeight: 100, padding: '10px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 13, lineHeight: 1.6, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#15171C' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    disabled={!clientReplyText.trim()}
+                    onClick={async () => { await saveField('description', clientReplyText.trim()); setShowClientReply(false); setClientReplyText(''); }}
+                    className="btn-primary text-xs">
+                    Enregistrer comme résumé
+                  </button>
+                  <button onClick={() => { setShowClientReply(false); setClientReplyText(''); }} className="btn-secondary text-xs">Annuler</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Galerie horizontale — photos & documents du client */}
+          {(media.length > 0 || (project.documents || []).length > 0) && (
+            <div style={{ padding: '0 56px 18px' }}>
+              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 8px' }}>
+                Photos & documents reçus · {media.length + (project.documents || []).length}
+              </p>
+              <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
+                {/* Photos / vidéos */}
+                {media.map(m => (
+                  <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
+                    onClick={() => setLightboxItem(m)}>
+                    {m.type === 'photo' && m.url ? (
+                      <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                    ) : m.type === 'video' ? (
+                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>
+                    )}
+                    {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
+                  </div>
+                ))}
+                {/* Documents */}
+                {(project.documents || []).map(d => (
+                  <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
+                    onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
+                    <span style={{ fontSize: 28 }}>📄</span>
+                    <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
+                  </div>
+                ))}
+                {/* Bouton ajouter */}
+                <div style={{ flexShrink: 0, width: 90, height: 90, borderRadius: 10, border: `2px dashed rgba(232,121,78,.35)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', color: BRAND, background: 'rgba(232,121,78,.04)' }}
+                  onClick={() => setShowCapture(true)}>
+                  <span style={{ fontSize: 22 }}>+</span>
+                  <span style={{ fontSize: 10, fontWeight: 700 }}>Ajouter</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Ajouter le premier média si aucun */}
+          {media.length === 0 && (project.documents || []).length === 0 && (
+            <div style={{ padding: '0 56px 16px' }}>
+              <button onClick={() => setShowCapture(true)}
+                style={{ fontSize: 11.5, color: BRAND, fontWeight: 700, background: 'rgba(232,121,78,.06)', border: `1px dashed rgba(232,121,78,.3)`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Camera size={13}/> Ajouter photos ou documents du client
               </button>
             </div>
           )}
+        </div>
+
+        {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
+        {/* ── Estimation approximative ── */}
+        {(() => {
+          const fa = project.field_assessment || {};
+          const visiteAnswers = fa.visite_answers || {};
+          const selectedTrades = fa.selected_trades || [];
+          const approxLines = fa.approx_lines || [];
+          const workTypeVal = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+
+          const saveVisite = async (patch) => {
+            const next = { ...fa, visite_answers: { ...visiteAnswers, ...patch } };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const saveTrades = async (trades) => {
+            const next = { ...fa, selected_trades: trades };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const saveLines = async (lines) => {
+            const next = { ...fa, approx_lines: lines };
+            await projectsApi.update(id, { field_assessment: next });
+            setProject(p => ({ ...p, field_assessment: next }));
+          };
+          const addLine = () => saveLines([...approxLines, { id: Date.now(), poste: '', source: '', inclus: '', non_inclus: '', duree: '', cout: '', prix_vente: '' }]);
+          const addSuggestedLines = () => {
+            const tpls = SUGGESTED_LINES[workTypeVal] || [];
+            if (!tpls.length) return;
+            const newLines = tpls.map((t, i) => ({ ...t, id: Date.now() + i, source: t.source || '' }));
+            saveLines([...approxLines, ...newLines]);
+          };
+          const hasSuggested = !!(SUGGESTED_LINES[workTypeVal] || []).length;
+          const updateLine = (lid, field, value) => saveLines(approxLines.map(l => l.id === lid ? { ...l, [field]: value } : l));
+          const removeLine = (lid) => saveLines(approxLines.filter(l => l.id !== lid));
+
+          const totalCout = approxLines.reduce((s, l) => s + (Number(l.cout) || 0), 0);
+          const totalVente = approxLines.reduce((s, l) => s + (Number(l.prix_vente) || 0), 0);
+          const totalMarkup = totalCout > 0 ? Math.round((totalVente - totalCout) / totalCout * 100) : 0;
+
+          /* Questions pertinentes = universelles + celles du type de travaux */
+          const typeQs = VISITE_QUESTIONS_BY_TYPE[workTypeVal] || [];
+          const allVisiteQs = [...VISITE_QUESTIONS_UNIVERSAL, ...typeQs];
+
+          const visiteAnswered = Object.keys(visiteAnswers).length;
+
+          return (
+            <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+              {/* En-tête */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
+                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4, maxWidth: 560 }}>Qualifiez le projet sans perdre de temps. Envoyez un message au client, visitez sur place ou laissez Florence estimer les coûts — dans l'ordre qui vous convient, aucune étape obligatoire.</div>
+                </div>
+              </div>
+
+              {/* Bannière profil métier */}
+              <div style={{ padding: '10px 16px', background: 'rgba(232,121,78,.08)', border: '1px solid rgba(232,121,78,.2)', borderRadius: 10, marginBottom: 20, fontSize: 13, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Sparkles size={14} color={BRAND}/>
+                <span>Adapté à ton profil :</span>
+                <b style={{ color: BRAND }}>Entrepreneur général</b>
+              </div>
+
+              {/* Onglets — 2 niveaux */}
+              <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {/* Rangée haute : Message client + Visite sur place */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
+                  {[
+                    { k: 'voieB', label: '💬 Message client' },
+                    { k: 'voieC', label: '🏗 Visite sur place' },
+                  ].map(({ k, label }) => (
+                    <button key={k} type="button" onClick={() => setEstimTab(k)}
+                      style={{ border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+                        background: estimTab === k ? '#fff' : 'transparent',
+                        color: estimTab === k ? BRAND_DARK : '#7C8089',
+                        boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                      }}>{label}</button>
+                  ))}
+                </div>
+                {/* Rangée basse : Recherche IA Florence */}
+                <div style={{ background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, border: '1px solid rgba(0,0,0,.06)' }}>
+                  <button type="button" onClick={() => setEstimTab('voieA')}
+                    style={{ width: '100%', border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      background: estimTab === 'voieA' ? '#fff' : 'transparent',
+                      color: estimTab === 'voieA' ? BRAND_DARK : '#7C8089',
+                      boxShadow: estimTab === 'voieA' ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                    }}>
+                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Estimation approximative
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Voie A — Tableau d'estimation + IA ── */}
+              {estimTab === 'voieA' && (
+                <div>
+                  <div style={{ background: 'rgba(255,255,255,.9)', borderRadius: 12, border: '1px solid #E8EAED', overflow: 'auto' }}>
+                    {/* Entêtes tableau */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, background: '#F8FAFB', borderBottom: '1px solid #E8EAED', padding: '8px 14px', minWidth: 700 }}>
+                      {['POSTE','SOURCE','INCLUS','NON INCLUS','DURÉE','COÛT','PRIX VENTE','MARKUP',''].map((h, i) => (
+                        <span key={i} style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#9CA3AF', textTransform: 'uppercase' }}>{h}</span>
+                      ))}
+                    </div>
+
+                    {approxLines.length === 0 && (
+                      <div style={{ padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, background: 'rgba(248,250,251,.6)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#fff', borderRadius: 11, border: `1px solid rgba(232,121,78,.25)`, width: '100%', maxWidth: 520, boxSizing: 'border-box' }}>
+                          <Sparkles size={16} color={BRAND}/>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Laisser Florence remplir automatiquement</p>
+                            <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>Florence analyse les projets similaires et les prix Rona, Canac, Home Dépôt, BMR.</p>
+                          </div>
+                          <button className="btn-primary text-xs" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={searchMaterialPrices} disabled={searchingPrices}>
+                            {searchingPrices ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                            {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
+                          </button>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>— ou —</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={addLine} style={{ background: '#fff', border: '1px solid #E0E4E8', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: BRAND, fontWeight: 700, padding: '7px 14px' }}>+ Ajouter une ligne vide</button>
+                          {hasSuggested && (
+                            <button onClick={addSuggestedLines} style={{ background: BRAND, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#fff', fontWeight: 700, padding: '7px 14px' }}>
+                              ✦ Lignes types — {workTypeVal || 'projet'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {approxLines.map(line => {
+                      const markup = (Number(line.cout) > 0 && Number(line.prix_vente) > 0)
+                        ? Math.round((Number(line.prix_vente) - Number(line.cout)) / Number(line.cout) * 100) : null;
+                      return (
+                        <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, borderBottom: '1px solid #F4F5F6', padding: '5px 14px', alignItems: 'center', minWidth: 700 }}>
+                          {[
+                            { field:'poste', ph:'Démolition…' },
+                            { field:'source', ph:'Historique / fournisseur' },
+                            { field:'inclus', ph:'Ce qui est inclus' },
+                            { field:'non_inclus', ph:'Non inclus' },
+                            { field:'duree', ph:'3 j' },
+                            { field:'cout', ph:'0', t:'number' },
+                            { field:'prix_vente', ph:'0', t:'number' },
+                          ].map(({ field, ph, t }) => (
+                            <input key={field} type={t||'text'} value={line[field]||''} onChange={e=>updateLine(line.id,field,e.target.value)} placeholder={ph}
+                              style={{ border:'none', background:'transparent', fontSize:12.5, color:'#15171C', padding:'3px 4px 3px 0', outline:'none', width:'100%', minWidth:0, fontFamily:'inherit' }}/>
+                          ))}
+                          <span style={{ fontSize:11.5, fontWeight:700, color: markup > 0 ? '#16a34a' : '#9CA3AF' }}>{markup !== null ? `+${markup}%` : '—'}</span>
+                          <button onClick={() => removeLine(line.id)} style={{ border:'none', background:'none', cursor:'pointer', color:'#C8CACD', padding:0, display:'flex', alignItems:'center' }}><X size={13}/></button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Ligne total */}
+                    {approxLines.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, padding: '10px 14px', background: '#F8FAFB', borderTop: '2px solid #E0E4E8', alignItems: 'center', minWidth: 700 }}>
+                        <span style={{ fontSize:12, fontWeight:800, color:'#15171C', gridColumn:'1/6' }}>TOTAL · Fourchette : {money(Math.round(totalVente * 0.87))} – {money(Math.round(totalVente * 1.13))}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalCout)}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalVente)}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color: totalMarkup > 0 ? '#16a34a' : '#9CA3AF' }}>+{totalMarkup}%</span>
+                        <span/>
+                      </div>
+                    )}
+
+                    {/* Footer tableau */}
+                    {approxLines.length > 0 && (
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
+                          + Ajouter une ligne
+                        </button>
+                        {hasSuggested && (
+                          <button onClick={addSuggestedLines} style={{ background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                            ✦ Lignes types {workTypeVal ? `— ${workTypeVal}` : ''}
+                          </button>
+                        )}
+                        <button onClick={searchMaterialPrices} disabled={searchingPrices} style={{ marginLeft:'auto', background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                          {searchingPrices ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                          {searchingPrices ? 'Florence analyse…' : 'Demander à Florence'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {searchingPrices && (
+                    <div style={{ marginTop:10, padding:'12px 16px', background:'rgba(232,121,78,.06)', borderRadius:10, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:10, fontSize:12.5, color:BRAND }}>
+                      <Loader2 size={14} className="animate-spin"/>
+                      Florence recherche les prix du marché québécois…
+                    </div>
+                  )}
+                  {aiPriceResult && (
+                    <div style={{ marginTop:12, background:'#fff', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden', fontSize:12.5 }}>
+
+                      {/* Note de Florence */}
+                      {aiPriceResult.comments && (
+                        <div style={{ padding:'12px 18px', color:'#3A3D44', lineHeight:1.65, borderBottom:'1px solid #F0F2F4' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:5 }}>Note de Florence</span>
+                          {aiPriceResult.comments}
+                        </div>
+                      )}
+
+                      {/* Tableau 3 scénarios */}
+                      {aiPriceResult.scenarios?.length > 0 && (
+                        <div style={{ borderBottom:'1px solid #F0F2F4' }}>
+                          <div style={{ padding:'10px 18px 6px', display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF' }}>3 scénarios de prix</span>
+                          </div>
+                          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                            <thead>
+                              <tr style={{ background:'#F8FAFB', borderBottom:'1px solid #E8EAED' }}>
+                                {['Scénario','Description','Coût de revient','Prix de vente','Marge'].map(h => (
+                                  <th key={h} style={{ padding:'7px 14px', fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {aiPriceResult.scenarios.map((s, i) => {
+                                const marge = s.cout > 0 ? Math.round((s.prix_vente - s.cout) / s.cout * 100) : 0;
+                                const rowBg = i === 1 ? 'rgba(232,121,78,.04)' : '#fff';
+                                const nomColor = i === 0 ? '#6B7280' : i === 1 ? BRAND : '#7C3AED';
+                                return (
+                                  <tr key={s.nom} style={{ background: rowBg, borderBottom:'1px solid #F4F5F6' }}>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color: nomColor, whiteSpace:'nowrap' }}>{s.nom}</td>
+                                    <td style={{ padding:'9px 14px', color:'#4B5563', lineHeight:1.4 }}>{s.description}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.cout)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.prix_vente)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#16a34a', whiteSpace:'nowrap' }}>+{marge}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Sources cliquables (URLs construites côté client) */}
+                      {aiPriceResult.sources?.length > 0 && (
+                        <div style={{ padding:'10px 18px 12px' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:7 }}>Références de prix</span>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                            {aiPriceResult.sources.map((s, i) => (
+                              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'4px 11px', background:'rgba(232,121,78,.07)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.22)`, display:'inline-flex', alignItems:'center', gap:5, transition:'background .15s' }}
+                                onMouseEnter={e => e.currentTarget.style.background='rgba(232,121,78,.15)'}
+                                onMouseLeave={e => e.currentTarget.style.background='rgba(232,121,78,.07)'}>
+                                🔗 {s.label} <span style={{ fontWeight:400, color:'#9CA3AF', fontSize:10.5 }}>· {s.fournisseur}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Étape 1 — Message client + calculateur au pi²/m² ── */}
+              {estimTab === 'voieB' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                  {/* Message prérempli */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
+                    <textarea ref={clientMsgRef}
+                      key={project.client_name + '|' + project.portal_token}
+                      style={{ width:'100%', minHeight:240, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
+                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+                    />
+                    <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(clientMsgRef.current?.value || ''); }}>
+                        {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { const body = encodeURIComponent(clientMsgRef.current?.value || ''); window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent('Demande d\'informations — ' + project.name)}&body=${body}`,'_blank'); }}
+                        disabled={!project.client_email}>
+                        ✉️ Envoyer par courriel
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => window.open(`sms:${project.client_phone?.replace(/\D/g,'')}?body=${encodeURIComponent(clientMsgRef.current?.value||'')}`, '_blank')}
+                        disabled={!project.client_phone}>
+                        📱 Par SMS
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checklist photos */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <p style={{ fontSize:12.5, fontWeight:800, color:'#15171C', margin:'0 0 12px', display:'flex', alignItems:'center', gap:8 }}>📷 CHECKLIST PHOTOS DEMANDÉES</p>
+                    {['Ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, WC)', 'Panneau électrique ouvert', 'Sous-sol ou vide sanitaire', 'Toiture / gouttières (de l\'extérieur)'].map((item, i) => (
+                      <label key={i} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#3A3D44', marginBottom:8, cursor:'pointer' }}>
+                        <input type="checkbox" style={{ accentColor:BRAND, width:15, height:15 }}/> {item}
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Calculateur au pi²/m² */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
+                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
+                      📐 Calculateur de prix approximatif
+                    </p>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
+                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
+                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                            <button key={u} onClick={() => setSqUnit(u)}
+                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
+                                background: sqUnit===u ? '#fff' : 'transparent', color: sqUnit===u ? '#15171C' : '#9CA3AF',
+                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
+                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
+                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
+                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
+                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
+                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                      </div>
+                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
+                        const base = Number(sqRate) * Number(sqArea);
+                        return (
+                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
+                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
+                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{money(Math.round(base))}</p>
+                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {money(Math.round(base*.85))} – {money(Math.round(base*1.15))}</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Étape 3 — Visite sur place ── */}
+              {estimTab === 'voieC' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+
+                  {/* Question 1 — Corps de métier (multi-select) */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>1</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Quels corps de métier sont impliqués ?</p>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                      {ALL_TRADES.map(t => {
+                        const isSelected = selectedTrades.includes(t.key);
+                        return (
+                          <button key={t.key} type="button"
+                            onClick={() => saveTrades(isSelected ? selectedTrades.filter(k=>k!==t.key) : [...selectedTrades, t.key])}
+                            style={{ padding:'6px 13px', borderRadius:20, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: isSelected ? BRAND : '#fff',
+                              borderColor: isSelected ? BRAND : '#E0E4E8',
+                              color: isSelected ? '#fff' : '#3A3D44' }}>
+                            {t.emoji} {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Questions universelles + spécifiques au type de travaux */}
+                  {allVisiteQs.map((q, qi) => {
+                    const curVal = visiteAnswers[q.id] || null;
+                    const isAutre = curVal && !q.opts.includes(curVal);
+                    return (
+                      <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                          <span style={{ width:24, height:24, borderRadius:8, background: curVal ? '#DCFCE7' : `${BRAND}22`, color: curVal ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                            {curVal ? '✓' : qi + 2}
+                          </span>
+                          <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
+                        </div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                          {q.opts.map(opt => (
+                            <button key={opt} type="button"
+                              onClick={() => saveVisite({ [q.id]: curVal === opt ? null : opt })}
+                              style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                                background: curVal === opt ? BRAND : '#fff',
+                                borderColor: curVal === opt ? BRAND : '#E0E4E8',
+                                color: curVal === opt ? '#fff' : '#3A3D44' }}>
+                              {opt}
+                            </button>
+                          ))}
+                          {/* Option Autre */}
+                          <button type="button"
+                            onClick={() => {
+                              if (isAutre) { saveVisite({ [q.id]: null }); setAutreTexts(t => ({ ...t, [q.id]: '' })); }
+                              else { setAutreTexts(t => ({ ...t, [q.id]: '' })); saveVisite({ [q.id]: 'Autre' }); }
+                            }}
+                            style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: isAutre ? BRAND : '#fff',
+                              borderColor: isAutre ? BRAND : '#E0E4E8',
+                              color: isAutre ? '#fff' : '#3A3D44' }}>
+                            Autre
+                          </button>
+                        </div>
+                        {/* Texte libre si Autre sélectionné */}
+                        {(isAutre || curVal === 'Autre') && (
+                          <div style={{ marginTop:8, display:'flex', gap:6 }}>
+                            <input
+                              autoFocus
+                              value={isAutre && curVal !== 'Autre' ? curVal : (autreTexts[q.id] || '')}
+                              onChange={e => setAutreTexts(t => ({ ...t, [q.id]: e.target.value }))}
+                              onBlur={e => { if (e.target.value.trim()) saveVisite({ [q.id]: e.target.value.trim() }); }}
+                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { saveVisite({ [q.id]: e.target.value.trim() }); e.target.blur(); } }}
+                              placeholder="Précisez…"
+                              style={{ flex:1, padding:'6px 10px', border:'1px solid #E0E4E8', borderRadius:8, fontSize:12.5, fontFamily:'inherit', outline:'none' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Superficie + observations */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>{allVisiteQs.length + 2}</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Superficie totale à rénover</p>
+                    </div>
+                    <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:12 }}>
+                      <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth:130 }}
+                        value={visiteAnswers.area || ''} onChange={e => saveVisite({ area: e.target.value })}/>
+                      <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2 }}>
+                        {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                          <button key={u} onClick={() => saveVisite({ area_unit: u })}
+                            style={{ border:'none', borderRadius:6, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+                              background: (visiteAnswers.area_unit||'sqft')===u ? '#fff' : 'transparent',
+                              color: (visiteAnswers.area_unit||'sqft')===u ? '#15171C' : '#9CA3AF',
+                              boxShadow: (visiteAnswers.area_unit||'sqft')===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:'0 0 6px' }}>Observations sur place</p>
+                    <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
+                      value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
+                  </div>
+
+                  {/* Photos & documents sur place — scroll horizontal */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background: media.length ? '#DCFCE7' : `${BRAND}22`, color: media.length ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                        {media.length ? '✓' : <Camera size={13}/>}
+                      </span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Photos & documents sur place</p>
+                      <button onClick={() => setShowCapture(true)}
+                        style={{ marginLeft:'auto', fontSize:11.5, fontWeight:700, color:BRAND, background:'rgba(232,121,78,.08)', border:`1px solid rgba(232,121,78,.25)`, borderRadius:20, padding:'3px 11px', cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                        <Camera size={11}/> Ajouter
+                      </button>
+                    </div>
+                    <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
+                      {media.map(m => (
+                        <div key={m.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
+                          onClick={() => setLightboxItem(m)}>
+                          {m.type==='photo' && m.url
+                            ? <img src={m.url} alt={m.caption||''} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                            : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:28 }}>{m.type==='video'?'▶':'📌'}</div>}
+                          {m.caption && <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,.55)', color:'#fff', fontSize:9.5, padding:'3px 6px', textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap' }}>{m.caption}</div>}
+                        </div>
+                      ))}
+                      {(project.documents || []).map(d => (
+                        <div key={d.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F8FAFB', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', padding:8, boxSizing:'border-box' }}
+                          onClick={() => setLightboxItem({ ...d, type:'doc' })}>
+                          <span style={{ fontSize:28 }}>📄</span>
+                          <span style={{ fontSize:9.5, color:'#4B5563', textAlign:'center', lineHeight:1.3, overflow:'hidden', maxWidth:'100%', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name||d.filename||'Document'}</span>
+                        </div>
+                      ))}
+                      <div style={{ flexShrink:0, width:90, height:90, borderRadius:10, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
+                        onClick={() => setShowCapture(true)}>
+                        <span style={{ fontSize:22 }}>+</span>
+                        <span style={{ fontSize:10, fontWeight:700 }}>Ajouter</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barre de progression + action */}
+                  {visiteAnswered > 0 && (
+                    <div style={{ padding:'12px 16px', background:'#E9F8EE', borderRadius:10, display:'flex', alignItems:'center', gap:12 }}>
+                      <span style={{ fontSize:20 }}>✅</span>
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>{visiteAnswered} élément{visiteAnswered>1?'s':''} renseigné{visiteAnswered>1?'s':''}</p>
+                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à l'Étape 2 pour générer l'estimation avec ces données.</p>
+                      </div>
+                      <button className="btn-primary text-xs" onClick={() => setEstimTab('voieA')}>
+                        <Sparkles size={13}/> Générer l'estimation
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Envoyer l'estimation au client ── */}
+              <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Send size={16} color={BRAND}/>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
+                    <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Message personnalisé — se met à jour automatiquement avec les données du projet.</p>
+                  </div>
+                  <button onClick={() => { userEditedEstimMsg.current = false; setEstimMsg(buildEstimMsg(project, aiPriceResult)); }}
+                    style={{ fontSize: 11.5, fontWeight: 700, color: '#7C8089', background: '#F4F5F6', border: 'none', borderRadius: 8, padding: '5px 11px', cursor: 'pointer', flexShrink: 0 }}>
+                    ↺ Regénérer
+                  </button>
+                </div>
+
+                {/* Zone de message éditable */}
+                <textarea ref={estimMsgRef} value={estimMsg}
+                  onChange={e => { userEditedEstimMsg.current = true; setEstimMsg(e.target.value); }}
+                  placeholder="Le message se génère automatiquement dès que des informations sont disponibles sur le projet…"
+                  style={{ width: '100%', minHeight: 200, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.75, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
+
+                {/* Photos de projets similaires */}
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {estimInspoPhotos.map((url, i) => (
+                      <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
+                        onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
+                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
+                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                          <X size={10} color="#fff"/>
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        placeholder="URL d'une photo…"
+                        style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
+                      <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        + Ajouter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3 boutons d'envoi */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText(estimMsg).then(() => { setEstimMsgCopied(true); setTimeout(() => setEstimMsgCopied(false), 2000); });
+                  }}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${estimMsgCopied ? '#16a34a' : '#E0E4E8'}`, background: estimMsgCopied ? '#DCFCE7' : '#fff', fontSize: 12.5, fontWeight: 700, color: estimMsgCopied ? '#16a34a' : '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {estimMsgCopied ? '✓ Copié !' : '⎘ Copier le message'}
+                  </button>
+                  <button
+                    onClick={() => window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_email}
+                    title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✉️ Envoyer par courriel
+                  </button>
+                  <button
+                    onClick={() => window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_phone}
+                    title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📱 Par SMS
+                  </button>
+                </div>
+
+                {/* Relances automatiques */}
+                <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: 0 }}>Relances automatiques</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+                    <div>
+                      <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Nombre de relances</p>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {[0,1,2,3,4,5,6,7].map(n => (
+                          <button key={n} onClick={() => { setRelanceCount(n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
+                            style={{ width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Fréquence</p>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {[[2,'2 j'],[3,'3 j'],[5,'5 j'],[7,'1 sem.'],[14,'2 sem.'],[30,'1 mois']].map(([v,l]) => (
+                            <button key={v} onClick={() => { setRelanceFrequency(v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
+                              style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${relanceFrequency === v ? BRAND : '#E0E4E8'}`, background: relanceFrequency === v ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceFrequency === v ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Méthode(s)</p>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
+                            <button key={k} onClick={() => {
+                              const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
+                              setRelanceMethods(next);
+                              localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
+                            }}
+                              style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {relanceCount > 0 && relanceMethods.length > 0 && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 14px', borderRadius: 9, background: '#DCFCE7', border: '1px solid #16a34a33' }}>
+                      <CheckCircle size={13} color="#16a34a"/>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#16a34a' }}>
+                        {relanceCount} relance{relanceCount > 1 ? 's' : ''} · toutes les {relanceFrequency <= 6 ? `${relanceFrequency} jours` : relanceFrequency <= 13 ? '1 semaine' : relanceFrequency <= 27 ? '2 semaines' : '1 mois'} · {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+
+        {/* ── Phases du projet ── */}
+        <div id="s-pipeline" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}</div>
+            </div>
+            <button className="btn-secondary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Phase manuelle</button>
+          </div>
 
           {(showPhase || editPhase) && (
-            <PhaseModal
-              projectId={id}
-              phase={editPhase}
-              onClose={()=>{setShowPhase(false);setEditPhase(null);}}
-              onSave={handlePhaseSave}
-            />
+            <PhaseModal projectId={id} phase={editPhase} trades={project.trades || []}
+              onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
-          {project.phases?.length > 0 ? (
-            <>
-              <div className="mb-3 flex gap-2">
-                {selectedPhaseIds.size > 0 && (
-                  <>
-                    <span className="text-xs text-gray-500">{selectedPhaseIds.size} phase(s) sélectionnée(s)</span>
-                    <button
-                      className="btn-secondary text-xs py-1 text-red-600 hover:text-red-700"
-                      onClick={async () => {
-                        if (!confirm(`Supprimer ${selectedPhaseIds.size} phase(s)?`)) return;
-                        try {
-                          await Promise.all(Array.from(selectedPhaseIds).map(phid =>
-                            projectsApi.deletePhase(id, phid)
-                          ));
-                          setProject(p => ({
-                            ...p,
-                            phases: p.phases.filter(ph => !selectedPhaseIds.has(ph.id))
-                          }));
-                          setSelectedPhaseIds(new Set());
-                        } catch {}
-                      }}
-                    >
-                      <Trash2 size={12}/> Supprimer
-                    </button>
-                  </>
-                )}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '16px 20px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <Sparkles size={15} color="#fff"/>
               </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>
+                  {project.phases?.length > 0 ? 'Ajuster les phases avec Florence' : 'Générer les phases avec Florence'}
+                </p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>
+                  Flo analyse le contexte du projet et construit un planning plus proche du chantier réel.
+                </p>
+              </div>
+              <button onClick={generatePhasesFromAI} disabled={generatingPhases}
+                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Régénérer avec Flo' : 'Générer avec Flo'}
+              </button>
+            </div>
+            {aiNotice && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
+                <p className="text-xs text-amber-700">{aiNotice}</p>
+                <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
+              </div>
+            )}
+            {(() => {
+              const existing = new Set((project.phases || []).map((p) => p.name?.toLowerCase()));
+              const available = recommendedPhaseTemplates
+                .map((tpl) => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) }))
+                .filter((tpl) => !existing.has(tpl.name.toLowerCase()));
+              const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
+              const bulkLabel = projectWorkType || 'ce projet';
+              if (!available.length && !hasPlaybook) return null;
+              return (
+                <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: 0 }}>
+                      {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Ajouter une phase type'}
+                    </p>
+                    {hasPlaybook && (
+                      <button
+                        onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })}
+                        disabled={addingTemplatePhase === '__batch__'}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: `1px solid ${BRAND_BORDER}`, background: BRAND_SOFT, color: BRAND_DARK, fontSize: 12, fontWeight: 800, cursor: addingTemplatePhase === '__batch__' ? 'wait' : 'pointer' }}
+                      >
+                        {addingTemplatePhase === '__batch__' ? <Loader2 size={11} className="animate-spin"/> : <Plus size={11}/>}
+                        {`Ajouter les étapes de ${bulkLabel}`}
+                      </button>
+                    )}
+                  </div>
+                  {available.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {available.map((tpl) => (
+                        <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                          {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
+                          {tpl.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Toutes les étapes recommandées sont déjà ajoutées pour ce type de projet.</p>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {project.phases?.length > 0 ? (
+            <div style={{ marginBottom: 18 }}>
               <GanttChart
                 phases={project.phases}
                 projectStart={project.start_date}
                 projectEnd={project.end_date}
-                projectMembers={projectMembers}
-                rfqResponses={rfqResponses}
-                selectedPhaseIds={selectedPhaseIds}
-                onSelectionChange={setSelectedPhaseIds}
-                columnWidths={columnWidths}
-                onColumnResize={setColumnWidths}
+                onDeletePhase={removePhase}
+                onEditPhase={(ph) => setEditPhase(ph)}
               />
-              <div className="mt-4 space-y-2">
-                {project.phases.map((ph, i) => (
-                  <div key={ph.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length]}}/>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-800">{ph.name}</p>
-                        <span className={`badge ${PS_BADGE[ph.status]}`}>{PS_LABEL[ph.status]}</span>
-                      </div>
-                      {ph.start_date && (
-                        <p className="text-xs text-gray-400">
-                          {new Date(ph.start_date).toLocaleDateString('fr-CA')}
-                          {ph.end_date && ` → ${new Date(ph.end_date).toLocaleDateString('fr-CA')}`}
-                        </p>
-                      )}
+            </div>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '22px 20px', textAlign: 'center', marginBottom: 18 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
+              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
+            </div>
+          )}
+
+          {(() => {
+            const phases = project.phases || [];
+            const phaseTradeNames = [...new Set(phases.map((ph) => ph.trade_name).filter(Boolean))];
+            const tradesFromProject = project.trades || [];
+            const rowNames = [...new Set([
+              ...tradesFromProject.map((trade) => trade.trade).filter(Boolean),
+              ...phaseTradeNames,
+            ])];
+
+            if (!rowNames.length) return null;
+
+            const statusMeta = {
+              to_find: { label: 'A trouver', color: '#9CA3AF', bg: '#F3F4F6' },
+              contacted: { label: 'Contacté', color: '#F59E0B', bg: '#FFF7E8' },
+              quoted: { label: 'Soumissionné', color: '#3B82F6', bg: '#EFF6FF' },
+              confirmed: { label: 'Confirmé', color: '#16A34A', bg: '#ECFDF3' },
+              done: { label: 'Terminé', color: '#2563EB', bg: '#EEF2FF' },
+            };
+
+            return (
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
+                <div style={{ padding: '18px 20px 8px', borderBottom: '1px solid #F1F3F5' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 11, background: '#FFF4EC', display: 'grid', placeItems: 'center', fontSize: 18 }}>👷</div>
+                    <div>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & sous-traitants</p>
+                      <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Assigne les bons intervenants à chaque métier actif du projet.</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-24 h-1.5 bg-gray-100 rounded-full flex-shrink-0">
-                        <div className="h-full rounded-full bg-brand" style={{width:`${ph.progress_pct||0}%`}}/>
+                  </div>
+                </div>
+
+                <div>
+                  {rowNames.map((tradeName, idx) => {
+                    const tradeRow = tradesFromProject.find((trade) => trade.trade?.toLowerCase() === tradeName.toLowerCase()) || null;
+                    const tradePhases = phases.filter((ph) => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
+                    const assignedSub = tradeRow ? subs.find((sub) => sub.id === tradeRow.chosen_subcontractor_id) : null;
+                    const status = statusMeta[tradeRow?.status || 'to_find'] || statusMeta.to_find;
+                    const suggestedSubs = subs.filter((sub) => {
+                      const haystack = [
+                        sub.name,
+                        sub.company_name,
+                        sub.specialty,
+                        ...(sub.trades || []),
+                      ].filter(Boolean).join(' ').toLowerCase();
+                      const needle = tradeName.toLowerCase();
+                      return haystack.includes(needle);
+                    });
+
+                    const ensureTradeRow = async () => {
+                      if (tradeRow) return tradeRow;
+                      const { data } = await projectsApi.addTrade(id, {
+                        trade: tradeName,
+                        status: 'to_find',
+                        chosen_subcontractor_id: null,
+                        estimated_cost: null,
+                      });
+                      setProject((p) => ({ ...p, trades: [...(p.trades || []), data] }));
+                      return data;
+                    };
+
+                    return (
+                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(180px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                            {tradePhases.length ? tradePhases.map((phase) => (
+                              <span key={phase.id} onClick={() => setEditPhase(phase)}
+                                style={{ fontSize: 10.5, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '3px 8px', cursor: 'pointer' }}>
+                                {phase.name}
+                              </span>
+                            )) : (
+                              <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                          {assignedSub ? (
+                            <div>
+                              <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{assignedSub.name}</p>
+                              <p style={{ fontSize: 11.5, color: '#8F95A0', margin: '2px 0 0' }}>{assignedSub.company_name || 'Sous-traitant assigné'}</p>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                                {assignedSub.phone && <a href={`tel:${assignedSub.phone}`} style={{ fontSize: 11.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.phone}</a>}
+                                {assignedSub.email && <a href={`mailto:${assignedSub.email}`} style={{ fontSize: 11.5, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.email}</a>}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Aucun sous-traitant assigné</p>
+                              <p style={{ fontSize: 11.5, color: '#A0A6AF', margin: '2px 0 0' }}>Choisis un contact existant ou laisse Flo te suggérer des pistes.</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <select
+                            value={tradeRow?.chosen_subcontractor_id || ''}
+                            onChange={async (e) => {
+                              const row = await ensureTradeRow();
+                              await patchTrade(row.id, { chosen_subcontractor_id: e.target.value || null, status: e.target.value ? 'contacted' : row.status });
+                            }}
+                            style={{ width: '100%', fontSize: 12, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '7px 10px', background: '#fff', color: '#3A3D44' }}>
+                            <option value="">Assigner un sous-traitant</option>
+                            {suggestedSubs.map((sub) => (
+                              <option key={sub.id} value={sub.id}>{sub.name}{sub.company_name ? ` — ${sub.company_name}` : ''}</option>
+                            ))}
+                          </select>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => scrollToSection('s-media')}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #E0E4E8', background: '#fff', fontSize: 11.5, fontWeight: 700, color: '#7C8089', cursor: 'pointer' }}>
+                              Médias
+                            </button>
+                            <button onClick={fetchTradeRecos}
+                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #F3D3C2', background: '#FFF7F3', fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: 'pointer' }}>
+                              Suggestions Flo
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ justifySelf: 'end' }}>
+                          <select
+                            value={tradeRow?.status || 'to_find'}
+                            onChange={async (e) => {
+                              const row = await ensureTradeRow();
+                              await patchTrade(row.id, { status: e.target.value });
+                            }}
+                            style={{ fontSize: 11.5, fontWeight: 700, padding: '7px 10px', borderRadius: 999, border: `1px solid ${status.color}33`, background: status.bg, color: status.color, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer' }}>
+                            {Object.entries(statusMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <span className="text-sm font-bold text-brand w-8 text-right">{ph.progress_pct||0}%</span>
-                      <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" onClick={()=>setEditPhase(ph)}><Pencil size={12}/></button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Florence recommande des sous-traitants ── */}
+          {(() => {
+            const missing = (project.trades || []).filter(t => !t.chosen_subcontractor_id);
+            if (!missing.length && !tradeRecos) return null;
+            const dbMatches = missing.map(t => ({
+              trade: t,
+              matches: subs.filter(s =>
+                (s.trades || []).some(st => st.toLowerCase().includes(t.trade.toLowerCase()) || t.trade.toLowerCase().includes(st.toLowerCase())) ||
+                (s.name || '').toLowerCase().includes(t.trade.toLowerCase()) ||
+                (s.specialty || '').toLowerCase().includes(t.trade.toLowerCase())
+              )
+            })).filter(x => x.matches.length > 0);
+
+            return (
+              <div style={{ marginTop: 14, background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '16px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <Sparkles size={14} color={BRAND}/>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Flo recommande des sous-traitants</p>
+                  <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
+                    style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 8, border: `1.5px solid ${BRAND}`, background: `${BRAND}10`, fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {loadingTradeRecos ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                    {loadingTradeRecos ? 'Recherche…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
+                  </button>
+                </div>
+                {dbMatches.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Dans ta base de données</p>
+                    {dbMatches.map(({ trade, matches }) => (
+                      <div key={trade.id} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', flexShrink: 0 }}>{trade.trade} :</span>
+                        {matches.map(s => (
+                          <button key={s.id} onClick={() => patchTrade(trade.id, { chosen_subcontractor_id: s.id, status: 'contacted' })}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 8, background: '#F4F5F6', border: '1.5px solid #E8EAED', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                            <UserPlus size={10} color={BRAND}/> {s.name}
+                            {s.phone && <span style={{ fontSize: 11, color: '#9CA3AF' }}>· {s.phone}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {tradeRecos && Object.keys(tradeRecos).length > 0 && (
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Suggestions Flo</p>
+                    {Object.entries(tradeRecos).map(([tradeName, recos]) => (
+                      <div key={tradeName} style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{tradeName}</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {(recos || []).map((r, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderRadius: 8, background: `${BRAND}08`, border: `1px solid ${BRAND}20` }}>
+                              <Sparkles size={11} color={BRAND} style={{ flexShrink: 0 }}/>
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', flex: 1 }}>{r.name}</span>
+                              {r.note && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{r.note}</span>}
+                              {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', flexShrink: 0 }}>{r.phone}</a>}
+                              {r.website && <a href={r.website.startsWith('http') ? r.website : `https://${r.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BRAND, textDecoration: 'none', flexShrink: 0 }}>Site →</a>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {tradeRecos && Object.keys(tradeRecos).length === 0 && !loadingTradeRecos && (
+                  <p style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Flo n'a pas trouvé de suggestions pour les corps de métier actifs.</p>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* ── Médias chantier ── (cream) */}
+        {/* ── Fil du chantier ── */}
+        <div id="s-feed" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📰</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Fil du chantier</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Activités récentes — statuts, heures, médias, alertes</div>
+            </div>
+          </div>
+          {(() => {
+            const feedItems = [
+              ...(timesheets.slice(0, 5).map(ts => ({
+                type: 'heures', icon: '⏱', color: '#E8794E', bg: '#FFF1EB',
+                title: `${ts.worker_name || 'Employé'} — ${ts.hours ? `${ts.hours}h punchées` : 'punch'}`,
+                sub: ts.note || '',
+                date: ts.date || ts.created_at,
+              }))),
+              ...(media.slice(0, 3).map(m => ({
+                type: 'media', icon: m.type === 'photo' ? '📷' : m.type === 'voice' ? '🎙' : '📌', color: '#4f46e5', bg: '#EEF1FD',
+                title: `${m.author_name || 'Photo'} — ${m.type === 'photo' ? 'photo ajoutée' : m.type === 'voice' ? 'mémo vocal' : 'note de chantier'}`,
+                sub: m.caption || m.transcript || '',
+                date: m.created_at,
+              }))),
+              ...(changeOrdersList.filter(co => co.status === 'pending_approval').map(co => ({
+                type: 'alerte', icon: '⚠', color: '#d97706', bg: '#FFFBEB',
+                title: `Avenant en attente : ${co.title}`,
+                sub: `${co.amount ? money(co.amount) + ' $' : ''}`,
+                date: co.created_at,
+              }))),
+            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+
+            if (!feedItems.length) return (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', fontSize: 13 }}>
+                Aucune activité enregistrée. Les punchs, photos et alertes apparaîtront ici.
+              </div>
+            );
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {feedItems.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: '#FAFAFA', borderRadius: 10, border: '1px solid #F0F2F4' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>{item.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{item.title}</p>
+                      {item.sub && <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sub}</p>}
                     </div>
+                    <span style={{ fontSize: 11, color: '#C8CACD', flexShrink: 0, alignSelf: 'center' }}>
+                      {item.date ? new Date(item.date).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : ''}
+                    </span>
                   </div>
                 ))}
               </div>
-            </>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-sm text-gray-400 mb-3">Aucune phase définie. Ajoutez des phases pour activer le Gantt.</p>
-              <button className="btn-primary text-xs" onClick={()=>setShowPhase(true)}><Plus size={13}/> Ajouter une phase</button>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
-        {/* Notes */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <StickyNote size={15} className="text-brand" />
-            <h2 className="font-semibold text-gray-900 text-sm">Notes de chantier</h2>
-            {notesSaving && <span className="text-xs text-gray-400 ml-auto">Enregistrement…</span>}
-          </div>
-          <textarea
-            className="input resize-none"
-            style={{ minHeight: 96 }}
-            placeholder="Ajoutez des notes, remarques ou observations sur ce projet…"
-            value={notes}
-            onChange={e => handleNotesChange(e.target.value)}
-          />
-        </div>
-
-        {aiNotice && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
-            <p className="text-xs text-amber-700">{aiNotice}</p>
-            <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
-          </div>
-        )}
-
-        {/* ── Médias chantier (IA) ──────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Camera size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Médias chantier</h2>
-              {media.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{media.length}</span>}
+        <div id="s-media" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Photos & Médias</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Photos, notes et mémos — L'IA détecte non-conformités (RBQ) et risques CNESST</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
+            <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
           </div>
-          <p className="text-xs text-gray-400 mb-3">Photos, notes et mémos vocaux. L'IA détecte les non-conformités (RBQ) et risques de sécurité (CNESST).</p>
+
+          {/* Notes de chantier inline */}
+          <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E8EAED' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <StickyNote size={14} style={{ color: BRAND }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44' }}>Notes de chantier</span>
+              {notesSaving && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 'auto' }}>Enregistrement…</span>}
+            </div>
+            <textarea
+              className="input resize-none"
+              style={{ minHeight: 80 }}
+              placeholder="Ajoutez des notes, remarques ou observations…"
+              value={notes}
+              onChange={e => handleNotesChange(e.target.value)}
+            />
+          </div>
 
           {showMediaForm && (
             <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
@@ -1348,16 +4101,36 @@ export default function ProjectDetail() {
           )}
 
           {media.length > 0 ? (
-            <div className="space-y-2">
+            <>
+              {/* Galerie horizontale */}
+              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
+                {media.map(m => (
+                  <div key={`gal-${m.id}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer' }}
+                    onClick={() => setLightboxItem(m)}>
+                    {m.type === 'photo' && m.url
+                      ? <img src={m.url} alt={m.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}/>
+                      : <div style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 28 }}>{m.type === 'voice' ? '🎙' : '📌'}</div>
+                    }
+                    <div style={{ padding: '8px 10px' }}>
+                      <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>{new Date(m.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}</p>
+                      <p style={{ fontSize: 12, color: '#15171C', margin: '2px 0 0', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{m.caption || m.transcript || '—'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Détails / analyse IA */}
+              <div className="space-y-2">
               {media.map(m => {
                 const a = m.ai_analysis;
                 const issues = (a?.non_conformities?.length || 0) + (a?.safety_risks?.length || 0);
                 return (
                   <div key={m.id} className="border border-gray-100 rounded-xl p-3">
                     <div className="flex items-start gap-3">
-                      {m.type === 'photo' && m.url
-                        ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>
-                        : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                      <div className="flex-shrink-0 cursor-pointer" onClick={() => setLightboxItem(m)}>
+                        {m.type === 'photo' && m.url
+                          ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover border border-gray-100"/>
+                          : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="badge badge-gray text-[10px] capitalize">{m.type}</span>
@@ -1405,7 +4178,8 @@ export default function ProjectDetail() {
                   </div>
                 );
               })}
-            </div>
+              </div>
+            </>
           ) : !showMediaForm && (
             <div className="text-center py-5">
               <Camera size={26} className="text-gray-200 mx-auto mb-2"/>
@@ -1414,71 +4188,16 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Corps de métiers */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <HardHat size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Corps de métiers</h2>
-              {project.trades?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.trades.length}</span>}
-            </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowTradeForm(v => !v)}><Plus size={13} /> Ajouter</button>
-          </div>
 
-          {showTradeForm && (
-            <form onSubmit={addTrade} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
-              <div className="sm:col-span-1"><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
-              <div><label className="label">Coût estimé ($)</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
-              <div className="flex gap-2">
-                <select className="input flex-1" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
-                  <option value="">Sous-traitant…</option>
-                  {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                </select>
-                <button type="submit" className="btn-primary text-xs px-3">OK</button>
-              </div>
-            </form>
-          )}
-
-          {project.trades?.length > 0 ? (
-            <div className="space-y-2">
-              {project.trades.map(t => (
-                <div key={t.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0">
-                  <span className="text-sm font-medium text-gray-800 flex-1 min-w-[120px]">{t.trade}</span>
-                  <select
-                    className="input py-1 text-xs" style={{ width: 130 }}
-                    value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}
-                  >
-                    {Object.entries(TRADE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                  <select
-                    className="input py-1 text-xs" style={{ width: 170 }}
-                    value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}
-                  >
-                    <option value="">— Sous-traitant choisi —</option>
-                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                  </select>
-                  <span className="text-xs text-gray-500 w-20 text-right">{t.estimated_cost != null ? money(t.estimated_cost) : '—'}</span>
-                  <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={13} /></button>
-                </div>
-              ))}
+        {/* ── Dépenses ── (violet) */}
+        <div id="s-expenses" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💸</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Dépenses & factures fournisseurs</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
             </div>
-          ) : !showTradeForm && (
-            <div className="text-center py-5">
-              <HardHat size={26} className="text-gray-200 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Déclarez les corps de métiers requis et assignez le sous-traitant choisi pour chacun.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Dépenses réelles */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign size={15} className="text-brand" />
-              <h2 className="font-semibold text-gray-900 text-sm">Dépenses & factures fournisseurs</h2>
-              {project.expenses?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.expenses.length}</span>}
-            </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
+            <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
           {showExpenseForm && (
@@ -1511,12 +4230,14 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── Feuilles de temps ─────────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock size={15} className="text-brand"/>
-            <h2 className="font-semibold text-gray-900 text-sm">Feuilles de temps</h2>
-            {timesheets.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{timesheets.length}</span>}
+        {/* ── Feuilles de temps ── (mint) */}
+        <div id="s-punch" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⏱️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps{timesheets.length > 0 ? ` · ${timesheets.length} entrée(s) · ${activeTs.length} en cours` : ''}</div>
+            </div>
           </div>
           {timesheets.length > 0 ? (
             <>
@@ -1592,21 +4313,21 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── Commandes matériaux ───────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Package size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Commandes matériaux</h2>
-              {materialOrders.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{materialOrders.length}</span>}
+        {/* ── Commandes ── (cream) */}
+        <div id="s-orders" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📦</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Commandes matériaux</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Approvisionnements et suivi de livraison{materialOrders.length > 0 ? ` · ${materialOrders.length} commande(s)` : ''}</div>
             </div>
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: 8 }}>
               {materialOrders.length > 0 && (
-                <button className="btn-ghost text-xs py-1.5 text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
+                <button className="btn-ghost text-xs text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
                   {groupingPurchases ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>} Regrouper (IA)
                 </button>
               )}
-              <button className="btn-secondary text-xs py-1.5" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
+              <button className="btn-secondary text-xs" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
             </div>
           </div>
 
@@ -1685,38 +4406,19 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* ── QR Punch ─────────────────────────────────────────────────────── */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch QR</h2></div>
-            <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
-              {genQr ? <Loader2 size={13} className="animate-spin"/> : <QrCode size={13}/>} Générer QR
-            </button>
-          </div>
-          {qrData ? (
-            <div className="flex items-start gap-4">
-              <img src={qrData.qr_image} alt="QR" className="w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0"/>
-              <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">Affichez ce QR à l'entrée du chantier</p>
-                <p className="text-xs text-gray-400 mb-2">Les travailleurs scannent avec leur téléphone pour pointer entrée/sortie.</p>
-                <button className="btn-primary text-xs py-1.5" onClick={printQR}><QrCode size={13}/> Imprimer le QR</button>
-              </div>
+        {/* ── Soumission détaillée ── (white) */}
+        <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis précis</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Soumission détaillée par poste · génération du contrat</div>
             </div>
-          ) : (
-            <p className="text-sm text-gray-400 text-center py-4">Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier.</p>
-          )}
-        </div>
-
-        {/* Quote Builder */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileText size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Soumission détaillée</h2>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
               {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
+              {quoteSaving && <span style={{ fontSize: 11, color: '#7C8089', display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }}/> Enreg…</span>}
             </div>
-            {quoteSaving && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin"/> Enreg…</span>}
           </div>
 
           {/* Line items by type */}
@@ -1817,15 +4519,15 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* RFQs — demandes de prix aux sous-traitants */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Users size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">{t('rfqs')} ({t('subcontractors').toLowerCase()})</h2>
-              {projectRfqs.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectRfqs.length}</span>}
+        {/* ── RFQs / Sous-traitants ── (violet) */}
+        <div id="s-rfqs" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de prix</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>RFQ aux sous-traitants{projectRfqs.length > 0 ? ` · ${projectRfqs.length} demande(s)` : ''}</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={() => setShowRfqForm(v => !v)}>
+            <button className="btn-secondary text-xs" onClick={() => setShowRfqForm(v => !v)}>
               <Plus size={13}/> {t('create_rfq')}
             </button>
           </div>
@@ -1909,20 +4611,21 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Contrats */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileSignature size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Contrat</h2>
-              {projectContracts.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{projectContracts.length}</span>}
+        {/* ── Contrats ── (white) */}
+        <div id="s-contracts" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✍️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Contrats</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Signature électronique et suivi des contrats signés</div>
             </div>
             {quoteBuilderQuote && projectContracts.length === 0 && (
-              <button className="btn-secondary text-xs py-1.5" onClick={generateContract} disabled={generatingContract}>
+              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
                 {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                Générer depuis la soumission
+                Générer
               </button>
             )}
+            {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
           </div>
 
           {projectContracts.length === 0 ? (
@@ -1988,15 +4691,16 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Factures liées */}
+        {/* ── Factures ── (mint) */}
         {projectInvoices.length > 0 && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Receipt size={15} className="text-brand" />
-                <h2 className="font-semibold text-gray-900 text-sm">Factures ({projectInvoices.length})</h2>
+          <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures liées à ce projet · {projectInvoices.length} facture(s)</div>
               </div>
-              <button className="btn-ghost text-xs py-1 px-2" onClick={() => navigate('/factures')}>Voir tout</button>
+              <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
             </div>
             <div className="space-y-2">
               {projectInvoices.map(inv => {
@@ -2018,15 +4722,16 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Soumissions liées */}
+        {/* ── Soumissions liées ── (blue) */}
         {projectQuotes.length > 0 && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FileText size={15} className="text-brand" />
-                <h2 className="font-semibold text-gray-900 text-sm">{t('quotes')} & {t('change_orders')} ({projectQuotes.length})</h2>
+          <div id="s-quotes" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📋</div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Soumissions & Avenants</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>{projectQuotes.length} soumission(s) liée(s) à ce projet</div>
               </div>
-              <button className="btn-secondary text-xs py-1 px-2" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
+              <button className="btn-secondary text-xs" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
             </div>
             {(() => {
               const QSB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
@@ -2049,12 +4754,14 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Documents */}
-        <div className="card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <FolderOpen size={15} className="text-brand" />
-            <h2 className="font-semibold text-gray-900 text-sm">Documents</h2>
-            {project.documents?.length > 0 && <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{project.documents.length}</span>}
+        {/* ── Documents ── (white) */}
+        <div id="s-documents" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📁</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Documents</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Plans, permis et fichiers du projet{project.documents?.length > 0 ? ` · ${project.documents.length}` : ''}</div>
+            </div>
           </div>
           {project.documents?.length > 0 ? (
             <div className="space-y-2">
@@ -2076,13 +4783,13 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Quittance */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Shield size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Quittance finale</h2>
-              <span className="text-xs text-gray-400">— Certificat de satisfaction client (Québec)</span>
+        {/* ── Quittance ── (mint) */}
+        <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✅</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Quittances</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Certificat de satisfaction client · clôture du projet (Québec)</div>
             </div>
           </div>
 
@@ -2169,13 +4876,15 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {/* Client Portal */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <Globe size={15} className="text-brand"/>
-            <h2 className="font-semibold text-gray-900 text-sm">Portail client</h2>
+        {/* ── Portail client ── (violet) */}
+        <div id="s-portal" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🌐</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Portails d'accès</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Liens sécurisés — client et fournisseurs</div>
+            </div>
           </div>
-          <p className="text-xs text-gray-400 mb-4">Partagez ce lien avec votre client pour qu'il suive l'avancement du chantier en temps réel.</p>
 
           {project.portal_token ? (
             <div className="space-y-3">
@@ -2223,23 +4932,62 @@ export default function ProjectDetail() {
               <p className="text-sm text-gray-400 mb-4">Le lien portail sera disponible au prochain rechargement (migration DB en cours).</p>
             </div>
           )}
+
+          {/* Portail fournisseur */}
+          <div style={{ marginTop: 20, padding: 16, background: '#F4F6F8', borderRadius: 12, border: '1px solid #E8EAED' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#E7EFF4', display: 'grid', placeItems: 'center', fontSize: 18 }}>🏢</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>Portail fournisseur</p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>Demandes de prix, commandes, documents techniques — bientôt disponible</p>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#3A3D44' }}>Bientôt</span>
+            </div>
+          </div>
         </div>
 
-        {/* Change Orders */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileEdit size={15} className="text-brand"/>
-              <h2 className="font-semibold text-gray-900 text-sm">Demandes de modification</h2>
-              {changeOrdersList.length > 0 && (
-                <span className="bg-gray-100 text-gray-500 text-xs rounded-full px-1.5 py-0.5">{changeOrdersList.length}</span>
-              )}
+        {/* ── Plans & rendus ── (stub) */}
+        <div id="s-plans" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>🏛</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Plans & rendus d'architecte</h2>
+              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>PDF, DWG, extraction IA des surfaces — B8</div>
             </div>
-            <button className="btn-secondary text-xs py-1.5" onClick={()=>setShowCOForm(v=>!v)}>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B8</span>
+          </div>
+          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
+            Upload de plans (PDF/DWG), prévisualisation, extraction IA des dimensions et surfaces pour préremplir l'estimation, rendu visuel IA, intégration BIM.
+          </div>
+        </div>
+
+        {/* ── Courriels & communications ── (stub) */}
+        <div id="s-comms" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>✉</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Courriels & communications</h2>
+              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>Gmail · WhatsApp · SMS liés au projet — B9</div>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B9</span>
+          </div>
+          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
+            Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
+          </div>
+        </div>
+
+        {/* ── Avenants (Change Orders) ── (cream) */}
+        <div id="s-co" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📝</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Avenants</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Demandes de modification{changeOrdersList.length > 0 ? ` · ${changeOrdersList.length}` : ''}</div>
+            </div>
+            <button className="btn-secondary text-xs" onClick={()=>setShowCOForm(v=>!v)}>
               <Plus size={13}/> Nouvelle
             </button>
           </div>
-
           {showCOForm && (
             <form onSubmit={createChangeOrder} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
               <div><label className="label">Titre *</label><input className="input" value={coForm.title} onChange={e=>setCoForm(f=>({...f,title:e.target.value}))} required placeholder="Ex: Ajout d'une salle de bain"/></div>
@@ -2376,48 +5124,26 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* QR Punch */}
-        <div className="card mt-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2"><QrCode size={15} className="text-brand"/><h2 className="font-semibold text-gray-900 text-sm">Punch</h2></div>
-            {!qrData && (
-              <button className="btn-secondary text-xs py-1.5" onClick={generateQR} disabled={genQr}>
-                {genQr?<Loader2 size={13} className="animate-spin"/>:<Plus size={13}/>} Générer QR
-              </button>
-            )}
-          </div>
-
-          {qrData ? (
-            <div className="flex items-start gap-4">
-              <img src={qrData.qr_image} alt="QR" className="w-28 h-28 border border-gray-200 rounded-xl flex-shrink-0"/>
-              <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">Affichez ce QR à l'entrée du chantier</p>
-                <p className="text-xs text-gray-400 mb-3">Les travailleurs scannent pour pointer entrée et sortie.</p>
-                <button className="btn-primary text-xs py-1.5" onClick={printQR}><QrCode size={13}/> Imprimer le QR</button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400">Générez un QR unique pour que les travailleurs puissent pointer sur ce chantier.</p>
-          )}
-
-          {timesheets.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">Punchs récents</p>
-              <div className="space-y-1.5">
-                {timesheets.slice(0,5).map(ts=>(
-                  <div key={ts.id} className="flex items-center gap-3 text-xs text-gray-600">
-                    <CheckCircle size={12} className={ts.clock_out?'text-gray-300':'text-green-500'}/>
-                    <span className="font-medium">{ts.user_name||ts.sub_name||ts.worker_name||'Inconnu'}</span>
-                    <span className="text-gray-400">{ts.clock_in&&new Date(ts.clock_in).toLocaleString('fr-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-                    {ts.hours_total&&<span className="ml-auto font-medium text-gray-700">{ts.hours_total}h</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
       </div>
+      {/* ── Popup changement statut pipeline ── */}
+      {statusPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setStatusPopup(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: BRAND_SOFT, display: 'grid', placeItems: 'center', fontSize: 22, marginBottom: 16 }}>🔄</div>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#15171C', margin: '0 0 8px' }}>Changer le statut ?</h3>
+            <p style={{ fontSize: 14, color: '#7C8089', margin: '0 0 20px' }}>
+              Passer de <b>{PIPELINE_LABELS[project.status] || project.status}</b> à <b style={{ color: BRAND }}>{statusPopup.label}</b> ?
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-secondary flex-1" onClick={() => setStatusPopup(null)}>Annuler</button>
+              <button className="btn-primary flex-1" onClick={changeProjectStatus} disabled={changingStatus}>
+                {changingStatus ? <Loader2 size={14} className="animate-spin"/> : null} Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
       {showInfo && (
         <InfoModal
