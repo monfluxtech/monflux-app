@@ -371,6 +371,10 @@ async function applyMigrations() {
   await run('projects: created_from_project',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_from_project UUID REFERENCES projects(id) ON DELETE SET NULL`);
 
+  // ── Phases: corps de métier assigné (Gantt) ─────────────────────────────────
+  await run('project_phases: trade_name',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS trade_name TEXT`);
+
   // ── v3 pipeline stages — add to project_status enum ─────────────────────────
   for (const val of ['brouillon','estimation','prix_envoye','accepte','planifie','en_chantier','a_facturer','paye','clos']) {
     await run(`project_status: ${val}`,

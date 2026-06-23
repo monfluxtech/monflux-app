@@ -467,6 +467,100 @@ const PHASE_TEMPLATES = [
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
+// Séquences de phases réalistes par type de projet (Québec).
+// Clé = valeur de WORK_TYPE_OPTIONS. trade_name = corps de métier assigné (null = coordination interne).
+const PHASE_TEMPLATES_BY_TYPE = {
+  'Cuisine': [
+    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 5 },
+    { name: 'Démolition cuisine',                 trade_name: 'Démolition',        durationDays: 2 },
+    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
+    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 2 },
+    { name: 'Gypse & finition murs',              trade_name: 'Gypse',             durationDays: 4 },
+    { name: 'Pose des armoires',                  trade_name: 'Armoires / cuisines', durationDays: 4 },
+    { name: 'Comptoir & dosseret',                trade_name: 'Comptoir',          durationDays: 2 },
+    { name: 'Revêtement de sol',                  trade_name: 'Planchers',         durationDays: 2 },
+    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 2 },
+    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 2 },
+    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
+  ],
+  'Salle de bain': [
+    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 4 },
+    { name: 'Démolition salle de bain',           trade_name: 'Démolition',        durationDays: 1 },
+    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
+    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 1 },
+    { name: 'Gypse & membrane hydrofuge',         trade_name: 'Gypse',             durationDays: 2 },
+    { name: 'Céramique murs & plancher',          trade_name: 'Céramique',         durationDays: 3 },
+    { name: 'Douche / bain',                      trade_name: 'Plomberie',         durationDays: 1 },
+    { name: 'Vanité, miroir & accessoires',       trade_name: 'Armoires / cuisines', durationDays: 1 },
+    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 1 },
+    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 1 },
+    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
+  ],
+  'Sous-sol': [
+    { name: 'Planification & permis',             trade_name: null,                durationDays: 5 },
+    { name: 'Ossature / cloisons',                trade_name: 'Charpenterie',      durationDays: 4 },
+    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 2 },
+    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 2 },
+    { name: 'Isolation périmètre',                trade_name: 'Isolation',         durationDays: 2 },
+    { name: 'Gypse — pose, mastic, sablage',      trade_name: 'Gypse',             durationDays: 5 },
+    { name: 'Revêtement de sol',                  trade_name: 'Planchers',         durationDays: 2 },
+    { name: 'Peinture',                           trade_name: 'Peinture intérieure', durationDays: 2 },
+    { name: 'Finition électricité & luminaires',  trade_name: 'Électricité',       durationDays: 1 },
+    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 1 },
+  ],
+  'Rénovation complète': [
+    { name: 'Planification & permis',             trade_name: null,                durationDays: 7 },
+    { name: 'Démolition sélective',               trade_name: 'Démolition',        durationDays: 3 },
+    { name: 'Structure & charpenterie',           trade_name: 'Charpenterie',      durationDays: 7 },
+    { name: 'Plomberie — rough-in',               trade_name: 'Plomberie',         durationDays: 4 },
+    { name: 'Électricité — rough-in',             trade_name: 'Électricité',       durationDays: 4 },
+    { name: 'CVC',                                trade_name: 'CVC',               durationDays: 3 },
+    { name: 'Isolation',                          trade_name: 'Isolation',         durationDays: 3 },
+    { name: 'Gypse & finition',                   trade_name: 'Gypse',             durationDays: 8 },
+    { name: 'Revêtements de sol',                 trade_name: 'Planchers',         durationDays: 4 },
+    { name: 'Cuisine (armoires + comptoir)',      trade_name: 'Armoires / cuisines', durationDays: 5 },
+    { name: 'Peinture complète',                  trade_name: 'Peinture intérieure', durationDays: 5 },
+    { name: 'Finition plomberie & électricité',   trade_name: 'Plomberie',         durationDays: 3 },
+    { name: 'Nettoyage & livraison',              trade_name: null,                durationDays: 2 },
+  ],
+  'Toiture': [
+    { name: 'Planification & commande matériaux', trade_name: null,                durationDays: 3 },
+    { name: 'Dépose ancienne couverture',         trade_name: 'Toiture',           durationDays: 1 },
+    { name: 'Réparation pontage / OSB',           trade_name: 'Charpenterie',      durationDays: 1 },
+    { name: 'Membrane sous-toiture',              trade_name: 'Toiture',           durationDays: 1 },
+    { name: 'Pose couverture',                    trade_name: 'Toiture',           durationDays: 2 },
+    { name: 'Solins & ventilation',               trade_name: 'Toiture',           durationDays: 1 },
+    { name: 'Gouttières',                         trade_name: 'Toiture',           durationDays: 1 },
+    { name: 'Nettoyage & inspection finale',      trade_name: null,                durationDays: 1 },
+  ],
+};
+
+// Corps de métier → durée par défaut (jours), pour les types sans template dédié.
+const TRADE_DEFAULT_DURATION = {
+  'Démolition': 2, 'Excavation': 3, 'Charpenterie': 5, 'Structure': 7,
+  'Plomberie': 4, 'Électricité': 4, 'CVC': 3, 'Isolation': 3, 'Gypse': 5,
+  'Céramique': 3, 'Armoires / cuisines': 4, 'Comptoir': 2, 'Planchers': 3,
+  'Peinture intérieure': 3, 'Toiture': 3, 'Maçonnerie / béton': 5,
+};
+
+// Construit la séquence de phases pour un type de projet donné.
+// Fallback : si pas de template dédié, dérive les phases des corps de métier sélectionnés,
+// sinon utilise la liste générique PHASE_TEMPLATES.
+function phaseTemplatesForType(workType, selectedTrades = []) {
+  if (workType && PHASE_TEMPLATES_BY_TYPE[workType]) {
+    return PHASE_TEMPLATES_BY_TYPE[workType];
+  }
+  const trades = [...new Set((selectedTrades || []).filter(Boolean))];
+  if (trades.length) {
+    return [
+      { name: 'Planification & préparation', trade_name: null, durationDays: 3 },
+      ...trades.map(t => ({ name: t, trade_name: t, durationDays: TRADE_DEFAULT_DURATION[t] || 5 })),
+      { name: 'Nettoyage & livraison', trade_name: null, durationDays: 1 },
+    ];
+  }
+  return PHASE_TEMPLATES;
+}
+
 function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePhase, onDeletePhase, onEditPhase }) {
   const [editingTrade, setEditingTrade] = useState(null);
   const [tradeVal, setTradeVal] = useState('');
@@ -1511,6 +1605,95 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       alert("Impossible de générer les phases avec Florence pour l'instant.");
     } finally { setGeneratingPhases(false); }
   };
+
+  // ── Génération automatique des phases à partir du TYPE de projet (sans IA) ──
+  // Déterministe, instantané, aucun appel réseau IA. Déclenché quand le type
+  // de travaux est connu et que l'estimation approximative est entamée.
+  const autoGenPhasesRef = useRef(false);
+
+  const generatePhasesFromType = async () => {
+    if (autoGenPhasesRef.current) return;
+    autoGenPhasesRef.current = true;
+    setGeneratingPhases(true);
+    const fa = project.field_assessment || {};
+    const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+    const selectedTrades = [
+      ...(fa.selected_trades || []),
+      ...(project.trades || []).map(t => t.trade).filter(Boolean),
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    try {
+      const templates = phaseTemplatesForType(workType, selectedTrades);
+      let cursor = project.start_date ? new Date(project.start_date) : new Date();
+
+      const createdPhases = [];
+      for (let i = 0; i < templates.length; i++) {
+        const tpl = templates[i];
+        const startDate = new Date(cursor);
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + Math.max(1, tpl.durationDays) - 1);
+        const { data: created } = await projectsApi.addPhase(id, {
+          name: tpl.name,
+          trade_name: tpl.trade_name || '',
+          color: PHASE_COLORS[i % PHASE_COLORS.length],
+          progress_pct: 0,
+          status: 'not_started',
+          start_date: startDate.toISOString().slice(0, 10),
+          end_date: endDate.toISOString().slice(0, 10),
+          display_order: i,
+        });
+        createdPhases.push(created);
+        cursor = new Date(endDate);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      await ensureProjectTradesExist(createdPhases.map(ph => ph.trade_name));
+
+      // Persiste un drapeau pour ne pas regénérer (ex: si l'utilisateur supprime des phases).
+      const nextFa = { ...fa, phases_autogenerated: true };
+      try {
+        await projectsApi.update(id, { field_assessment: nextFa });
+      } catch {}
+      setProject(p => ({ ...p, phases: createdPhases, field_assessment: nextFa }));
+    } catch (err) {
+      console.error('generatePhasesFromType', err);
+      autoGenPhasesRef.current = false; // permettre une nouvelle tentative
+    } finally { setGeneratingPhases(false); }
+  };
+
+  // Régénération manuelle depuis le type : efface les phases existantes puis recrée.
+  const regeneratePhasesFromType = async () => {
+    if (generatingPhases) return;
+    if ((project.phases || []).length > 0 &&
+        !confirm('Régénérer les phases à partir du type de projet ? Les phases actuelles seront remplacées.')) return;
+    setGeneratingPhases(true);
+    try {
+      for (const ph of (project.phases || [])) {
+        try { await projectsApi.deletePhase(id, ph.id); } catch {}
+      }
+      setProject(p => ({ ...p, phases: [] }));
+    } finally { setGeneratingPhases(false); }
+    autoGenPhasesRef.current = false;
+    await generatePhasesFromType();
+  };
+
+  // Auto-affichage des phases dès que : type de travaux connu + estimation entamée + aucune phase.
+  useEffect(() => {
+    if (!project || autoGenPhasesRef.current) return;
+    const fa = project.field_assessment || {};
+    if (fa.phases_autogenerated) return;            // déjà généré une fois
+    if ((project.phases || []).length > 0) return;  // phases déjà présentes
+    const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+    if (!workType) return;                            // besoin du type de projet
+    const estimateStarted =
+      (fa.approx_lines || []).length > 0 ||
+      (fa.selected_trades || []).length > 0 ||
+      (project.trades || []).length > 0 ||
+      !!project.estimated_price;
+    if (!estimateStarted) return;                     // attendre la soumission approximative
+    generatePhasesFromType();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.field_assessment, project?.phases?.length, project?.trades?.length, project?.estimated_price]);
 
   const addTemplatePhase = async (tpl) => {
     setAddingTemplatePhase(tpl.name);
@@ -3430,23 +3613,61 @@ Règles :
           )}
 
           {/* ── Gantt chart ou empty state ── */}
-          {/* ── Barre Flo + templates — toujours visible ── */}
+          {/* ── Barre phases auto (type de projet) + Flo en option + templates ── */}
+          {(() => {
+            const fa = project.field_assessment || {};
+            const workType = fa.work_type || WORK_TYPE_LABELS[project.type] || '';
+            const estimateStarted =
+              (fa.approx_lines || []).length > 0 ||
+              (fa.selected_trades || []).length > 0 ||
+              (project.trades || []).length > 0 ||
+              !!project.estimated_price;
+            const hasPhases = project.phases?.length > 0;
+            const ready = workType && estimateStarted;
+
+            let title, subtitle;
+            if (hasPhases) {
+              title = 'Phases générées automatiquement';
+              subtitle = `D'après le type « ${workType || 'projet'} ». Modifie les dates ou corps de métier au besoin.`;
+            } else if (generatingPhases) {
+              title = 'Génération des phases…';
+              subtitle = 'Création du calendrier à partir du type de projet.';
+            } else if (!workType) {
+              title = 'En attente du type de projet';
+              subtitle = 'Choisis le type de travaux dans l\'estimation pour afficher les phases automatiquement.';
+            } else if (!estimateStarted) {
+              title = 'En attente de l\'estimation approximative';
+              subtitle = 'Complète une ligne de soumission ou un corps de métier — les phases s\'afficheront alors toutes seules.';
+            } else {
+              title = 'Phases prêtes à générer';
+              subtitle = `Type « ${workType} » détecté. Génère le calendrier des travaux.`;
+            }
+
+            return (
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '16px 20px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: project.phases?.length > 0 ? 14 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: hasPhases ? 14 : 0 }}>
               <div style={{ width: 32, height: 32, borderRadius: 9, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <Sparkles size={15} color="#fff"/>
+                {generatingPhases ? <Loader2 size={15} color="#fff" className="animate-spin"/> : <HardHat size={15} color="#fff"/>}
               </div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>
-                  {project.phases?.length > 0 ? 'Regénérer les phases avec Florence' : 'Générer les phases avec Florence'}
-                </p>
-                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>Flo analyse l'estimation et crée un plan de phases avec les dates et corps de métier.</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{title}</p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>{subtitle}</p>
               </div>
-              <button onClick={generatePhasesFromAI} disabled={generatingPhases}
-                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Regénérer' : 'Générer'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {(ready || hasPhases) && (
+                  <button onClick={regeneratePhasesFromType} disabled={generatingPhases}
+                    style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <HardHat size={12}/>}
+                    {hasPhases ? 'Régénérer du type' : 'Générer les phases'}
+                  </button>
+                )}
+                {hasPhases && (
+                  <button onClick={generatePhasesFromAI} disabled={generatingPhases} title="Laisser Florence affiner les phases selon le contexte précis du projet"
+                    style={{ padding: '8px 14px', borderRadius: 9, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: '#3A3D44', cursor: generatingPhases ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={12} color={BRAND}/> Affiner avec Flo
+                  </button>
+                )}
+              </div>
             </div>
             {/* Phases types — toujours affichées */}
             {(() => {
@@ -3469,6 +3690,8 @@ Règles :
               );
             })()}
           </div>
+            );
+          })()}
 
           {/* ── Gantt ── */}
           {project.phases?.length > 0 && (
