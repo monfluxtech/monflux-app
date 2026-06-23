@@ -476,12 +476,12 @@ const ASSIGNEE_STATUS = {
   done:      { label: 'Confirmé',               bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
 };
 
-function AssigneeChip({ trade, onSelfAssign }) {
-  const st = ASSIGNEE_STATUS[trade?.status] || ASSIGNEE_STATUS.to_find;
-  const name = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
-  const isUnassigned = !name && (!trade?.status || trade.status === 'to_find');
-  // When self-assigned, show confirmed style regardless of trade status
-  const displaySt = name && isUnassigned ? ASSIGNEE_STATUS.confirmed : st;
+function AssigneeChip({ trade, assignedToName, onSelfAssign }) {
+  // assignedToName (self-assign stored on phase) takes priority over trade subcontractor
+  const tradeName = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
+  const name = assignedToName || tradeName;
+  const st = assignedToName ? ASSIGNEE_STATUS.confirmed : (ASSIGNEE_STATUS[trade?.status] || ASSIGNEE_STATUS.to_find);
+  const isUnassigned = !name;
   const displayName = name || st.label;
   const tooltip = [
     name && `Assigné: ${name}`,
@@ -509,7 +509,7 @@ function AssigneeChip({ trade, onSelfAssign }) {
 
 const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
-const SCALE_COL_W    = { month:120, week:72, day:36, hour:32 };
+const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
 
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
   const [scale, setScale]         = useState('week');
@@ -544,13 +544,27 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // Fixed-width columns (this is what makes scale switching actually "zoom")
   const colW = SCALE_COL_W[scale] || 72;
   const columns = (() => {
+    if (scale === 'halfday') {
+      // AM (06h-12h) et PM (12h-20h) par jour — heures de travail uniquement, cap 60 jours
+      const cols = [];
+      const cur = new Date(refStart); cur.setHours(0,0,0,0);
+      const cap = new Date(cur); cap.setDate(cap.getDate() + 60);
+      const stop = refEnd < cap ? refEnd : cap;
+      while (cur <= stop && cols.length < 240) {
+        const y = cur.getFullYear(), m = cur.getMonth(), d = cur.getDate();
+        cols.push({ start: new Date(y,m,d,6),  end: new Date(y,m,d,11,59,59), label:'AM', showDate:true });
+        cols.push({ start: new Date(y,m,d,12), end: new Date(y,m,d,19,59,59), label:'PM', showDate:false });
+        cur.setDate(cur.getDate() + 1);
+      }
+      return cols;
+    }
     if (scale === 'hour') {
-      // Cap à 30 jours max en vue heure pour éviter trop de colonnes
+      // Cap à 7 jours max en vue heure pour éviter trop de colonnes
       const cols = [];
       const cur = new Date(refStart); cur.setMinutes(0,0,0);
-      const cap = new Date(cur); cap.setDate(cap.getDate() + 30);
+      const cap = new Date(cur); cap.setDate(cap.getDate() + 7);
       const stop = refEnd < cap ? refEnd : cap;
-      while (cur <= stop && cols.length < 720) {
+      while (cur <= stop && cols.length < 168) {
         cols.push({ start: new Date(cur), end: new Date(cur.getTime() + 3599999) });
         cur.setHours(cur.getHours() + 1);
       }
@@ -604,27 +618,35 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     return Math.ceil(((dt - new Date(dt.getFullYear(),0,1)) / 86400000 + 1) / 7);
   };
 
-  // Effective bar bounds (accounting for drag and resize previews)
+  // Effective bar bounds (accounting for duration_hours, drag and resize previews)
   const getBarBounds = (ph) => {
-    let sDate = ph.start_date, eDate = ph.end_date;
-    const pxPerDay = ganttW / totalDays;
-    if (barDrag?.phId === ph.id) {
-      const d = barDrag.delta || 0;
-      const ns = new Date(barDrag.origStart); ns.setDate(ns.getDate() + d);
-      const ne = new Date(barDrag.origEnd || barDrag.origStart); ne.setDate(ne.getDate() + d);
-      sDate = ns.toISOString(); eDate = ne.toISOString();
-    } else if (resize?.phId === ph.id) {
-      if (resize.side === 'left') {
-        const ns = new Date(resize.origStart); ns.setDate(ns.getDate() + (resize.delta||0));
-        sDate = ns.toISOString();
-      } else {
-        const ne = new Date(resize.origEnd || resize.origStart); ne.setDate(ne.getDate() + (resize.delta||0));
-        eDate = ne.toISOString();
-      }
+    const rawStart = ph.start_date?.slice(0,10);
+    const rawTime  = ph.start_time || '08:00';
+    let sMs = rawStart ? new Date(rawStart + 'T' + rawTime).getTime() : refStart.getTime();
+
+    let eMs;
+    if (ph.duration_hours && rawStart) {
+      eMs = sMs + Number(ph.duration_hours) * 3600000;
+    } else {
+      const rawEnd = ph.end_date?.slice(0,10);
+      eMs = rawEnd ? new Date(rawEnd + 'T17:00').getTime() : sMs + 7*86400000;
     }
-    const s = sDate ? new Date(sDate) : refStart;
-    const e = eDate ? new Date(eDate) : new Date(s.getTime() + 7*86400000);
-    return { left: px(s), width: Math.max(8, px(e) - px(s)), s, e, sDate, eDate };
+
+    if (barDrag?.phId === ph.id) {
+      const d = (barDrag.delta || 0) * 86400000;
+      sMs += d; eMs += d;
+    } else if (resize?.phId === ph.id) {
+      if (resize.side === 'left') sMs += (resize.delta || 0) * 86400000;
+      else                        eMs += (resize.delta || 0) * 86400000;
+    }
+
+    const s = new Date(sMs), e = new Date(eMs);
+    const refMs = refStart.getTime();
+    const left  = Math.max(0, Math.min(ganttW, (sMs - refMs) / totalMs * ganttW));
+    const width = Math.max(8, Math.min(ganttW - left, (eMs - sMs) / totalMs * ganttW));
+    const sDate = new Date(sMs).toISOString().slice(0,10);
+    const eDate = new Date(eMs).toISOString().slice(0,10);
+    return { left, width, s, e, sDate, eDate };
   };
 
   const tradesByName = {};
@@ -644,7 +666,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const handleBarDown = (e, ph) => {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    setBarDrag({ phId: ph.id, startX: e.clientX, origStart: ph.start_date, origEnd: ph.end_date, pxPerDay: ganttW / totalDays, delta: 0 });
+    const rawStart = ph.start_date?.slice(0,10);
+    let origEnd = ph.end_date?.slice(0,10);
+    if (!origEnd && ph.duration_hours && rawStart) {
+      const s = new Date(rawStart + 'T' + (ph.start_time||'08:00'));
+      origEnd = new Date(s.getTime() + Number(ph.duration_hours)*3600000).toISOString().slice(0,10);
+    }
+    setBarDrag({ phId: ph.id, startX: e.clientX, origStart: rawStart, origEnd, pxPerDay: ganttW / totalDays, delta: 0 });
   };
   const handleBarMove = (e) => {
     if (!barDrag) return;
@@ -665,7 +693,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const handleResizeDown = (e, ph, side) => {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    setResize({ phId: ph.id, side, startX: e.clientX, origStart: ph.start_date, origEnd: ph.end_date, pxPerDay: ganttW / totalDays, delta: 0 });
+    const rawStart = ph.start_date?.slice(0,10);
+    let origEnd = ph.end_date?.slice(0,10);
+    if (!origEnd && ph.duration_hours && rawStart) {
+      const s = new Date(rawStart + 'T' + (ph.start_time||'08:00'));
+      origEnd = new Date(s.getTime() + Number(ph.duration_hours)*3600000).toISOString().slice(0,10);
+    }
+    setResize({ phId: ph.id, side, startX: e.clientX, origStart: rawStart, origEnd, pxPerDay: ganttW / totalDays, delta: 0 });
   };
   const handleResizeMove = (e) => {
     if (!resize) return;
@@ -729,7 +763,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           Aujourd'hui
         </button>
         <div style={{ display:'flex', background:'#F3F4F6', borderRadius:7, padding:2 }}>
-          {[['month','Mois'],['week','Sem.'],['day','Jour'],['hour','Heure']].map(([s,lbl]) => (
+          {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
             <button key={s} onClick={() => setScale(s)}
               style={{ padding:'4px 8px', borderRadius:5, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
                 background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
@@ -778,7 +812,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Phase</div>
             <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Début</div>
             <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Durée</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 8px 7px 0', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Assigné</div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Assigné</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => (
                 <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden' }}>
@@ -793,6 +827,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   {scale === 'day' && <>
                     <div style={{ fontSize:10, fontWeight:800, color: col.start.getDay()===0||col.start.getDay()===6 ? '#D1D5DB' : '#374151' }}>{col.start.getDate()}</div>
                     <div style={{ fontSize:8.5, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{weekday:'short'}).slice(0,1).toUpperCase()}</div>
+                  </>}
+                  {scale === 'halfday' && <>
+                    <div style={{ fontSize:10, fontWeight:800, color: col.label==='AM' ? '#374151' : '#6B7280' }}>{col.label}</div>
+                    {col.showDate && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
                   </>}
                   {scale === 'hour' && <>
                     <div style={{ fontSize:9.5, fontWeight:800, color: col.start.getHours()===0 ? BRAND : '#374151' }}>{String(col.start.getHours()).padStart(2,'0')}h</div>
@@ -861,7 +899,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     <input
                       type="datetime-local"
                       autoFocus
-                      defaultValue={ph.start_date ? `${ph.start_date}T${ph.start_time||'08:00'}` : ''}
+                      defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
                       onBlur={ev => {
                         if (ev.target.value) {
                           const [d,t] = ev.target.value.split('T');
@@ -878,7 +916,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{ width:'100%', textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
                     >
                       {ph.start_date
-                        ? `${new Date(ph.start_date+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
+                        ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
                         : '— date'}
                     </button>
                   )}
@@ -912,6 +950,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 {/* Assignee */}
                 <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
                   <AssigneeChip trade={matchedTrade}
+                    assignedToName={ph.assigned_to_name||null}
                     onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}/>
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
@@ -944,8 +983,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     {/* Progress overlay */}
                     {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:'rgba(0,0,0,.22)',zIndex:0,pointerEvents:'none'}}/>}
                     <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1,flexShrink:1,minWidth:0}}>
-                      {showDates ? `${fmtDate(sDate||s.toISOString())} → ${fmtDate(eDate||e.toISOString())}` : (ph.trade_name||ph.name)}
+                      {ph.trade_name||ph.name}
                     </span>
+                    {showDates && (
+                      <span style={{fontSize:9,fontWeight:600,opacity:.85,marginLeft:5,flexShrink:0,position:'relative',zIndex:1,whiteSpace:'nowrap'}}>
+                        {fmtDate(sDate)}{ph.duration_hours ? ` · ${ph.duration_hours}h` : eDate ? ` → ${fmtDate(eDate)}` : ''}
+                      </span>
+                    )}
                     {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:4,opacity:.9,position:'relative',zIndex:1,flexShrink:0}}>{progress}%</span>}
                     {/* Drag delta tooltip */}
                     {isBarDrag_&&(barDrag?.delta||0)!==0&&(
@@ -1718,13 +1762,7 @@ export default function ProjectDetail() {
   };
 
   const handleSelfAssign = async (phaseId, userName) => {
-    const ph = project.phases?.find(p => p.id === phaseId);
-    if (!ph?.trade_name) return;
-    const trade = project.trades?.find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase());
-    if (!trade) return;
-    const updates = { subcontractor_name: userName, status: 'confirmed' };
-    setProject(p => ({ ...p, trades: (p.trades||[]).map(t => t.id===trade.id ? {...t,...updates} : t) }));
-    await projectsApi.updateTrade(id, trade.id, updates).catch(err => console.error('selfAssign', err));
+    await handleUpdatePhase(phaseId, { assigned_to_name: userName });
   };
 
   const printQR = () => {

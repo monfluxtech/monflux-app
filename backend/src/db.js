@@ -396,6 +396,8 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS start_time VARCHAR(5)`);
   await run('project_phases: duration_hours',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS duration_hours NUMERIC(6,2)`);
+  await run('project_phases: assigned_to_name',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS assigned_to_name TEXT`);
 }
 
 export async function initializeDatabase() {
