@@ -287,7 +287,7 @@ router.post('/:id/phases', async (req, res) => {
 
 // PATCH /api/projects/:id/phases/:phaseId
 router.patch('/:id/phases/:phaseId', async (req, res) => {
-  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order','trade_name'];
+  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order','trade_name','start_time','duration_hours'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');

@@ -502,10 +502,11 @@ function AssigneeChip({ trade }) {
 
 const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
-const SCALE_COL_W    = { month:120, week:72, day:36 };
+const SCALE_COL_W    = { month:120, week:72, day:36, hour:32 };
 
-function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase }) {
+function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase }) {
   const [scale, setScale]         = useState('week');
+  const [editCell, setEditCell]   = useState(null); // { id, field: 'datetime'|'duration' }
   const [cascade, setCascade]     = useState(true);
   const [showDates, setShowDates] = useState(false);
   const [showArrows, setShowArrows] = useState(false);
@@ -536,6 +537,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // Fixed-width columns (this is what makes scale switching actually "zoom")
   const colW = SCALE_COL_W[scale] || 72;
   const columns = (() => {
+    if (scale === 'hour') {
+      // Cap à 30 jours max en vue heure pour éviter trop de colonnes
+      const cols = [];
+      const cur = new Date(refStart); cur.setMinutes(0,0,0);
+      const cap = new Date(cur); cap.setDate(cap.getDate() + 30);
+      const stop = refEnd < cap ? refEnd : cap;
+      while (cur <= stop && cols.length < 720) {
+        cols.push({ start: new Date(cur), end: new Date(cur.getTime() + 3599999) });
+        cur.setHours(cur.getHours() + 1);
+      }
+      return cols;
+    }
     if (scale === 'week') {
       const cols = [];
       const mon = new Date(refStart);
@@ -567,10 +580,12 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     return cols;
   })();
 
-  const LABEL_W  = 175;
-  const ASSIGN_W = 140;
+  const LABEL_W  = 155;
+  const DATE_W   = 126;
+  const DUR_W    = 58;
+  const ASSIGN_W = 132;
   const ganttW   = Math.max(columns.length * colW, 400);
-  const totalMinW = LABEL_W + 20 + ASSIGN_W + ganttW;
+  const totalMinW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
 
   // Pixel helpers — positions within the ganttW space
   const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - refStart) / totalMs * ganttW));
@@ -675,7 +690,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   const scrollToToday = () => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollLeft = Math.max(0, todayPx + LABEL_W + 20 + ASSIGN_W - 320);
+    const viewW = scrollRef.current.clientWidth;
+    scrollRef.current.scrollLeft = Math.max(0, LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + todayPx - viewW * 0.4);
   };
 
   const exportPdf = () => window.print();
@@ -706,7 +722,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           Aujourd'hui
         </button>
         <div style={{ display:'flex', background:'#F3F4F6', borderRadius:7, padding:2 }}>
-          {[['month','Mois'],['week','Sem.'],['day','Jour']].map(([s,lbl]) => (
+          {[['month','Mois'],['week','Sem.'],['day','Jour'],['hour','Heure']].map(([s,lbl]) => (
             <button key={s} onClick={() => setScale(s)}
               style={{ padding:'4px 8px', borderRadius:5, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
                 background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
@@ -750,7 +766,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
             <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Phase</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 8px 7px 0', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Assigné</div>
+            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Début</div>
+            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Durée</div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 8px 7px 0', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Assigné</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => (
                 <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden' }}>
@@ -765,6 +783,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   {scale === 'day' && <>
                     <div style={{ fontSize:10, fontWeight:800, color: col.start.getDay()===0||col.start.getDay()===6 ? '#D1D5DB' : '#374151' }}>{col.start.getDate()}</div>
                     <div style={{ fontSize:8.5, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{weekday:'short'}).slice(0,1).toUpperCase()}</div>
+                  </>}
+                  {scale === 'hour' && <>
+                    <div style={{ fontSize:9.5, fontWeight:800, color: col.start.getHours()===0 ? BRAND : '#374151' }}>{String(col.start.getHours()).padStart(2,'0')}h</div>
+                    {col.start.getHours()===0 && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
                   </>}
                 </div>
               ))}
@@ -823,8 +845,62 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     )}
                   </div>
                 </div>
+                {/* Date/Heure de début */}
+                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center' }}>
+                  {editCell?.id===ph.id && editCell?.field==='datetime' ? (
+                    <input
+                      type="datetime-local"
+                      autoFocus
+                      defaultValue={ph.start_date ? `${ph.start_date}T${ph.start_time||'08:00'}` : ''}
+                      onBlur={ev => {
+                        if (ev.target.value) {
+                          const [d,t] = ev.target.value.split('T');
+                          onUpdatePhase?.(ph.id, { start_date: d, start_time: t||'08:00' });
+                        }
+                        setEditCell(null);
+                      }}
+                      onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                      style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5' }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setEditCell({ id:ph.id, field:'datetime' })}
+                      style={{ width:'100%', textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
+                    >
+                      {ph.start_date
+                        ? `${new Date(ph.start_date+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
+                        : '— date'}
+                    </button>
+                  )}
+                </div>
+                {/* Durée (h) */}
+                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center' }}>
+                  {editCell?.id===ph.id && editCell?.field==='duration' ? (
+                    <input
+                      type="number"
+                      autoFocus
+                      min="0"
+                      step="0.5"
+                      defaultValue={ph.duration_hours ?? ''}
+                      onBlur={ev => {
+                        const val = ev.target.value==='' ? null : parseFloat(ev.target.value);
+                        onUpdatePhase?.(ph.id, { duration_hours: val });
+                        setEditCell(null);
+                      }}
+                      onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                      style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5', textAlign:'right' }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setEditCell({ id:ph.id, field:'duration' })}
+                      style={{ width:'100%', textAlign:'right', fontSize:11, color:ph.duration_hours?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
+                    >
+                      {ph.duration_hours ? `${ph.duration_hours}h` : '—'}
+                    </button>
+                  )}
+                </div>
                 {/* Assignee */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 8px 0 0'}}>
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 8px 0 0',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
                   <AssigneeChip trade={matchedTrade}/>
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
@@ -1614,6 +1690,11 @@ export default function ProjectDetail() {
 
     setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => { const u = toUpdate.find(u => u.id === ph.id); return u ? { ...ph, ...u } : ph; }) }));
     await Promise.all(toUpdate.map(u => projectsApi.updatePhase(id, u.id, { start_date: u.start_date, end_date: u.end_date }).catch(()=>{})));
+  };
+
+  const handleUpdatePhase = async (phaseId, fields) => {
+    setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id===phaseId ? {...ph,...fields} : ph) }));
+    await projectsApi.updatePhase(id, phaseId, fields).catch(err => console.error('updatePhase', err));
   };
 
   const printQR = () => {
@@ -4115,6 +4196,7 @@ Règles :
                 onRenamePhase={renamePhase}
                 onDatesChange={handleDatesChange}
                 onAddPhase={() => setShowPhase(true)}
+                onUpdatePhase={handleUpdatePhase}
               />
             ) : (
               <div style={{ padding: '22px 20px', textAlign: 'center' }}>
