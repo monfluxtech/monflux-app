@@ -380,6 +380,16 @@ async function applyMigrations() {
     await run(`project_status: ${val}`,
       `ALTER TYPE project_status ADD VALUE IF NOT EXISTS '${val}'`);
   }
+
+  // ── Timesheets: phase + remaining hours estimate (punch clock-out) ───────────
+  await run('timesheets: phase_name',
+    `ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS phase_name TEXT`);
+  await run('timesheets: remaining_hours_estimate',
+    `ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS remaining_hours_estimate NUMERIC(6,2)`);
+
+  // ── Project phases: sort order for drag-and-drop ─────────────────────────────
+  await run('project_phases: sort_order',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`);
 }
 
 export async function initializeDatabase() {

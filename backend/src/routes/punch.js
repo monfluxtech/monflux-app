@@ -13,7 +13,11 @@ router.get('/:token', async (req, res) => {
     [req.params.token]
   );
   if (!qr) return res.status(404).json({ error: 'QR Code invalide ou inactif' });
-  res.json({ project_name: qr.project_name, project_address: qr.project_address, qr_id: qr.id, token: qr.token });
+  const { rows: phases } = await query(
+    `SELECT id, name, trade_name FROM project_phases WHERE project_id = $1 ORDER BY sort_order, created_at`,
+    [qr.project_id]
+  );
+  res.json({ project_name: qr.project_name, project_address: qr.project_address, qr_id: qr.id, token: qr.token, phases });
 });
 
 // POST /api/punch/clock-in — clock in via QR
@@ -40,15 +44,17 @@ router.post('/clock-in', async (req, res) => {
 
 // POST /api/punch/clock-out
 router.post('/clock-out', async (req, res) => {
-  const { timesheet_id, gps_lat, gps_lng } = req.body;
+  const { timesheet_id, gps_lat, gps_lng, phase_name, remaining_hours_estimate } = req.body;
   const { rows: [ts] } = await query(
     `UPDATE timesheets SET
        clock_out = NOW(),
        gps_lat_out = $1, gps_lng_out = $2,
-       hours_total = ROUND(EXTRACT(EPOCH FROM (NOW() - clock_in)) / 3600.0, 2)
+       hours_total = ROUND(EXTRACT(EPOCH FROM (NOW() - clock_in)) / 3600.0, 2),
+       phase_name = $4,
+       remaining_hours_estimate = $5
      WHERE id = $3 AND clock_out IS NULL
      RETURNING *`,
-    [gps_lat||null, gps_lng||null, timesheet_id]
+    [gps_lat||null, gps_lng||null, timesheet_id, phase_name||null, remaining_hours_estimate||null]
   );
   if (!ts) return res.status(404).json({ error: 'Pointage non trouvé ou déjà terminé' });
   res.json({ clocked_out_at: ts.clock_out, hours_total: ts.hours_total });

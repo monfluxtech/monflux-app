@@ -500,7 +500,12 @@ function AssigneeChip({ trade }) {
   );
 }
 
-function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase }) {
+function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase }) {
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+
   if (!phases || phases.length === 0) return null;
 
   const datedStarts = phases.map((ph) => ph.start_date).filter(Boolean).map((d) => new Date(d));
@@ -523,39 +528,73 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
 
   const labelWidth = 180;
-  const assigneeWidth = 160;
+  const assigneeWidth = 155;
 
   const tradesByName = {};
   (trades || []).forEach(t => { if (t.trade) tradesByName[t.trade.toLowerCase()] = t; });
 
+  const onDragStart = (e, i) => {
+    setDragIdx(i);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const onDragOver = (e, i) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(i);
+  };
+  const onDrop = (e, i) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDragOverIdx(null); return; }
+    const next = [...phases];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(i, 0, moved);
+    onReorderPhases?.(next);
+    setDragIdx(null); setDragOverIdx(null);
+  };
+
+  const startEdit = (ph) => {
+    setEditingId(ph.id);
+    setEditingName(ph.name);
+  };
+  const commitEdit = (ph) => {
+    const trimmed = editingName.trim();
+    if (trimmed && trimmed !== ph.name) onRenamePhase?.(ph.id, trimmed);
+    setEditingId(null);
+  };
+
   return (
-    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 18px 14px' }}>
-      <div style={{ fontSize: 12, color: '#7C8089', background: '#F7F8FA', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
-        Vue planning du chantier. Clique une phase pour la modifier; les liaisons avancées et dépendances viendront plus tard.
-      </div>
-      <div style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 760 }}>
-          <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 4 }}>
-            <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
+    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 0 14px' }}>
+      <div style={{ overflowX: 'auto', paddingLeft: 18, paddingRight: 18 }}>
+        <div style={{ minWidth: 860 }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 6 }}>
+            <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 24px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
               Phase
             </div>
             <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 12px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
               Assigné
             </div>
-            <div style={{ flex: 1, display: 'flex', borderBottom: '1px solid #EEF0F2', paddingBottom: 8 }}>
-            {months.map((m, i) => {
-              const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
-              const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
-              return (
-                  <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 70, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', paddingLeft: 10, borderLeft: i > 0 ? '1px solid #F0F1F3' : 'none' }}>
-                    {m.toLocaleDateString('fr-CA',{ month:'long' })}
-                    <span style={{ opacity: .65, fontSize: 9.5, marginLeft: 4 }}>{m.getFullYear()}</span>
+            <div style={{ flex: 1, display: 'flex', borderBottom: '2px solid #EEF0F2', paddingBottom: 8, position: 'relative' }}>
+              {months.map((m, i) => {
+                const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
+                const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
+                return (
+                  <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 80, fontSize: 11, fontWeight: 800, color: '#6B7280', paddingLeft: 10, borderLeft: i > 0 ? '1px solid #E5E7EB' : 'none', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <span>{m.toLocaleDateString('fr-CA',{ month:'short' }).toUpperCase()}</span>
+                    <span style={{ opacity: .6, fontSize: 9.5, fontWeight: 600 }}>{m.getFullYear()}</span>
                   </div>
                 );
               })}
+              {/* Today line in header */}
+              {todayPct >= 0 && todayPct <= 100 && (
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .5 }}>
+                  <span style={{ position: 'absolute', top: -18, left: -18, fontSize: 9, fontWeight: 800, color: BRAND, whiteSpace: 'nowrap', background: '#fff', padding: '1px 4px', borderRadius: 4, border: `1px solid ${BRAND}` }}>Auj.</span>
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Phase rows */}
           {phases.map((ph, i) => {
             const s = ph.start_date ? new Date(ph.start_date) : refStart;
             const e = ph.end_date ? new Date(ph.end_date) : new Date(s.getTime()+14*86400000);
@@ -565,30 +604,92 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const isEven = i % 2 === 0;
             const barLabel = ph.trade_name || ph.name;
             const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
+            const isDragOver = dragOverIdx === i;
+            const dateLabel = [fmtDate(ph.start_date), ph.end_date ? fmtDate(ph.end_date) : null].filter(Boolean).join(' → ');
 
             return (
-              <div key={ph.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, background: isEven ? '#FBFCFD' : '#fff', borderRadius: 10, marginBottom: 6 }}>
-                <div style={{ width: labelWidth, flexShrink: 0, padding: '10px 14px 10px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
-                    style={{ width: 18, height: 18, borderRadius: 6, border: '1px solid #E4E7EB', background: '#fff', color: '#C1C6CE', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}
+              <div
+                key={ph.id}
+                draggable
+                onDragStart={(ev) => onDragStart(ev, i)}
+                onDragOver={(ev) => onDragOver(ev, i)}
+                onDrop={(ev) => onDrop(ev, i)}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                style={{
+                  display: 'flex', alignItems: 'center', minHeight: 48,
+                  background: isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff',
+                  borderRadius: 10, marginBottom: 4,
+                  borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
+                  opacity: dragIdx === i ? 0.4 : 1,
+                  transition: 'opacity .15s, border-color .15s',
+                  cursor: 'grab',
+                }}
+              >
+                {/* Drag handle */}
+                <div style={{ width: 20, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', padding: '0 4px', cursor: 'grab', opacity: 0.3 }}>
+                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
+                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
+                  <span style={{ width: 12, height: 1.5, background: '#6B7280', borderRadius: 2, display: 'block' }}/>
+                </div>
+
+                {/* Phase name + delete */}
+                <div style={{ width: labelWidth - 20, flexShrink: 0, padding: '8px 10px 8px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button onClick={(ev) => { ev.stopPropagation(); onDeletePhase && onDeletePhase(ph.id); }}
+                    style={{ width: 16, height: 16, borderRadius: 5, border: '1px solid #E4E7EB', background: '#fff', color: '#C1C6CE', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}
                     title="Supprimer la phase">
-                    <X size={10}/>
+                    <X size={9}/>
                   </button>
-                  <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Modifier la phase">
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {editingId === ph.id ? (
+                      <input
+                        autoFocus
+                        value={editingName}
+                        onChange={ev => setEditingName(ev.target.value)}
+                        onBlur={() => commitEdit(ph)}
+                        onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(ph); if (ev.key === 'Escape') setEditingId(null); }}
+                        onClick={ev => ev.stopPropagation()}
+                        style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '2px 6px', width: '100%', outline: 'none', background: '#FFF8F5' }}
+                      />
+                    ) : (
+                      <div
+                        onClick={() => startEdit(ph)}
+                        title="Cliquer pour renommer"
+                        style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'text', padding: '2px 2px', borderRadius: 4, border: '1.5px solid transparent' }}
+                      >
+                        {ph.name}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 12px 0 0' }}>
+
+                {/* Assignee chip */}
+                <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 10px 0 0' }}>
                   <AssigneeChip trade={matchedTrade} />
                 </div>
-                <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'hidden' }}>
+
+                {/* Gantt bar */}
+                <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'visible' }}>
+                  {/* Month grid lines */}
+                  {months.slice(1).map((m, mi) => (
+                    <div key={mi} style={{ position: 'absolute', top: 0, bottom: 0, left: `${pct(m)}%`, width: 1, background: '#E5E7EB', zIndex: 0 }}/>
+                  ))}
+                  {/* Today line */}
                   {todayPct >= 0 && todayPct <= 100 && (
-                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .45, zIndex: 2 }}/>
+                    <div style={{ position: 'absolute', top: -6, bottom: -6, left: `${todayPct}%`, width: 2, background: BRAND, opacity: .5, zIndex: 2, borderRadius: 2 }}/>
                   )}
-                  <div onClick={() => onEditPhase && onEditPhase(ph)}
-                    title={`${fmtDate(ph.start_date)} → ${fmtDate(ph.end_date)}`}
-                    style={{ position: 'absolute', top: 4, bottom: 4, left: `${pL}%`, width: `${pW}%`, minWidth: 22, borderRadius: 999, background: color, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', zIndex: 1, boxShadow: '0 1px 2px rgba(0,0,0,.08)' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>
+                  {/* Phase bar */}
+                  <div
+                    onClick={(ev) => { if (editingId !== ph.id) { ev.stopPropagation(); onEditPhase && onEditPhase(ph); } }}
+                    title={dateLabel}
+                    style={{
+                      position: 'absolute', top: 4, bottom: 4, left: `${pL}%`, width: `${pW}%`,
+                      minWidth: 22, borderRadius: 999, background: color, color: '#fff',
+                      display: 'flex', alignItems: 'center', padding: '0 10px',
+                      cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden',
+                      zIndex: 1, boxShadow: '0 1px 3px rgba(0,0,0,.12)',
+                    }}
+                  >
+                    <span style={{ fontSize: 10.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{barLabel}</span>
                   </div>
                 </div>
               </div>
@@ -1240,6 +1341,20 @@ export default function ProjectDetail() {
       await projectsApi.deletePhase(id, phaseId);
       setProject(p => ({ ...p, phases: (p.phases||[]).filter(ph => ph.id !== phaseId) }));
     } catch (err) { console.error('deletePhase', err); }
+  };
+
+  const reorderPhases = (reordered) => {
+    setProject(p => ({ ...p, phases: reordered }));
+    reordered.forEach((ph, idx) => {
+      projectsApi.updatePhase(id, ph.id, { sort_order: idx }).catch(() => {});
+    });
+  };
+
+  const renamePhase = async (phaseId, newName) => {
+    try {
+      const { data } = await projectsApi.updatePhase(id, phaseId, { name: newName });
+      setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id === phaseId ? { ...ph, name: newName } : ph) }));
+    } catch (err) { console.error('renamePhase', err); }
   };
 
   const printQR = () => {
@@ -3728,27 +3843,48 @@ Règles :
               onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '16px 20px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <Sparkles size={15} color="#fff"/>
+          {project.phases?.length > 0 ? (
+            <div style={{ marginBottom: 12 }}>
+              <GanttChart
+                phases={project.phases}
+                projectStart={project.start_date}
+                projectEnd={project.end_date}
+                trades={project.trades}
+                onDeletePhase={removePhase}
+                onEditPhase={(ph) => setEditPhase(ph)}
+                onReorderPhases={reorderPhases}
+                onRenamePhase={renamePhase}
+              />
+            </div>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '22px 20px', textAlign: 'center', marginBottom: 12 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
+              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
+            </div>
+          )}
+
+          {/* Florence — sous le Gantt */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '14px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <Sparkles size={13} color="#fff"/>
               </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ fontSize: 12.5, fontWeight: 800, color: '#15171C', margin: 0 }}>
                   {project.phases?.length > 0 ? 'Ajuster les phases avec Florence' : 'Générer les phases avec Florence'}
                 </p>
-                <p style={{ fontSize: 11.5, color: '#7C8089', margin: '1px 0 0' }}>
-                  Flo analyse le contexte du projet et construit un planning plus proche du chantier réel.
+                <p style={{ fontSize: 11, color: '#7C8089', margin: '1px 0 0' }}>
+                  Flo analyse le contexte et construit un planning adapté au chantier réel.
                 </p>
               </div>
               <button onClick={generatePhasesFromAI} disabled={generatingPhases}
-                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {generatingPhases ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
                 {generatingPhases ? 'Génération…' : project.phases?.length > 0 ? 'Régénérer avec Flo' : 'Générer avec Flo'}
               </button>
             </div>
             {aiNotice && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3 flex items-center gap-2">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3 flex items-center gap-2">
                 <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
                 <p className="text-xs text-amber-700">{aiNotice}</p>
                 <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
@@ -3763,57 +3899,39 @@ Règles :
               const bulkLabel = projectWorkType || 'ce projet';
               if (!available.length && !hasPlaybook) return null;
               return (
-                <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: 0 }}>
+                <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 10, marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: 0 }}>
                       {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Ajouter une phase type'}
                     </p>
                     {hasPlaybook && (
                       <button
                         onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })}
                         disabled={addingTemplatePhase === '__batch__'}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: `1px solid ${BRAND_BORDER}`, background: BRAND_SOFT, color: BRAND_DARK, fontSize: 12, fontWeight: 800, cursor: addingTemplatePhase === '__batch__' ? 'wait' : 'pointer' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1px solid ${BRAND_BORDER}`, background: BRAND_SOFT, color: BRAND_DARK, fontSize: 11.5, fontWeight: 800, cursor: addingTemplatePhase === '__batch__' ? 'wait' : 'pointer' }}
                       >
-                        {addingTemplatePhase === '__batch__' ? <Loader2 size={11} className="animate-spin"/> : <Plus size={11}/>}
+                        {addingTemplatePhase === '__batch__' ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
                         {`Ajouter les étapes de ${bulkLabel}`}
                       </button>
                     )}
                   </div>
                   {available.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                       {available.map((tpl) => (
                         <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 11px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
-                          {addingTemplatePhase === tpl.name ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10} color={BRAND}/>}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 11.5, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                          {addingTemplatePhase === tpl.name ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9} color={BRAND}/>}
                           {tpl.name}
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Toutes les étapes recommandées sont déjà ajoutées pour ce type de projet.</p>
+                    <p style={{ fontSize: 11.5, color: '#9CA3AF', margin: 0 }}>Toutes les étapes recommandées sont déjà ajoutées.</p>
                   )}
                 </div>
               );
             })()}
           </div>
-
-          {project.phases?.length > 0 ? (
-            <div style={{ marginBottom: 18 }}>
-              <GanttChart
-                phases={project.phases}
-                projectStart={project.start_date}
-                projectEnd={project.end_date}
-                trades={project.trades}
-                onDeletePhase={removePhase}
-                onEditPhase={(ph) => setEditPhase(ph)}
-              />
-            </div>
-          ) : (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '22px 20px', textAlign: 'center', marginBottom: 18 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
-              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
-            </div>
-          )}
 
           {(() => {
             const phases = project.phases || [];

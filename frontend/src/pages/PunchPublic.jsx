@@ -13,6 +13,8 @@ export default function PunchPublic() {
   const [action, setAction] = useState(false);
   const [done, setDone]   = useState(false);
   const [error, setError] = useState('');
+  const [phaseName, setPhaseName] = useState('');
+  const [remainingHours, setRemainingHours] = useState('');
 
   useEffect(() => {
     punchApi.getSite(token)
@@ -36,7 +38,11 @@ export default function PunchPublic() {
   const clockOut = async () => {
     setAction(true);
     try {
-      const { data } = await punchApi.clockOut({ timesheet_id: tsId });
+      await punchApi.clockOut({
+        timesheet_id: tsId,
+        phase_name: phaseName || null,
+        remaining_hours_estimate: remainingHours ? parseFloat(remainingHours) : null,
+      });
       localStorage.removeItem(`punch_ts_${token}`);
       setTsId(null);
       setDone('out');
@@ -57,6 +63,8 @@ export default function PunchPublic() {
       <p className="text-sm text-gray-400">{error}</p>
     </div>
   );
+
+  const phases = site?.phases || [];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
@@ -94,12 +102,48 @@ export default function PunchPublic() {
             <CheckCircle size={40} className="text-brand mx-auto mb-3" />
             <p className="font-semibold text-gray-900">Départ enregistré !</p>
             <p className="text-sm text-gray-400 mt-1">Bonne fin de journée !</p>
+            {phaseName && (
+              <p className="text-xs text-gray-400 mt-2">Phase : <strong>{phaseName}</strong></p>
+            )}
+            {remainingHours && (
+              <p className="text-xs text-gray-400">Temps restant estimé : <strong>{remainingHours}h</strong></p>
+            )}
           </div>
         )}
 
         {!done && tsId && (
-          <div className="card text-center">
-            <p className="text-sm text-gray-600 mb-4">Vous êtes déjà pointé en entrée. Cliquez pour enregistrer votre départ.</p>
+          <div className="card space-y-4">
+            <p className="text-sm text-gray-600">Fin de journée — complétez avant de pointer votre départ.</p>
+
+            <div>
+              <label className="label">Sur quelle phase avez-vous travaillé ?</label>
+              {phases.length > 0 ? (
+                <select className="input" value={phaseName} onChange={e => setPhaseName(e.target.value)}>
+                  <option value="">— Sélectionner une phase —</option>
+                  {phases.map(ph => (
+                    <option key={ph.id} value={ph.name}>{ph.name}{ph.trade_name ? ` · ${ph.trade_name}` : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <input className="input" placeholder="Ex: Plomberie rough-in" value={phaseName} onChange={e => setPhaseName(e.target.value)} />
+              )}
+            </div>
+
+            <div>
+              <label className="label">Durée restante estimée (heures)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="Ex: 4"
+                value={remainingHours}
+                onChange={e => setRemainingHours(e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-1">Combien d'heures reste-t-il pour terminer cette phase ?</p>
+            </div>
+
+            {error && <p className="text-sm text-red-500">{error}</p>}
             <button className="btn-primary w-full justify-center" onClick={clockOut} disabled={action}>
               {action ? <Loader2 size={15} className="animate-spin" /> : <Clock size={15} />}
               Enregistrer mon départ
