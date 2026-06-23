@@ -15,9 +15,8 @@ const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
-  { id: 's-phases', icon: '📅', label: 'Phases & Gantt' },
+  { id: 's-pipeline', icon: '🏗️', label: 'Pipeline du projet' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
-  { id: 's-trades', icon: '🏗️', label: 'Corps de métier' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
   { id: 's-orders', icon: '📦', label: 'Commandes' },
@@ -455,7 +454,7 @@ const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
 const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
 
-function GanttChart({ phases, projectStart, projectEnd }) {
+function GanttChart({ phases, projectStart, projectEnd, trades }) {
   if (!phases || phases.length === 0) return null;
 
   const refStart = projectStart ? new Date(projectStart) : new Date();
@@ -472,41 +471,53 @@ function GanttChart({ phases, projectStart, projectEnd }) {
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
   const width = (s, e) => Math.max(1, pct(e) - pct(s));
 
+  // Find the sub assigned to a trade name (case-insensitive partial match)
+  const subLabel = (tradeName) => {
+    if (!tradeName || !trades?.length) return null;
+    const t = trades.find(t => t.trade?.toLowerCase().includes(tradeName.toLowerCase()) || tradeName.toLowerCase().includes(t.trade?.toLowerCase()));
+    if (!t) return null;
+    return t.chosen_subcontractor_name || t.chosen_subcontractor?.name || (t.status === 'confirmed' ? '✓' : null);
+  };
+
   return (
     <div className="overflow-x-auto">
-      <div style={{ minWidth: 480 }}>
+      <div style={{ minWidth: 520 }}>
         {/* Month headers */}
-        <div className="flex mb-1 ml-36">
+        <div style={{ display: 'flex', marginBottom: 4, marginLeft: 160 }}>
           {months.map((m, i) => {
             const left = pct(m);
             const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
             const w = Math.min(pct(nextM), 100) - left;
             return (
-              <div key={i} className="text-xs text-gray-400 border-l border-gray-100 pl-1" style={{ width:`${Math.max(w,0)}%`, minWidth: 30 }}>
+              <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 32, fontSize: 10.5, color: '#9CA3AF', borderLeft: '1px solid #F0F1F3', paddingLeft: 4 }}>
                 {m.toLocaleDateString('fr-CA',{month:'short'})}
               </div>
             );
           })}
         </div>
-        {/* Today line */}
-        <div className="relative ml-36">
-          <div className="absolute top-0 bottom-0 w-px bg-brand z-10" style={{ left:`${pct(new Date())}%` }}/>
+        {/* Today line + rows */}
+        <div style={{ position: 'relative', marginLeft: 160 }}>
+          <div style={{ position: 'absolute', left:`${pct(new Date())}%`, top: 0, bottom: 0, width: 1.5, background: BRAND, zIndex: 10, opacity: .7 }}/>
           {phases.map((ph, i) => {
             const s = ph.start_date ? new Date(ph.start_date) : refStart;
             const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+14*86400000);
             const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-            const pct_left  = pct(s);
-            const pct_width = width(s, e);
+            const pL = pct(s);
+            const pW = width(s, e);
+            const tradeLabel = ph.trade_name || null;
+            const assignedSub = subLabel(tradeLabel);
             return (
-              <div key={ph.id} className="flex items-center mb-2 gap-2 -ml-36">
-                <div className="w-36 text-xs font-medium text-gray-700 truncate pr-2 text-right flex-shrink-0">{ph.name}</div>
-                <div className="flex-1 relative h-6">
-                  <div
-                    className="absolute h-full rounded-full flex items-center px-2 overflow-hidden"
-                    style={{ left:`${pct_left}%`, width:`${pct_width}%`, minWidth:4, background:color+'33', border:`1.5px solid ${color}` }}
-                  >
-                    <div className="h-full rounded-full absolute left-0 top-0" style={{ width:`${ph.progress_pct||0}%`, background:color+'66' }}/>
-                    {pct_width > 8 && <span className="relative text-xs font-medium z-10 truncate" style={{color}}>{ph.progress_pct||0}%</span>}
+              <div key={ph.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, marginLeft: -160 }}>
+                <div style={{ width: 160, fontSize: 12, fontWeight: 600, color: '#3A3D44', paddingRight: 12, textAlign: 'right', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
+                <div style={{ flex: 1, position: 'relative', height: 26 }}>
+                  <div style={{ position: 'absolute', left:`${pL}%`, width:`${pW}%`, minWidth: 5, height: '100%', borderRadius: 99, background: color+'28', border:`1.5px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width:`${ph.progress_pct||0}%`, background: color+'55', borderRadius: 99 }}/>
+                    {pW > 6 && (
+                      <span style={{ position: 'relative', fontSize: 11, fontWeight: 700, color, zIndex: 1, whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '90%' }}>
+                        {tradeLabel ? tradeLabel : `${ph.progress_pct||0}%`}
+                        {assignedSub && <span style={{ marginLeft: 5, opacity: .75 }}>· {assignedSub}</span>}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -518,12 +529,12 @@ function GanttChart({ phases, projectStart, projectEnd }) {
   );
 }
 
-function PhaseModal({ projectId, phase, onClose, onSave }) {
+function PhaseModal({ projectId, phase, onClose, onSave, trades }) {
   const [form, setForm] = useState(phase ? {
     name:phase.name||'', start_date:phase.start_date?phase.start_date.slice(0,10):'',
     end_date:phase.end_date?phase.end_date.slice(0,10):'', progress_pct:phase.progress_pct||0,
-    status:phase.status||'not_started'
-  } : { name:'', start_date:'', end_date:'', progress_pct:0, status:'not_started' });
+    status:phase.status||'not_started', trade_name:phase.trade_name||''
+  } : { name:'', start_date:'', end_date:'', progress_pct:0, status:'not_started', trade_name:'' });
   const [saving, setSaving] = useState(false);
   const f = k => e => setForm(p=>({...p,[k]:e.target.value}));
 
@@ -551,6 +562,17 @@ function PhaseModal({ projectId, phase, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Début</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')}/></div>
             <div><label className="label">Fin</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')}/></div>
+          </div>
+          <div>
+            <label className="label">Corps de métier (optionnel)</label>
+            {trades?.length ? (
+              <select className="input" value={form.trade_name} onChange={f('trade_name')}>
+                <option value="">— Aucun —</option>
+                {trades.map(t => <option key={t.id} value={t.trade}>{t.trade}</option>)}
+              </select>
+            ) : (
+              <input className="input" value={form.trade_name} onChange={f('trade_name')} placeholder="Ex: Électricité"/>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -818,6 +840,9 @@ export default function ProjectDetail() {
   const [timesheets, setTimesheets] = useState([]);
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
+  const [tradeRecos, setTradeRecos] = useState(null); // null = not yet fetched
+  const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
+  const [autoAddingTrades, setAutoAddingTrades] = useState(false);
   const [projectInvoices, setProjectInvoices] = useState([]);
   const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
@@ -1227,6 +1252,62 @@ export default function ProjectDetail() {
     await projectsApi.deleteTrade(id, tradeId);
     setProject(p => ({ ...p, trades: p.trades.filter(t => t.id !== tradeId) }));
     refreshProfit();
+  };
+
+  // Auto-ajouter les corps de métier depuis fa.selected_trades
+  const autoAddTradesFromEstim = async () => {
+    const fa = project.field_assessment || {};
+    const estimTrades = fa.selected_trades || [];
+    const existing = (project.trades || []).map(t => t.trade?.toLowerCase());
+    const missing = estimTrades.filter(t => !existing.includes(t.toLowerCase()));
+    if (!missing.length) return;
+    setAutoAddingTrades(true);
+    try {
+      const added = [];
+      for (const trade of missing) {
+        const { data } = await projectsApi.addTrade(id, { trade, estimated_cost: null, chosen_subcontractor_id: null });
+        added.push(data);
+      }
+      setProject(p => ({ ...p, trades: [...(p.trades || []), ...added] }));
+    } catch {} finally { setAutoAddingTrades(false); }
+  };
+
+  // Florence recommande des sous-traitants pour les corps non assignés
+  const PROJ_CHAT_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+  const fetchTradeRecos = async () => {
+    const missingTrades = (project.trades || []).filter(t => t.status === 'to_find' || !t.chosen_subcontractor_id);
+    if (!missingTrades.length) return;
+    setLoadingTradeRecos(true);
+    const fa = project.field_assessment || {};
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
+Je cherche des sous-traitants pour ce projet :
+- Projet : ${project.description || project.name || ''}
+- Adresse : ${project.address || 'Non précisée'}
+- Corps de métier requis : ${missingTrades.map(t => t.trade).join(', ')}
+
+Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec (vraisemblables, pas inventés si incertains — tu peux suggérer des types d'entreprises à chercher). Réponds en JSON UNIQUEMENT dans ce format :
+{"trades":{"Électricité":[{"name":"Électro-Pro QC","note":"Spécialiste résidentiel Montréal","phone":"","website":"electricien.ca"}]}}`;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
+        method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+        body: JSON.stringify({ messages:[{role:'user',content:prompt}] }),
+      });
+      if (!res.ok) { setTradeRecos({}); return; }
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let raw = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l=>l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type==='text') raw += evt.text; } catch {}
+        }
+      }
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { const parsed = JSON.parse(match[0]); setTradeRecos(parsed.trades || {}); } catch { setTradeRecos({}); }
+      } else { setTradeRecos({}); }
+    } catch { setTradeRecos({}); } finally { setLoadingTradeRecos(false); }
   };
 
   // ── Dépenses ────────────────────────────────────────────────────────────────
@@ -3110,64 +3191,230 @@ Règles :
         })()}
 
 
-        {/* ── Phases & Gantt ── (blue) */}
-        <div id="s-phases" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        {/* ── Pipeline du projet (Phases + Corps de métier fusionnés) ── */}
+        <div id="s-pipeline" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+
+          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📅</div>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases & Gantt</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Planification et suivi d'avancement des phases</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>
+                Phases, corps de métier & sous-traitants
+                {project.phases?.length > 0 && ` · ${project.phases.length} phase(s)`}
+                {project.trades?.length > 0 && ` · ${project.trades.length} métier(s)`}
+              </div>
             </div>
-            <button className="btn-secondary text-xs" onClick={()=>setShowPhase(true)}>
-              <Plus size={13}/> Ajouter une phase
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn-secondary text-xs" onClick={() => setShowTradeForm(v => !v)}><HardHat size={12}/> Corps de métier</button>
+              <button className="btn-secondary text-xs" onClick={()=>setShowPhase(true)}><Plus size={13}/> Phase</button>
+            </div>
           </div>
 
           {(showPhase || editPhase) && (
             <PhaseModal
               projectId={id}
               phase={editPhase}
+              trades={project.trades || []}
               onClose={()=>{setShowPhase(false);setEditPhase(null);}}
               onSave={handlePhaseSave}
             />
           )}
 
+          {/* Bannière auto-import depuis estimation */}
+          {(() => {
+            const fa = project.field_assessment || {};
+            const estimTrades = fa.selected_trades || [];
+            const existing = (project.trades || []).map(t => t.trade?.toLowerCase());
+            const missing = estimTrades.filter(t => !existing.includes(t.toLowerCase()));
+            if (!missing.length) return null;
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: `${BRAND}10`, border: `1px solid ${BRAND}30`, borderRadius: 12, marginBottom: 20 }}>
+                <Sparkles size={15} color={BRAND}/>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: BRAND, margin: 0 }}>
+                    {missing.length} corps de métier détecté{missing.length > 1 ? 's' : ''} dans l'estimation
+                  </p>
+                  <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0' }}>{missing.join(' · ')}</p>
+                </div>
+                <button onClick={autoAddTradesFromEstim} disabled={autoAddingTrades}
+                  style={{ padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: `${BRAND}15`, fontSize: 12, fontWeight: 700, color: BRAND, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {autoAddingTrades ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>} Générer
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* ── Gantt chart ── */}
           {project.phases?.length > 0 ? (
-            <>
-              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
-              <div className="mt-4 space-y-2">
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '20px 20px 14px', marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', margin: 0 }}>Calendrier des phases</p>
+                <span style={{ fontSize: 11, color: '#C8CACD' }}>Aujourd'hui = ligne orange</span>
+              </div>
+              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date} trades={project.trades}/>
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {project.phases.map((ph, i) => (
-                  <div key={ph.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length]}}/>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-800">{ph.name}</p>
+                  <div key={ph.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, background: '#FAFAFA' }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], flexShrink: 0 }}/>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C' }}>{ph.name}</span>
+                        {ph.trade_name && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: `${ph.color || PHASE_COLORS[i % PHASE_COLORS.length]}22`, color: ph.color || PHASE_COLORS[i % PHASE_COLORS.length] }}>{ph.trade_name}</span>}
                         <span className={`badge ${PS_BADGE[ph.status]}`}>{PS_LABEL[ph.status]}</span>
                       </div>
-                      {ph.start_date && (
-                        <p className="text-xs text-gray-400">
-                          {new Date(ph.start_date).toLocaleDateString('fr-CA')}
-                          {ph.end_date && ` → ${new Date(ph.end_date).toLocaleDateString('fr-CA')}`}
-                        </p>
-                      )}
+                      {ph.start_date && <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{new Date(ph.start_date).toLocaleDateString('fr-CA')}{ph.end_date && ` → ${new Date(ph.end_date).toLocaleDateString('fr-CA')}`}</p>}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-24 h-1.5 bg-gray-100 rounded-full flex-shrink-0">
-                        <div className="h-full rounded-full bg-brand" style={{width:`${ph.progress_pct||0}%`}}/>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 72, height: 5, borderRadius: 99, background: '#E8EAED', overflow: 'hidden' }}>
+                        <div style={{ width:`${ph.progress_pct||0}%`, height: '100%', background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], borderRadius: 99 }}/>
                       </div>
-                      <span className="text-sm font-bold text-brand w-8 text-right">{ph.progress_pct||0}%</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], width: 34, textAlign: 'right' }}>{ph.progress_pct||0}%</span>
                       <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" onClick={()=>setEditPhase(ph)}><Pencil size={12}/></button>
                     </div>
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           ) : (
-            <div className="text-center py-8">
-              <p className="text-sm text-gray-400 mb-3">Aucune phase définie. Ajoutez des phases pour activer le Gantt.</p>
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center', marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 10 }}>Aucune phase définie. Crée des phases pour activer le Gantt.</p>
               <button className="btn-primary text-xs" onClick={()=>setShowPhase(true)}><Plus size={13}/> Ajouter une phase</button>
             </div>
           )}
+
+          {/* ── Corps de métier ── */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '20px 20px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', margin: 0 }}>Corps de métier & sous-traitants</p>
+            </div>
+
+            {showTradeForm && (
+              <form onSubmit={addTrade} style={{ background: '#F8F9FA', borderRadius: 10, padding: '12px 14px', marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+                <div><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
+                <div><label className="label">Coût estimé ($)</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
+                <div><label className="label">Sous-traitant</label>
+                  <select className="input" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
+                    <option value="">— Choisir —</option>
+                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
+                  </select>
+                </div>
+                <button type="submit" className="btn-primary text-xs px-4">OK</button>
+              </form>
+            )}
+
+            {project.trades?.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {project.trades.map(t => {
+                  const statusCfg = TRADE_STATUS[t.status] || TRADE_STATUS.to_find;
+                  const BADGE_COLOR = { to_find: '#9CA3AF', contacted: '#3b82f6', quoted: '#f59e0b', confirmed: BRAND, done: '#22c55e' };
+                  const badgeColor = BADGE_COLOR[t.status] || '#9CA3AF';
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: '#FAFAFA', border: '1px solid #F0F1F3' }}>
+                      <HardHat size={14} color={badgeColor} style={{ flexShrink: 0 }}/>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', flex: '0 0 140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.trade}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: badgeColor + '18', color: badgeColor, flexShrink: 0 }}>{statusCfg.label}</span>
+                      <select className="input py-1 text-xs" style={{ width: 130, flexShrink: 0 }} value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}>
+                        {Object.entries(TRADE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                      <select className="input py-1 text-xs" style={{ flex: 1, minWidth: 120 }} value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}>
+                        <option value="">— Sous-traitant —</option>
+                        {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
+                      </select>
+                      <span style={{ fontSize: 12, color: '#7C8089', flexShrink: 0, width: 72, textAlign: 'right' }}>{t.estimated_cost != null ? money(t.estimated_cost) : '—'}</span>
+                      <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={13} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : !showTradeForm && (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: '#9CA3AF' }}>
+                <HardHat size={26} style={{ margin: '0 auto 8px', opacity: .3 }}/>
+                <p style={{ fontSize: 13 }}>Aucun corps de métier. Utilise "Générer" depuis l'estimation ou ajoute manuellement.</p>
+              </div>
+            )}
+
+            {/* ── Florence recommande des sous-traitants ── */}
+            {(() => {
+              const missing = (project.trades || []).filter(t => !t.chosen_subcontractor_id);
+              if (!missing.length && !tradeRecos) return null;
+
+              // DB matches for each unassigned trade
+              const dbMatches = missing.map(t => {
+                const matches = subs.filter(s =>
+                  (s.trades || []).some(st => st.toLowerCase().includes(t.trade.toLowerCase()) || t.trade.toLowerCase().includes(st.toLowerCase())) ||
+                  (s.name || '').toLowerCase().includes(t.trade.toLowerCase()) ||
+                  (s.specialty || '').toLowerCase().includes(t.trade.toLowerCase())
+                );
+                return { trade: t, matches };
+              }).filter(x => x.matches.length > 0);
+
+              return (
+                <div style={{ marginTop: 18, borderTop: '1px solid #F0F1F3', paddingTop: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                    <Sparkles size={14} color={BRAND}/>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Flo recommande des sous-traitants</p>
+                    <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
+                      style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 8, border: `1.5px solid ${BRAND}`, background: `${BRAND}10`, fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {loadingTradeRecos ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                      {loadingTradeRecos ? 'Recherche…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
+                    </button>
+                  </div>
+
+                  {/* DB matches */}
+                  {dbMatches.length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Dans ta base de données</p>
+                      {dbMatches.map(({ trade, matches }) => (
+                        <div key={trade.id} style={{ marginBottom: 10 }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{trade.trade}</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {matches.map(s => (
+                              <button key={s.id} onClick={() => patchTrade(trade.id, { chosen_subcontractor_id: s.id, status: 'contacted' })}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, background: '#F4F5F6', border: '1.5px solid #E8EAED', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                                <UserPlus size={11} color={BRAND}/>
+                                {s.name}{s.company_name ? ` · ${s.company_name}` : ''}
+                                {s.phone && <span style={{ fontSize: 11, color: '#7C8089' }}>· {s.phone}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Florence IA recos */}
+                  {tradeRecos && Object.keys(tradeRecos).length > 0 && (
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Suggestions Flo</p>
+                      {Object.entries(tradeRecos).map(([tradeName, recos]) => (
+                        <div key={tradeName} style={{ marginBottom: 12 }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{tradeName}</p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {(recos || []).map((r, i) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 9, background: `${BRAND}08`, border: `1px solid ${BRAND}20` }}>
+                                <Sparkles size={12} color={BRAND} style={{ flexShrink: 0 }}/>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C' }}>{r.name}</span>
+                                  {r.note && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 7 }}>{r.note}</span>}
+                                </div>
+                                {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', flexShrink: 0 }}>{r.phone}</a>}
+                                {r.website && <a href={r.website.startsWith('http') ? r.website : `https://${r.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BRAND, textDecoration: 'none', flexShrink: 0 }}>Site →</a>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {tradeRecos && Object.keys(tradeRecos).length === 0 && !loadingTradeRecos && (
+                    <p style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Flo n'a pas trouvé de suggestions pour les corps de métier actifs.</p>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         {/* ── Médias chantier ── (cream) */}
@@ -3382,61 +3629,6 @@ Règles :
           )}
         </div>
 
-        {/* ── Corps de métiers ── (white) */}
-        <div id="s-trades" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Corps de métier</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Déclarez les corps requis et assignez le sous-traitant choisi{project.trades?.length > 0 ? ` · ${project.trades.length} métier(s)` : ''}</div>
-            </div>
-            <button className="btn-secondary text-xs" onClick={() => setShowTradeForm(v => !v)}><Plus size={13} /> Ajouter</button>
-          </div>
-
-          {showTradeForm && (
-            <form onSubmit={addTrade} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
-              <div className="sm:col-span-1"><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
-              <div><label className="label">Coût estimé ($)</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
-              <div className="flex gap-2">
-                <select className="input flex-1" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
-                  <option value="">Sous-traitant…</option>
-                  {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                </select>
-                <button type="submit" className="btn-primary text-xs px-3">OK</button>
-              </div>
-            </form>
-          )}
-
-          {project.trades?.length > 0 ? (
-            <div className="space-y-2">
-              {project.trades.map(t => (
-                <div key={t.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0">
-                  <span className="text-sm font-medium text-gray-800 flex-1 min-w-[120px]">{t.trade}</span>
-                  <select
-                    className="input py-1 text-xs" style={{ width: 130 }}
-                    value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}
-                  >
-                    {Object.entries(TRADE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                  <select
-                    className="input py-1 text-xs" style={{ width: 170 }}
-                    value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}
-                  >
-                    <option value="">— Sous-traitant choisi —</option>
-                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                  </select>
-                  <span className="text-xs text-gray-500 w-20 text-right">{t.estimated_cost != null ? money(t.estimated_cost) : '—'}</span>
-                  <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={13} /></button>
-                </div>
-              ))}
-            </div>
-          ) : !showTradeForm && (
-            <div className="text-center py-5">
-              <HardHat size={26} className="text-gray-200 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Déclarez les corps de métiers requis et assignez le sous-traitant choisi pour chacun.</p>
-            </div>
-          )}
-        </div>
 
         {/* ── Dépenses ── (violet) */}
         <div id="s-expenses" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
