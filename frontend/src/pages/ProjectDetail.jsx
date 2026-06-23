@@ -454,76 +454,70 @@ const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
 const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
 
-function GanttChart({ phases, projectStart, projectEnd, trades }) {
+function GanttChart({ phases, projectStart, projectEnd }) {
   if (!phases || phases.length === 0) return null;
 
   const refStart = projectStart ? new Date(projectStart) : new Date();
   const refEnd   = projectEnd   ? new Date(projectEnd)   : new Date(refStart.getTime() + 90*86400000);
-  const totalMs  = refEnd - refStart || 1;
+  const totalMs  = Math.max(refEnd - refStart, 1);
 
   const months = [];
   const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
-  while (cur <= refEnd) {
-    months.push(new Date(cur));
-    cur.setMonth(cur.getMonth() + 1);
-  }
+  while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
 
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const width = (s, e) => Math.max(1, pct(e) - pct(s));
-
-  // Find the sub assigned to a trade name (case-insensitive partial match)
-  const subLabel = (tradeName) => {
-    if (!tradeName || !trades?.length) return null;
-    const t = trades.find(t => t.trade?.toLowerCase().includes(tradeName.toLowerCase()) || tradeName.toLowerCase().includes(t.trade?.toLowerCase()));
-    if (!t) return null;
-    return t.chosen_subcontractor_name || t.chosen_subcontractor?.name || (t.status === 'confirmed' ? '✓' : null);
-  };
+  const barWidth = (s, e) => Math.max(0.5, pct(e) - pct(s));
+  const todayPct = pct(new Date());
+  const LW = 148;
 
   return (
-    <div className="overflow-x-auto">
-      <div style={{ minWidth: 520 }}>
-        {/* Month headers */}
-        <div style={{ display: 'flex', marginBottom: 4, marginLeft: 160 }}>
-          {months.map((m, i) => {
-            const left = pct(m);
-            const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
-            const w = Math.min(pct(nextM), 100) - left;
-            return (
-              <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 32, fontSize: 10.5, color: '#9CA3AF', borderLeft: '1px solid #F0F1F3', paddingLeft: 4 }}>
-                {m.toLocaleDateString('fr-CA',{month:'short'})}
-              </div>
-            );
-          })}
+    <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid #E8EAED', background: '#fff' }}>
+      <div style={{ minWidth: 560, fontFamily: 'inherit' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#F9FAFB' }}>
+          <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 14px' }}>Phase</div>
+          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED' }}>
+            {months.map((m, i) => {
+              const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
+              const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
+              return (
+                <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 44, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', padding: '8px 0 8px 10px', borderLeft: i > 0 ? '1px solid #E8EAED' : 'none' }}>
+                  {m.toLocaleDateString('fr-CA',{ month:'short' })} <span style={{ opacity: .55 }}>{m.getFullYear().toString().slice(2)}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-        {/* Today line + rows */}
-        <div style={{ position: 'relative', marginLeft: 160 }}>
-          <div style={{ position: 'absolute', left:`${pct(new Date())}%`, top: 0, bottom: 0, width: 1.5, background: BRAND, zIndex: 10, opacity: .7 }}/>
-          {phases.map((ph, i) => {
-            const s = ph.start_date ? new Date(ph.start_date) : refStart;
-            const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+14*86400000);
-            const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-            const pL = pct(s);
-            const pW = width(s, e);
-            const tradeLabel = ph.trade_name || null;
-            const assignedSub = subLabel(tradeLabel);
-            return (
-              <div key={ph.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, marginLeft: -160 }}>
-                <div style={{ width: 160, fontSize: 12, fontWeight: 600, color: '#3A3D44', paddingRight: 12, textAlign: 'right', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
-                <div style={{ flex: 1, position: 'relative', height: 26 }}>
-                  <div style={{ position: 'absolute', left:`${pL}%`, width:`${pW}%`, minWidth: 5, height: '100%', borderRadius: 99, background: color+'28', border:`1.5px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width:`${ph.progress_pct||0}%`, background: color+'55', borderRadius: 99 }}/>
-                    {pW > 6 && (
-                      <span style={{ position: 'relative', fontSize: 11, fontWeight: 700, color, zIndex: 1, whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '90%' }}>
-                        {tradeLabel ? tradeLabel : `${ph.progress_pct||0}%`}
-                        {assignedSub && <span style={{ marginLeft: 5, opacity: .75 }}>· {assignedSub}</span>}
+        {/* Phase rows */}
+        {phases.map((ph, i) => {
+          const s = ph.start_date ? new Date(ph.start_date) : refStart;
+          const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+21*86400000);
+          const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
+          const pL = pct(s), pW = barWidth(s, e);
+          const isEven = i % 2 === 0;
+          return (
+            <div key={ph.id} style={{ display: 'flex', alignItems: 'center', borderBottom: i < phases.length-1 ? '1px solid #F4F5F6' : 'none', background: isEven ? '#FAFAFA' : '#fff', minHeight: 38 }}>
+              <div style={{ width: LW, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: '#3A3D44', padding: '0 14px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                {ph.name}
+              </div>
+              <div style={{ flex: 1, position: 'relative', height: 38, borderLeft: '1px solid #E8EAED' }}>
+                {/* Today line */}
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left:`${todayPct}%`, width: 2, background: BRAND, opacity: .55, zIndex: 3 }}/>
+                {/* Progress bar */}
+                <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left:`${pL}%`, width:`${pW}%`, minWidth: 6, height: 24, borderRadius: 6, background: color+'22', border:`1.5px solid ${color}`, overflow: 'hidden', zIndex: 2 }}>
+                  {(ph.progress_pct||0) > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width:`${ph.progress_pct}%`, background: color+'55' }}/>}
+                  {pW > 4 && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 7, overflow: 'hidden' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 800, color, whiteSpace: 'nowrap', position: 'relative', zIndex: 1 }}>
+                        {ph.trade_name || `${ph.progress_pct||0}%`}
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -840,9 +834,10 @@ export default function ProjectDetail() {
   const [timesheets, setTimesheets] = useState([]);
   const [showPhase, setShowPhase] = useState(false);
   const [editPhase, setEditPhase] = useState(null);
-  const [tradeRecos, setTradeRecos] = useState(null); // null = not yet fetched
+  const [tradeRecos, setTradeRecos] = useState(null);
   const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
   const [autoAddingTrades, setAutoAddingTrades] = useState(false);
+  const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
   const [projectInvoices, setProjectInvoices] = useState([]);
   const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
@@ -3190,7 +3185,7 @@ Règles :
         })()}
 
 
-        {/* ── Pipeline du projet (Phases + Corps de métier fusionnés) ── */}
+        {/* ── Pipeline du projet ── */}
         <div id="s-pipeline" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
 
           {/* Header */}
@@ -3198,26 +3193,17 @@ Règles :
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>
-                Phases, corps de métier & sous-traitants
-                {project.phases?.length > 0 && ` · ${project.phases.length} phase(s)`}
-                {project.trades?.length > 0 && ` · ${project.trades.length} métier(s)`}
-              </div>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Phases, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}{project.trades?.length > 0 ? ` · ${project.trades.length} métier(s)` : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn-secondary text-xs" onClick={() => setShowTradeForm(v => !v)}><HardHat size={12}/> Corps de métier</button>
-              <button className="btn-secondary text-xs" onClick={()=>setShowPhase(true)}><Plus size={13}/> Phase</button>
+              <button className="btn-secondary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Phase</button>
             </div>
           </div>
 
           {(showPhase || editPhase) && (
-            <PhaseModal
-              projectId={id}
-              phase={editPhase}
-              trades={project.trades || []}
-              onClose={()=>{setShowPhase(false);setEditPhase(null);}}
-              onSave={handlePhaseSave}
-            />
+            <PhaseModal projectId={id} phase={editPhase} trades={project.trades || []}
+              onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
           {/* Bannière auto-import depuis estimation */}
@@ -3231,9 +3217,7 @@ Règles :
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: `${BRAND}10`, border: `1px solid ${BRAND}30`, borderRadius: 12, marginBottom: 20 }}>
                 <Sparkles size={15} color={BRAND}/>
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: BRAND, margin: 0 }}>
-                    {missing.length} corps de métier détecté{missing.length > 1 ? 's' : ''} dans l'estimation
-                  </p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: BRAND, margin: 0 }}>{missing.length} corps de métier détecté{missing.length > 1 ? 's' : ''} dans l'estimation</p>
                   <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0' }}>{missing.join(' · ')}</p>
                 </div>
                 <button onClick={autoAddTradesFromEstim} disabled={autoAddingTrades}
@@ -3246,174 +3230,203 @@ Règles :
 
           {/* ── Gantt chart ── */}
           {project.phases?.length > 0 ? (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '20px 20px 14px', marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', margin: 0 }}>Calendrier des phases</p>
-                <span style={{ fontSize: 11, color: '#C8CACD' }}>Aujourd'hui = ligne orange</span>
-              </div>
-              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date} trades={project.trades}/>
-              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {project.phases.map((ph, i) => (
-                  <div key={ph.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, background: '#FAFAFA' }}>
-                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], flexShrink: 0 }}/>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C' }}>{ph.name}</span>
-                        {ph.trade_name && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: `${ph.color || PHASE_COLORS[i % PHASE_COLORS.length]}22`, color: ph.color || PHASE_COLORS[i % PHASE_COLORS.length] }}>{ph.trade_name}</span>}
-                        <span className={`badge ${PS_BADGE[ph.status]}`}>{PS_LABEL[ph.status]}</span>
-                      </div>
-                      {ph.start_date && <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{new Date(ph.start_date).toLocaleDateString('fr-CA')}{ph.end_date && ` → ${new Date(ph.end_date).toLocaleDateString('fr-CA')}`}</p>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 72, height: 5, borderRadius: 99, background: '#E8EAED', overflow: 'hidden' }}>
-                        <div style={{ width:`${ph.progress_pct||0}%`, height: '100%', background: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], borderRadius: 99 }}/>
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: ph.color || PHASE_COLORS[i % PHASE_COLORS.length], width: 34, textAlign: 'right' }}>{ph.progress_pct||0}%</span>
-                      <button className="btn-ghost p-1 text-gray-300 hover:text-blue-500" onClick={()=>setEditPhase(ph)}><Pencil size={12}/></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div style={{ marginBottom: 20 }}>
+              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
             </div>
           ) : (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center', marginBottom: 20 }}>
+            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center', marginBottom: 20 }}>
               <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 10 }}>Aucune phase définie. Crée des phases pour activer le Gantt.</p>
-              <button className="btn-primary text-xs" onClick={()=>setShowPhase(true)}><Plus size={13}/> Ajouter une phase</button>
+              <button className="btn-primary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Ajouter une phase</button>
             </div>
           )}
 
-          {/* ── Corps de métier ── */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '20px 20px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', margin: 0 }}>Corps de métier & sous-traitants</p>
-            </div>
+          {/* ── Formulaire ajout corps de métier ── */}
+          {showTradeForm && (
+            <form onSubmit={addTrade} style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAED', padding: '14px 16px', marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 120px 1fr auto', gap: 8, alignItems: 'end' }}>
+              <div><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
+              <div><label className="label">Coût estimé</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
+              <div><label className="label">Sous-traitant</label>
+                <select className="input" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
+                  <option value="">— Choisir —</option>
+                  {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
+                </select>
+              </div>
+              <button type="submit" className="btn-primary text-xs px-4">Ajouter</button>
+            </form>
+          )}
 
-            {showTradeForm && (
-              <form onSubmit={addTrade} style={{ background: '#F8F9FA', borderRadius: 10, padding: '12px 14px', marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
-                <div><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
-                <div><label className="label">Coût estimé ($)</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
-                <div><label className="label">Sous-traitant</label>
-                  <select className="input" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
-                    <option value="">— Choisir —</option>
-                    {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                  </select>
+          {/* ── Tableau corps de métier ── */}
+          {(() => {
+            const trades = project.trades || [];
+            const STATUS_COLOR = { to_find: '#9CA3AF', contacted: '#3b82f6', quoted: '#f59e0b', confirmed: '#16a34a', done: '#16a34a', relanced: '#f97316' };
+            const STATUS_LABEL = { to_find: 'À trouver', contacted: 'Contacté', quoted: 'Soumissionné', confirmed: 'Confirmé', done: 'Terminé', relanced: 'Relancé' };
+
+            const toggleCertif = (tradeId, key) => {
+              const next = { ...tradeCertifs, [tradeId]: { ...(tradeCertifs[tradeId] || {}), [key]: !(tradeCertifs[tradeId]?.[key]) } };
+              setTradeCertifs(next);
+              localStorage.setItem(`monflux-trade-certifs-${id}`, JSON.stringify(next));
+            };
+
+            if (!trades.length && !showTradeForm) return (
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center' }}>
+                <HardHat size={26} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
+                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Aucun corps de métier. Utilise "Générer" depuis l'estimation ou ajoute manuellement.</p>
+              </div>
+            );
+
+            return (
+              <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
+                {/* Table header */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 120px 160px 60px 60px 110px 36px', gap: 0, background: '#F9FAFB', borderBottom: '2px solid #E8EAED', padding: '8px 14px' }}>
+                  {['Corps de métier', 'Phase', 'Contact', 'Téléphone', 'Courriel', 'RBQ', 'CCQ', 'Statut', ''].map((h, i) => (
+                    <div key={i} style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', paddingRight: 8 }}>{h}</div>
+                  ))}
                 </div>
-                <button type="submit" className="btn-primary text-xs px-4">OK</button>
-              </form>
-            )}
-
-            {project.trades?.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {project.trades.map(t => {
-                  const statusCfg = TRADE_STATUS[t.status] || TRADE_STATUS.to_find;
-                  const BADGE_COLOR = { to_find: '#9CA3AF', contacted: '#3b82f6', quoted: '#f59e0b', confirmed: BRAND, done: '#22c55e' };
-                  const badgeColor = BADGE_COLOR[t.status] || '#9CA3AF';
+                {/* Rows */}
+                {trades.map((t, idx) => {
+                  const sub = subs.find(s => s.id === t.chosen_subcontractor_id);
+                  const phase = (project.phases || []).find(p => p.trade_name?.toLowerCase() === t.trade?.toLowerCase());
+                  const sc = STATUS_COLOR[t.status] || '#9CA3AF';
+                  const sl = STATUS_LABEL[t.status] || t.status;
+                  const certif = tradeCertifs[t.id] || {};
+                  const isEven = idx % 2 === 0;
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: '#FAFAFA', border: '1px solid #F0F1F3' }}>
-                      <HardHat size={14} color={badgeColor} style={{ flexShrink: 0 }}/>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', flex: '0 0 140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.trade}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: badgeColor + '18', color: badgeColor, flexShrink: 0 }}>{statusCfg.label}</span>
-                      <select className="input py-1 text-xs" style={{ width: 130, flexShrink: 0 }} value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}>
-                        {Object.entries(TRADE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                      </select>
-                      <select className="input py-1 text-xs" style={{ flex: 1, minWidth: 120 }} value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}>
-                        <option value="">— Sous-traitant —</option>
-                        {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                      </select>
-                      <span style={{ fontSize: 12, color: '#7C8089', flexShrink: 0, width: 72, textAlign: 'right' }}>{t.estimated_cost != null ? money(t.estimated_cost) : '—'}</span>
-                      <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={13} /></button>
+                    <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 120px 160px 60px 60px 110px 36px', gap: 0, padding: '11px 14px', background: isEven ? '#FAFAFA' : '#fff', borderBottom: idx < trades.length-1 ? '1px solid #F4F5F6' : 'none', alignItems: 'center' }}>
+                      {/* Corps de métier */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, overflow: 'hidden' }}>
+                        <HardHat size={13} color={sc} style={{ flexShrink: 0 }}/>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.trade}</span>
+                      </div>
+                      {/* Phase */}
+                      <div style={{ paddingRight: 8 }}>
+                        {phase
+                          ? <span style={{ fontSize: 11.5, fontWeight: 600, color: phase.color || PHASE_COLORS[0], background: (phase.color || PHASE_COLORS[0])+'18', padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap', overflow: 'hidden', display: 'block', textOverflow: 'ellipsis' }}>{phase.name}</span>
+                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                      </div>
+                      {/* Contact */}
+                      <div style={{ paddingRight: 8, overflow: 'hidden' }}>
+                        {sub
+                          ? <div>
+                              <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</p>
+                              {sub.company_name && <p style={{ fontSize: 10.5, color: '#9CA3AF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.company_name}</p>}
+                            </div>
+                          : <select className="input py-0.5 text-xs" style={{ fontSize: 11 }} value={t.chosen_subcontractor_id || ''} onChange={e => patchTrade(t.id, { chosen_subcontractor_id: e.target.value || null })}>
+                              <option value="">— Assigner —</option>
+                              {subs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>}
+                      </div>
+                      {/* Téléphone */}
+                      <div style={{ paddingRight: 8 }}>
+                        {sub?.phone
+                          ? <a href={`tel:${sub.phone}`} style={{ fontSize: 12, color: '#3b82f6', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>{sub.phone}</a>
+                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                      </div>
+                      {/* Courriel */}
+                      <div style={{ paddingRight: 8, overflow: 'hidden' }}>
+                        {sub?.email
+                          ? <a href={`mailto:${sub.email}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{sub.email}</a>
+                          : <span style={{ fontSize: 11, color: '#C8CACD' }}>—</span>}
+                      </div>
+                      {/* RBQ */}
+                      <div>
+                        <button onClick={() => toggleCertif(t.id, 'rbq')}
+                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 7px', borderRadius: 6, border: `1.5px solid ${certif.rbq ? '#16a34a' : '#E0E4E8'}`, background: certif.rbq ? '#DCFCE7' : '#F9FAFB', color: certif.rbq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {certif.rbq ? <CheckCircle size={10}/> : <span>✗</span>} RBQ
+                        </button>
+                      </div>
+                      {/* CCQ */}
+                      <div>
+                        <button onClick={() => toggleCertif(t.id, 'ccq')}
+                          style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 7px', borderRadius: 6, border: `1.5px solid ${certif.ccq ? '#16a34a' : '#E0E4E8'}`, background: certif.ccq ? '#DCFCE7' : '#F9FAFB', color: certif.ccq ? '#16a34a' : '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          {certif.ccq ? <CheckCircle size={10}/> : <span>✗</span>} CCQ
+                        </button>
+                      </div>
+                      {/* Statut */}
+                      <div>
+                        <select value={t.status} onChange={e => patchTrade(t.id, { status: e.target.value })}
+                          style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 6px', borderRadius: 7, border: `1.5px solid ${sc}30`, background: sc+'12', color: sc, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%' }}>
+                          {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      </div>
+                      {/* Supprimer */}
+                      <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeTrade(t.id)}><Trash2 size={12}/></button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            ) : !showTradeForm && (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: '#9CA3AF' }}>
-                <HardHat size={26} style={{ margin: '0 auto 8px', opacity: .3 }}/>
-                <p style={{ fontSize: 13 }}>Aucun corps de métier. Utilise "Générer" depuis l'estimation ou ajoute manuellement.</p>
-              </div>
-            )}
+            );
+          })()}
 
-            {/* ── Florence recommande des sous-traitants ── */}
-            {(() => {
-              const missing = (project.trades || []).filter(t => !t.chosen_subcontractor_id);
-              if (!missing.length && !tradeRecos) return null;
+          {/* ── Florence recommande des sous-traitants ── */}
+          {(() => {
+            const missing = (project.trades || []).filter(t => !t.chosen_subcontractor_id);
+            if (!missing.length && !tradeRecos) return null;
+            const dbMatches = missing.map(t => ({
+              trade: t,
+              matches: subs.filter(s =>
+                (s.trades || []).some(st => st.toLowerCase().includes(t.trade.toLowerCase()) || t.trade.toLowerCase().includes(st.toLowerCase())) ||
+                (s.name || '').toLowerCase().includes(t.trade.toLowerCase()) ||
+                (s.specialty || '').toLowerCase().includes(t.trade.toLowerCase())
+              )
+            })).filter(x => x.matches.length > 0);
 
-              // DB matches for each unassigned trade
-              const dbMatches = missing.map(t => {
-                const matches = subs.filter(s =>
-                  (s.trades || []).some(st => st.toLowerCase().includes(t.trade.toLowerCase()) || t.trade.toLowerCase().includes(st.toLowerCase())) ||
-                  (s.name || '').toLowerCase().includes(t.trade.toLowerCase()) ||
-                  (s.specialty || '').toLowerCase().includes(t.trade.toLowerCase())
-                );
-                return { trade: t, matches };
-              }).filter(x => x.matches.length > 0);
-
-              return (
-                <div style={{ marginTop: 18, borderTop: '1px solid #F0F1F3', paddingTop: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                    <Sparkles size={14} color={BRAND}/>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Flo recommande des sous-traitants</p>
-                    <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
-                      style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 8, border: `1.5px solid ${BRAND}`, background: `${BRAND}10`, fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      {loadingTradeRecos ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                      {loadingTradeRecos ? 'Recherche…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
-                    </button>
-                  </div>
-
-                  {/* DB matches */}
-                  {dbMatches.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Dans ta base de données</p>
-                      {dbMatches.map(({ trade, matches }) => (
-                        <div key={trade.id} style={{ marginBottom: 10 }}>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{trade.trade}</p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {matches.map(s => (
-                              <button key={s.id} onClick={() => patchTrade(trade.id, { chosen_subcontractor_id: s.id, status: 'contacted' })}
-                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, background: '#F4F5F6', border: '1.5px solid #E8EAED', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
-                                <UserPlus size={11} color={BRAND}/>
-                                {s.name}{s.company_name ? ` · ${s.company_name}` : ''}
-                                {s.phone && <span style={{ fontSize: 11, color: '#7C8089' }}>· {s.phone}</span>}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Florence IA recos */}
-                  {tradeRecos && Object.keys(tradeRecos).length > 0 && (
-                    <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Suggestions Flo</p>
-                      {Object.entries(tradeRecos).map(([tradeName, recos]) => (
-                        <div key={tradeName} style={{ marginBottom: 12 }}>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{tradeName}</p>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                            {(recos || []).map((r, i) => (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 9, background: `${BRAND}08`, border: `1px solid ${BRAND}20` }}>
-                                <Sparkles size={12} color={BRAND} style={{ flexShrink: 0 }}/>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C' }}>{r.name}</span>
-                                  {r.note && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 7 }}>{r.note}</span>}
-                                </div>
-                                {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', flexShrink: 0 }}>{r.phone}</a>}
-                                {r.website && <a href={r.website.startsWith('http') ? r.website : `https://${r.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BRAND, textDecoration: 'none', flexShrink: 0 }}>Site →</a>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {tradeRecos && Object.keys(tradeRecos).length === 0 && !loadingTradeRecos && (
-                    <p style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Flo n'a pas trouvé de suggestions pour les corps de métier actifs.</p>
-                  )}
+            return (
+              <div style={{ marginTop: 14, background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '16px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <Sparkles size={14} color={BRAND}/>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Flo recommande des sous-traitants</p>
+                  <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
+                    style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 8, border: `1.5px solid ${BRAND}`, background: `${BRAND}10`, fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {loadingTradeRecos ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                    {loadingTradeRecos ? 'Recherche…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
+                  </button>
                 </div>
-              );
-            })()}
-          </div>
+                {dbMatches.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Dans ta base de données</p>
+                    {dbMatches.map(({ trade, matches }) => (
+                      <div key={trade.id} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', flexShrink: 0 }}>{trade.trade} :</span>
+                        {matches.map(s => (
+                          <button key={s.id} onClick={() => patchTrade(trade.id, { chosen_subcontractor_id: s.id, status: 'contacted' })}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 8, background: '#F4F5F6', border: '1.5px solid #E8EAED', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
+                            <UserPlus size={10} color={BRAND}/> {s.name}
+                            {s.phone && <span style={{ fontSize: 11, color: '#9CA3AF' }}>· {s.phone}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {tradeRecos && Object.keys(tradeRecos).length > 0 && (
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Suggestions Flo</p>
+                    {Object.entries(tradeRecos).map(([tradeName, recos]) => (
+                      <div key={tradeName} style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{tradeName}</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {(recos || []).map((r, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderRadius: 8, background: `${BRAND}08`, border: `1px solid ${BRAND}20` }}>
+                              <Sparkles size={11} color={BRAND} style={{ flexShrink: 0 }}/>
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', flex: 1 }}>{r.name}</span>
+                              {r.note && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{r.note}</span>}
+                              {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', flexShrink: 0 }}>{r.phone}</a>}
+                              {r.website && <a href={r.website.startsWith('http') ? r.website : `https://${r.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BRAND, textDecoration: 'none', flexShrink: 0 }}>Site →</a>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {tradeRecos && Object.keys(tradeRecos).length === 0 && !loadingTradeRecos && (
+                  <p style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Flo n'a pas trouvé de suggestions pour les corps de métier actifs.</p>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Médias chantier ── (cream) */}
