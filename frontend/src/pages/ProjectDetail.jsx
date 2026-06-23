@@ -3,7 +3,7 @@ import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -15,7 +15,6 @@ const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
-  { id: 's-profit', icon: '💰', label: 'Finances & rentabilité' },
   { id: 's-payments', icon: '💳', label: 'Paiements' },
   { id: 's-phases', icon: '📅', label: 'Phases & Gantt' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
@@ -786,6 +785,28 @@ function FieldEstimation({ project, onUpdated }) {
   );
 }
 
+function KvTooltipChip({ chip }) {
+  const [show, setShow] = useState(false);
+  const pos = chip.label.includes('Marge') && chip.value ? parseFloat(chip.value) >= 0 : null;
+  return (
+    <div className="kv" style={{ background: chip.bg, border: chip.border, position: 'relative', userSelect: 'none' }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <div className="kv-k">{chip.label}</div>
+      <div className="kv-v" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: pos === false ? '#DC2626' : pos === true ? '#16a34a' : undefined }}>
+        {chip.dot && <span style={{ width: 9, height: 9, borderRadius: '50%', background: chip.dot, display: 'inline-block', flexShrink: 0 }}/>}
+        {chip.value}
+        {chip.extra && <span style={{ fontSize: 11, opacity: .7 }}>· {chip.extra}</span>}
+      </div>
+      {show && chip.tooltip && (
+        <div style={{ position: 'absolute', bottom: 'calc(100% + 9px)', left: '50%', transform: 'translateX(-50%)', background: '#15171C', color: '#fff', fontSize: 11.5, padding: '6px 12px', borderRadius: 8, whiteSpace: 'nowrap', zIndex: 500, pointerEvents: 'none', boxShadow: '0 4px 14px rgba(0,0,0,.22)', lineHeight: 1.5 }}>
+          {chip.tooltip}
+          <span style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #15171C' }}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const t = useT();
   const { id } = useParams();
@@ -869,6 +890,7 @@ export default function ProjectDetail() {
   const [orderForm, setOrderForm] = useState({ supplier: '', order_number: '', description: '', total_amount: '', order_date: '', expected_date: '' });
   // B7 — IA chantier
   const [media, setMedia] = useState([]);
+  const [lightboxItem, setLightboxItem] = useState(null);
   const [showMediaForm, setShowMediaForm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
@@ -2021,28 +2043,58 @@ Règles :
               ))}
             </div>
 
-            {/* Métriques non-éditables + QR */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24, alignItems: 'center' }}>
-              {contractValue > 0 && (
-                <div className="kv"><div className="kv-k">Valeur contrat</div><div className="kv-v">{money(contractValue)}</div></div>
-              )}
-              {heroNextPaymentAmount > 0 && (
-                <div className="kv"><div className="kv-k">Prochain versement</div><div className="kv-v">{money(heroNextPaymentAmount)}</div></div>
-              )}
-              <div className="kv" style={{ background: hc.bg, border: `1px solid ${hc.dot}33` }}>
-                <div className="kv-k">Santé du chantier</div>
-                <div className="kv-v" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: hc.dot, display: 'inline-block', flexShrink: 0 }} />
-                  {hc.label}
+            {/* Métriques non-éditables + rentabilité + QR */}
+            {(() => {
+              const kvChips = [
+                contractValue > 0 && {
+                  label: 'Valeur contrat', value: money(contractValue),
+                  tooltip: `Contrat signé · ${projectContracts.length} contrat${projectContracts.length !== 1 ? 's' : ''}`,
+                  bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
+                },
+                heroNextPaymentAmount > 0 && {
+                  label: 'Prochain versement', value: money(heroNextPaymentAmount),
+                  tooltip: nextInstallment ? `${nextInstallment.label} · ${nextInstallment.pct}% du contrat` : (project.payment_terms || 'Voir échéancier'),
+                  bg: '#fff', border: '1px solid rgba(0,0,0,.09)', dot: null,
+                },
+                {
+                  label: 'Santé du chantier', value: hc.label,
+                  tooltip: overdue ? 'Facture(s) en retard de paiement' : ['brouillon','estimation'].includes(project.status) ? 'Projet non encore confirmé' : 'Toutes les échéances sont à jour',
+                  bg: hc.bg, border: `1px solid ${hc.dot}33`, dot: hc.dot,
+                },
+                profit && profit.theoretical.margin_pct != null && {
+                  label: 'Marge théorique',
+                  value: `${profit.theoretical.margin_pct}%`,
+                  tooltip: `Revenus ${money(profit.theoretical.revenue)} − Coûts ${money(profit.theoretical.cost)}`,
+                  bg: profit.theoretical.margin_pct >= 0 ? '#DCFCE7' : '#FEE2E2',
+                  border: `1px solid ${profit.theoretical.margin_pct >= 0 ? '#16a34a33' : '#DC262633'}`,
+                  dot: null,
+                  extra: profit.theoretical.margin != null ? money(profit.theoretical.margin) : null,
+                },
+                profit && profit.actual.margin_pct != null && {
+                  label: 'Marge réelle',
+                  value: `${profit.actual.margin_pct}%`,
+                  tooltip: `Factures émises − punch & dépenses · ${profit.actual.cost_breakdown?.hours_logged || 0}h MO`,
+                  bg: profit.actual.margin_pct >= 0 ? '#DCFCE7' : '#FEE2E2',
+                  border: `1px solid ${profit.actual.margin_pct >= 0 ? '#16a34a33' : '#DC262633'}`,
+                  dot: null,
+                  extra: profit.actual.margin != null ? money(profit.actual.margin) : null,
+                },
+              ].filter(Boolean);
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24, alignItems: 'center' }}>
+                  {kvChips.map((chip, ci) => (
+                    <KvTooltipChip key={ci} chip={chip} />
+                  ))}
+                  {qrData && (
+                    <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
+                      style={{ marginLeft: 'auto', background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)', flexShrink: 0 }}>
+                      <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
+                    </button>
+                  )}
                 </div>
-              </div>
-              {qrData && (
-                <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
-                  style={{ marginLeft: 'auto', background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)', flexShrink: 0 }}>
-                  <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
-                </button>
-              )}
-            </div>
+              );
+            })()}
+
 
             {/* Grille éditables — ordre optimisé, responsable permis conditionnel */}
             <div style={{ paddingTop: 16, borderTop: '1px solid rgba(0,0,0,.08)' }}>
@@ -2204,6 +2256,59 @@ Règles :
         </div>
       )}
 
+      {/* ── Lightbox — media & documents ── */}
+      {lightboxItem && (
+        <div onClick={() => setLightboxItem(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.88)', zIndex: 9000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <button onClick={() => setLightboxItem(null)}
+            style={{ position: 'absolute', top: 20, right: 20, width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,.15)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', zIndex: 1 }}>
+            <X size={18} color="#fff"/>
+          </button>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', maxWidth: 860, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,.4)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Preview */}
+            <div style={{ background: '#1C1C1E', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, maxHeight: '60vh', overflow: 'hidden' }}>
+              {lightboxItem.type === 'photo' && lightboxItem.url
+                ? <img src={lightboxItem.url} alt={lightboxItem.caption || ''} style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}/>
+                : lightboxItem.type === 'video' && lightboxItem.url
+                  ? <video src={lightboxItem.url} controls style={{ maxWidth: '100%', maxHeight: '60vh' }}/>
+                  : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 40 }}>
+                      <span style={{ fontSize: 64 }}>{lightboxItem.type === 'voice' ? '🎙' : lightboxItem.type === 'note' ? '📌' : '📄'}</span>
+                      {lightboxItem.transcript && <p style={{ fontSize: 14, color: '#fff', textAlign: 'center', maxWidth: 480, margin: 0, lineHeight: 1.6 }}>{lightboxItem.transcript}</p>}
+                    </div>}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {lightboxItem.caption || lightboxItem.name || lightboxItem.filename || lightboxItem.transcript?.slice(0, 60) || '—'}
+                </p>
+                {lightboxItem.created_at && (
+                  <p style={{ fontSize: 11.5, color: '#7C8089', margin: '3px 0 0' }}>
+                    {new Date(lightboxItem.created_at).toLocaleDateString('fr-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              {lightboxItem.url && (
+                <>
+                  <button onClick={() => {
+                    if (navigator.share) { navigator.share({ url: lightboxItem.url, title: lightboxItem.caption || 'Document' }).catch(() => {}); }
+                    else { navigator.clipboard.writeText(lightboxItem.url); }
+                  }}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', fontSize: 12.5, fontWeight: 700, color: '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <Share2 size={13}/> Partager
+                  </button>
+                  <a href={lightboxItem.url} download target="_blank" rel="noreferrer"
+                    style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: BRAND, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none', flexShrink: 0 }}>
+                    <Download size={13}/> Télécharger
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
 
@@ -2262,7 +2367,7 @@ Règles :
                 {/* Photos / vidéos */}
                 {media.map(m => (
                   <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
-                    onClick={() => m.url && window.open(m.url, '_blank')}>
+                    onClick={() => setLightboxItem(m)}>
                     {m.type === 'photo' && m.url ? (
                       <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
                     ) : m.type === 'video' ? (
@@ -2276,7 +2381,7 @@ Règles :
                 {/* Documents */}
                 {(project.documents || []).map(d => (
                   <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
-                    onClick={() => d.url && window.open(d.url, '_blank')}>
+                    onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
                     <span style={{ fontSize: 28 }}>📄</span>
                     <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
                   </div>
@@ -2744,9 +2849,9 @@ Règles :
                       value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
                   </div>
 
-                  {/* Photos & documents sur place */}
+                  {/* Photos & documents sur place — scroll horizontal */}
                   <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
                       <span style={{ width:24, height:24, borderRadius:8, background: media.length ? '#DCFCE7' : `${BRAND}22`, color: media.length ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
                         {media.length ? '✓' : <Camera size={13}/>}
                       </span>
@@ -2756,24 +2861,29 @@ Règles :
                         <Camera size={11}/> Ajouter
                       </button>
                     </div>
-                    {media.length > 0 ? (
-                      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
-                        {media.map(m => (
-                          <div key={m.id} style={{ flexShrink:0, width:90, height:68, borderRadius:8, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
-                            onClick={() => m.url && window.open(m.url,'_blank')}>
-                            {m.type==='photo' && m.url
-                              ? <img src={m.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-                              : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:22 }}>{m.type==='video'?'▶':'📎'}</div>}
-                          </div>
-                        ))}
-                        <div style={{ flexShrink:0, width:68, height:68, borderRadius:8, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
-                          onClick={() => setShowCapture(true)}>
-                          <span style={{ fontSize:18 }}>+</span>
+                    <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
+                      {media.map(m => (
+                        <div key={m.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
+                          onClick={() => setLightboxItem(m)}>
+                          {m.type==='photo' && m.url
+                            ? <img src={m.url} alt={m.caption||''} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                            : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:28 }}>{m.type==='video'?'▶':'📌'}</div>}
+                          {m.caption && <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,.55)', color:'#fff', fontSize:9.5, padding:'3px 6px', textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap' }}>{m.caption}</div>}
                         </div>
+                      ))}
+                      {(project.documents || []).map(d => (
+                        <div key={d.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F8FAFB', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', padding:8, boxSizing:'border-box' }}
+                          onClick={() => setLightboxItem({ ...d, type:'doc' })}>
+                          <span style={{ fontSize:28 }}>📄</span>
+                          <span style={{ fontSize:9.5, color:'#4B5563', textAlign:'center', lineHeight:1.3, overflow:'hidden', maxWidth:'100%', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name||d.filename||'Document'}</span>
+                        </div>
+                      ))}
+                      <div style={{ flexShrink:0, width:90, height:90, borderRadius:10, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
+                        onClick={() => setShowCapture(true)}>
+                        <span style={{ fontSize:22 }}>+</span>
+                        <span style={{ fontSize:10, fontWeight:700 }}>Ajouter</span>
                       </div>
-                    ) : (
-                      <p style={{ fontSize:12.5, color:'#B0B3BA', margin:0 }}>Aucune photo pour l'instant — appuyez sur Ajouter pour prendre ou importer.</p>
-                    )}
+                    </div>
                   </div>
 
                   {/* Barre de progression + action */}
@@ -2795,52 +2905,6 @@ Règles :
           );
         })()}
 
-        {/* ── Rentabilité ── (violet) */}
-        {profit && (
-          <div id="s-profit" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💰</div>
-              <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Rentabilité</h2>
-                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Marges théorique et réelle · punch et dépenses</div>
-              </div>
-            </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-            {[
-              { label: 'Théorique', d: profit.theoretical, sub: 'Commande − coûts estimés (budgets + métiers)' },
-              { label: 'Réelle', d: profit.actual, sub: 'Factures émises − punch & dépenses' },
-            ].map(({ label, d, sub }) => {
-              const pos = (d.margin || 0) >= 0;
-              return (
-                <div key={label} className="rounded-xl border border-gray-100 p-4 bg-white">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-gray-500">Marge {label.toLowerCase()}</p>
-                    {d.margin_pct != null && <span className={`badge ${pos ? 'badge-green' : 'badge-red'}`}>{d.margin_pct}%</span>}
-                  </div>
-                  <p className={`text-3xl font-bold mt-1 ${pos ? 'text-green-600' : 'text-red-500'}`}>{money(d.margin)}</p>
-                  <p className="text-xs text-gray-400 mb-3">{sub}</p>
-                  <div className="pt-2 border-t border-gray-100 space-y-1 text-xs text-gray-500">
-                    <div className="flex justify-between"><span>Revenus</span><span className="font-medium text-gray-700">{money(d.revenue)}</span></div>
-                    <div className="flex justify-between"><span>Coûts</span><span className="font-medium text-gray-700">{money(d.cost)}</span></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500">Taux MO interne (punch) :</span>
-            <div className="flex items-center gap-1">
-              <input className="input py-1 text-xs" style={{ width: 80 }} type="number" min="0" step="0.5"
-                value={laborRate} onChange={e => setLaborRate(e.target.value)} placeholder="0" />
-              <span className="text-xs text-gray-400">$/h</span>
-              <button className="btn-secondary text-xs py-1 px-2" onClick={saveLaborRate} disabled={savingRate}>
-                {savingRate ? <Loader2 size={12} className="animate-spin" /> : 'Enregistrer'}
-              </button>
-            </div>
-            <span className="text-[11px] text-gray-400">{profit.actual.cost_breakdown.hours_logged || 0}h · MO {money(profit.actual.cost_breakdown.labor_punch)} · dépenses {money(profit.actual.cost_breakdown.expenses)}</span>
-          </div>
-            </div>
-        )}
 
         {/* ── Paiements ── */}
         <div id="s-payments" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -3119,7 +3183,8 @@ Règles :
               {/* Galerie horizontale */}
               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
                 {media.map(m => (
-                  <div key={`gal-${m.id}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff' }}>
+                  <div key={`gal-${m.id}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer' }}
+                    onClick={() => setLightboxItem(m)}>
                     {m.type === 'photo' && m.url
                       ? <img src={m.url} alt={m.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}/>
                       : <div style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 28 }}>{m.type === 'voice' ? '🎙' : '📌'}</div>
@@ -3139,9 +3204,11 @@ Règles :
                 return (
                   <div key={m.id} className="border border-gray-100 rounded-xl p-3">
                     <div className="flex items-start gap-3">
-                      {m.type === 'photo' && m.url
-                        ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-100"/>
-                        : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                      <div className="flex-shrink-0 cursor-pointer" onClick={() => setLightboxItem(m)}>
+                        {m.type === 'photo' && m.url
+                          ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover border border-gray-100"/>
+                          : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="badge badge-gray text-[10px] capitalize">{m.type}</span>
