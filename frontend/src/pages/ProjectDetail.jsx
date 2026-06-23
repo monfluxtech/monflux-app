@@ -15,7 +15,7 @@ const BRAND_BORDER = '#F9D5C0';
 
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
-  { id: 's-pipeline', icon: '🏗️', label: 'Pipeline du projet' },
+  { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
@@ -453,6 +453,19 @@ function DocPreview({ doc, onClose }) {
 const PS_BADGE = { not_started:'badge-gray', in_progress:'badge-orange', delayed:'badge-red', completed:'badge-green', cancelled:'badge-gray' };
 const PS_LABEL = { not_started:'Non démarré', in_progress:'En cours', delayed:'En retard', completed:'Terminé', cancelled:'Annulé' };
 const PHASE_COLORS = [BRAND,'#3b82f6','#22c55e','#a855f7','#f59e0b','#ef4444','#14b8a6','#ec4899'];
+const PHASE_TEMPLATES = [
+  { name: 'Démolition',        trade_name: 'Démolition',   durationDays: 5  },
+  { name: 'Préparation',       trade_name: null,           durationDays: 3  },
+  { name: 'Structure',         trade_name: 'Structure',    durationDays: 14 },
+  { name: 'Électricité',       trade_name: 'Électricité',  durationDays: 7  },
+  { name: 'Plomberie',         trade_name: 'Plomberie',    durationDays: 7  },
+  { name: 'CVCA',              trade_name: 'CVCA',         durationDays: 5  },
+  { name: 'Isolation',         trade_name: 'Isolation',    durationDays: 5  },
+  { name: 'Gypse & finition',  trade_name: 'Gypse',        durationDays: 10 },
+  { name: 'Peinture',          trade_name: 'Peinture',     durationDays: 7  },
+  { name: 'Plancher',          trade_name: 'Plancher',     durationDays: 5  },
+  { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
+];
 
 function GanttChart({ phases, projectStart, projectEnd }) {
   if (!phases || phases.length === 0) return null;
@@ -838,6 +851,8 @@ export default function ProjectDetail() {
   const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
   const [autoAddingTrades, setAutoAddingTrades] = useState(false);
   const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
+  const [generatingPhases, setGeneratingPhases] = useState(false);
+  const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
   const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
@@ -1302,6 +1317,69 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
         try { const parsed = JSON.parse(match[0]); setTradeRecos(parsed.trades || {}); } catch { setTradeRecos({}); }
       } else { setTradeRecos({}); }
     } catch { setTradeRecos({}); } finally { setLoadingTradeRecos(false); }
+  };
+
+  const generatePhasesFromAI = async () => {
+    setGeneratingPhases(true);
+    const fa = project.field_assessment || {};
+    const trades = (fa.selected_trades || []).join(', ') || (project.trades||[]).map(t=>t.trade).join(', ') || 'non précisé';
+    const startD = project.start_date ? new Date(project.start_date).toLocaleDateString('fr-CA') : (fa.start_label || 'non précisée');
+    const endD   = project.end_date   ? new Date(project.end_date).toLocaleDateString('fr-CA')   : (fa.end_label   || 'non précisée');
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
+Génère un plan de phases réaliste pour ce projet de construction :
+- Description : ${project.description || fa.work_type || project.name || 'Rénovation'}
+- Adresse : ${project.address || 'Non précisée'}
+- Corps de métier : ${trades}
+- Début estimé : ${startD}
+- Fin estimée : ${endD}
+
+Réponds UNIQUEMENT en JSON avec ce format (sans texte autour) :
+{"phases":[{"name":"Démolition","trade_name":"Démolition","start_date":"2026-07-01","end_date":"2026-07-05","progress_pct":0,"status":"not_started"},{"name":"Électricité brute","trade_name":"Électricité","start_date":"2026-07-06","end_date":"2026-07-12","progress_pct":0,"status":"not_started"}]}
+Génère entre 4 et 8 phases logiques selon le type de travaux. Utilise des dates ISO (AAAA-MM-JJ).`;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) return;
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let raw = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') raw += evt.text; } catch {}
+        }
+      }
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return;
+      let parsed;
+      try { parsed = JSON.parse(match[0]); } catch { return; }
+      const newPhases = parsed.phases || [];
+      for (const ph of newPhases) {
+        try {
+          const { data } = await projectsApi.addPhase(id, { name: ph.name, trade_name: ph.trade_name || '', start_date: ph.start_date || null, end_date: ph.end_date || null, progress_pct: 0, status: 'not_started' });
+          setProject(p => ({ ...p, phases: [...(p.phases || []), data] }));
+        } catch {}
+      }
+    } catch {} finally { setGeneratingPhases(false); }
+  };
+
+  const addTemplatePhase = async (tpl) => {
+    setAddingTemplatePhase(tpl.name);
+    const existingPhases = project.phases || [];
+    const lastEnd = existingPhases.length > 0 && existingPhases[existingPhases.length-1].end_date
+      ? new Date(existingPhases[existingPhases.length-1].end_date)
+      : (project.start_date ? new Date(project.start_date) : new Date());
+    const startDate = new Date(lastEnd); startDate.setDate(startDate.getDate() + 1);
+    const endDate   = new Date(startDate); endDate.setDate(endDate.getDate() + tpl.durationDays);
+    try {
+      const { data } = await projectsApi.addPhase(id, {
+        name: tpl.name, trade_name: tpl.trade_name || '', progress_pct: 0, status: 'not_started',
+        start_date: startDate.toISOString().slice(0,10), end_date: endDate.toISOString().slice(0,10),
+      });
+      setProject(p => ({ ...p, phases: [...(p.phases||[]), data] }));
+    } catch {} finally { setAddingTemplatePhase(null); }
   };
 
   // ── Dépenses ────────────────────────────────────────────────────────────────
@@ -3185,20 +3263,17 @@ Règles :
         })()}
 
 
-        {/* ── Pipeline du projet ── */}
+        {/* ── Phases du projet ── */}
         <div id="s-pipeline" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
 
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Pipeline du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Phases, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}{project.trades?.length > 0 ? ` · ${project.trades.length} métier(s)` : ''}</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants{project.phases?.length > 0 ? ` · ${project.phases.length} phase(s)` : ''}</div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn-secondary text-xs" onClick={() => setShowTradeForm(v => !v)}><HardHat size={12}/> Corps de métier</button>
-              <button className="btn-secondary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Phase</button>
-            </div>
+            <button className="btn-secondary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Phase manuelle</button>
           </div>
 
           {(showPhase || editPhase) && (
@@ -3206,53 +3281,42 @@ Règles :
               onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
           )}
 
-          {/* Bannière auto-import depuis estimation */}
-          {(() => {
-            const fa = project.field_assessment || {};
-            const estimTrades = fa.selected_trades || [];
-            const existing = (project.trades || []).map(t => t.trade?.toLowerCase());
-            const missing = estimTrades.filter(t => !existing.includes(t.toLowerCase()));
-            if (!missing.length) return null;
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: `${BRAND}10`, border: `1px solid ${BRAND}30`, borderRadius: 12, marginBottom: 20 }}>
-                <Sparkles size={15} color={BRAND}/>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: BRAND, margin: 0 }}>{missing.length} corps de métier détecté{missing.length > 1 ? 's' : ''} dans l'estimation</p>
-                  <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0' }}>{missing.join(' · ')}</p>
-                </div>
-                <button onClick={autoAddTradesFromEstim} disabled={autoAddingTrades}
-                  style={{ padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: `${BRAND}15`, fontSize: 12, fontWeight: 700, color: BRAND, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {autoAddingTrades ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>} Générer
-                </button>
-              </div>
-            );
-          })()}
-
-          {/* ── Gantt chart ── */}
+          {/* ── Gantt chart ou empty state ── */}
           {project.phases?.length > 0 ? (
             <div style={{ marginBottom: 20 }}>
               <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
             </div>
           ) : (
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center', marginBottom: 20 }}>
-              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 10 }}>Aucune phase définie. Crée des phases pour activer le Gantt.</p>
-              <button className="btn-primary text-xs" onClick={() => setShowPhase(true)}><Plus size={13}/> Ajouter une phase</button>
-            </div>
-          )}
-
-          {/* ── Formulaire ajout corps de métier ── */}
-          {showTradeForm && (
-            <form onSubmit={addTrade} style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAED', padding: '14px 16px', marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 120px 1fr auto', gap: 8, alignItems: 'end' }}>
-              <div><label className="label">Métier *</label><input className="input" value={tradeForm.trade} onChange={e => setTradeForm(f => ({ ...f, trade: e.target.value }))} placeholder="Ex: Électricité" required /></div>
-              <div><label className="label">Coût estimé</label><input className="input" type="number" step="0.01" value={tradeForm.estimated_cost} onChange={e => setTradeForm(f => ({ ...f, estimated_cost: e.target.value }))} placeholder="0" /></div>
-              <div><label className="label">Sous-traitant</label>
-                <select className="input" value={tradeForm.chosen_subcontractor_id} onChange={e => setTradeForm(f => ({ ...f, chosen_subcontractor_id: e.target.value }))}>
-                  <option value="">— Choisir —</option>
-                  {subs.map(s => <option key={s.id} value={s.id}>{s.name}{s.company_name ? ` (${s.company_name})` : ''}</option>)}
-                </select>
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', padding: '28px 24px', marginBottom: 20 }}>
+              {/* Générer avec Flo */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: `${BRAND}08`, border: `1.5px solid ${BRAND}25`, borderRadius: 12, marginBottom: 20 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                  <Sparkles size={18} color="#fff"/>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Générer les phases avec Florence</p>
+                  <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0' }}>Flo analyse l'estimation et crée automatiquement un plan de phases avec les dates et corps de métier.</p>
+                </div>
+                <button onClick={generatePhasesFromAI} disabled={generatingPhases}
+                  style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: BRAND, fontSize: 13, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {generatingPhases ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>}
+                  {generatingPhases ? 'Génération…' : 'Générer'}
+                </button>
               </div>
-              <button type="submit" className="btn-primary text-xs px-4">Ajouter</button>
-            </form>
+              {/* Lignes types */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 10px' }}>Ou ajouter des phases types</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {PHASE_TEMPLATES.map(tpl => (
+                    <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer', transition: 'all .12s' }}>
+                      {addingTemplatePhase === tpl.name ? <Loader2 size={11} className="animate-spin"/> : <Plus size={11} color={BRAND}/>}
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── Tableau corps de métier ── */}
@@ -3267,7 +3331,7 @@ Règles :
               localStorage.setItem(`monflux-trade-certifs-${id}`, JSON.stringify(next));
             };
 
-            if (!trades.length && !showTradeForm) return (
+            if (!trades.length) return (
               <div style={{ background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '28px 20px', textAlign: 'center' }}>
                 <HardHat size={26} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
                 <p style={{ fontSize: 13, color: '#9CA3AF' }}>Aucun corps de métier. Utilise "Générer" depuis l'estimation ou ajoute manuellement.</p>
