@@ -467,7 +467,10 @@ const PHASE_TEMPLATES = [
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
-function GanttChart({ phases, projectStart, projectEnd }) {
+function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeletePhase, onEditPhase }) {
+  const [editingTrade, setEditingTrade] = React.useState(null);
+  const [tradeVal, setTradeVal] = React.useState('');
+
   if (!phases || phases.length === 0) return null;
 
   const refStart = projectStart ? new Date(projectStart) : new Date();
@@ -479,58 +482,107 @@ function GanttChart({ phases, projectStart, projectEnd }) {
   while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
 
   const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const barWidth = (s, e) => Math.max(0.5, pct(e) - pct(s));
+  const barW = (s, e) => Math.max(0.5, pct(e) - pct(s));
   const todayPct = pct(new Date());
-  const LW = 148; // Phase name col
-  const TW = 120; // Corps de métier col
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
+
+  const LW = 160; // Phase name
+  const CW = 130; // Corps de métier
+
+  const saveTrade = (ph) => {
+    const val = tradeVal.trim();
+    setEditingTrade(null);
+    if (val !== ph.trade_name) onUpdatePhase && onUpdatePhase(ph.id, { trade_name: val });
+  };
 
   return (
     <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid #E8EAED', background: '#fff' }}>
-      <div style={{ minWidth: 580, fontFamily: 'inherit' }}>
+      <div style={{ minWidth: 640, fontFamily: 'inherit' }}>
         {/* Header */}
         <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#F9FAFB' }}>
           <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 14px' }}>Phase</div>
-          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED' }}>
+          <div style={{ width: CW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 12px', borderLeft: '1px solid #E8EAED' }}>Corps de métier</div>
+          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED', position: 'relative' }}>
             {months.map((m, i) => {
               const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
               const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
               return (
                 <div key={i} style={{ width:`${Math.max(w,0)}%`, minWidth: 44, fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', padding: '8px 0 8px 10px', borderLeft: i > 0 ? '1px solid #E8EAED' : 'none' }}>
-                  {m.toLocaleDateString('fr-CA',{ month:'short' })} <span style={{ opacity: .55 }}>{m.getFullYear().toString().slice(2)}</span>
+                  {m.toLocaleDateString('fr-CA',{ month:'short' })} <span style={{ opacity: .6, fontSize: 9.5 }}>{m.getFullYear()}</span>
                 </div>
               );
             })}
           </div>
-          <div style={{ width: TW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 12px', borderLeft: '1px solid #E8EAED' }}>Corps de métier</div>
+          <div style={{ width: 24, flexShrink: 0 }}/>
         </div>
-        {/* Phase rows */}
+
+        {/* Rows */}
         {phases.map((ph, i) => {
           const s = ph.start_date ? new Date(ph.start_date) : refStart;
-          const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+21*86400000);
+          const e = ph.end_date   ? new Date(ph.end_date)   : new Date(s.getTime()+14*86400000);
           const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
-          const pL = pct(s), pW = barWidth(s, e);
+          const pL = pct(s), pW = barW(s, e);
           const isEven = i % 2 === 0;
+          const isEditing = editingTrade === ph.id;
+          const ROW_H = 48;
+
           return (
-            <div key={ph.id} style={{ display: 'flex', alignItems: 'center', borderBottom: i < phases.length-1 ? '1px solid #F4F5F6' : 'none', background: isEven ? '#FAFAFA' : '#fff', minHeight: 38 }}>
-              <div style={{ width: LW, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: '#3A3D44', padding: '0 14px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                {ph.name}
+            <div key={ph.id} style={{ display: 'flex', alignItems: 'center', borderBottom: i < phases.length-1 ? '1px solid #F0F1F3' : 'none', background: isEven ? '#FAFAFA' : '#fff', minHeight: ROW_H }}>
+              {/* Phase name */}
+              <div style={{ width: LW, flexShrink: 0, padding: '0 14px', cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Cliquer pour modifier">
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
+                {(ph.start_date || ph.end_date) && (
+                  <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2, whiteSpace: 'nowrap' }}>
+                    {fmtDate(ph.start_date)}{ph.end_date ? ` → ${fmtDate(ph.end_date)}` : ''}
+                  </div>
+                )}
               </div>
-              <div style={{ flex: 1, position: 'relative', height: 38, borderLeft: '1px solid #E8EAED' }}>
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left:`${todayPct}%`, width: 2, background: BRAND, opacity: .55, zIndex: 3 }}/>
-                <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left:`${pL}%`, width:`${pW}%`, minWidth: 6, height: 24, borderRadius: 6, background: color+'22', border:`1.5px solid ${color}`, overflow: 'hidden', zIndex: 2 }}>
-                  {(ph.progress_pct||0) > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width:`${ph.progress_pct}%`, background: color+'55' }}/>}
-                  {pW > 4 && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 7, overflow: 'hidden' }}>
+
+              {/* Corps de métier — inline edit */}
+              <div style={{ width: CW, flexShrink: 0, padding: '0 10px', borderLeft: '1px solid #F0F1F3' }}>
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    value={tradeVal}
+                    onChange={e => setTradeVal(e.target.value)}
+                    onBlur={() => saveTrade(ph)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveTrade(ph); if (e.key === 'Escape') setEditingTrade(null); }}
+                    style={{ width: '100%', fontSize: 12, fontWeight: 600, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 7px', outline: 'none', background: '#fff' }}
+                  />
+                ) : (
+                  <div onClick={() => { setEditingTrade(ph.id); setTradeVal(ph.trade_name || ''); }}
+                    title="Cliquer pour modifier le corps de métier"
+                    style={{ cursor: 'text', minHeight: 24, display: 'flex', alignItems: 'center' }}>
+                    {ph.trade_name
+                      ? <span style={{ fontSize: 11.5, fontWeight: 700, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: '100%' }}>{ph.trade_name}</span>
+                      : <span style={{ fontSize: 11, color: '#C8CACD', fontStyle: 'italic' }}>+ Corps de métier</span>}
+                  </div>
+                )}
+              </div>
+
+              {/* Timeline area */}
+              <div style={{ flex: 1, position: 'relative', height: ROW_H, borderLeft: '1px solid #E8EAED' }}>
+                {/* Today marker */}
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left:`${todayPct}%`, width: 2, background: BRAND, opacity: .5, zIndex: 3 }}/>
+                {/* Bar */}
+                <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left:`${pL}%`, width:`${pW}%`, minWidth: 8, height: 26, borderRadius: 7, background: color+'20', border:`1.5px solid ${color}`, overflow: 'hidden', zIndex: 2, cursor: 'pointer' }}
+                  onClick={() => onEditPhase && onEditPhase(ph)} title={`${fmtDate(ph.start_date)} → ${fmtDate(ph.end_date)}`}>
+                  {(ph.progress_pct||0) > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width:`${ph.progress_pct}%`, background: color+'50', borderRadius: 7 }}/>}
+                  {pW > 5 && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 8, overflow: 'hidden' }}>
                       <span style={{ fontSize: 11, fontWeight: 800, color, whiteSpace: 'nowrap', position: 'relative', zIndex: 1 }}>{ph.name}</span>
                     </div>
                   )}
                 </div>
               </div>
-              {/* Corps de métier column */}
-              <div style={{ width: TW, flexShrink: 0, padding: '0 12px', borderLeft: '1px solid #F4F5F6' }}>
-                {ph.trade_name
-                  ? <span style={{ fontSize: 11.5, fontWeight: 700, color, background: color+'18', padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ph.trade_name}</span>
-                  : <span style={{ fontSize: 11, color: '#D1D5DB' }}>—</span>}
+
+              {/* Delete */}
+              <div style={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
+                  style={{ width: 20, height: 20, borderRadius: 5, border: '1px solid #E0E4E8', background: '#F9FAFB', color: '#C0C4CC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  title="Supprimer cette phase">
+                  <X size={11}/>
+                </button>
               </div>
             </div>
           );
@@ -1333,20 +1385,29 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
   const generatePhasesFromAI = async () => {
     setGeneratingPhases(true);
     const fa = project.field_assessment || {};
+    // Supprimer les phases existantes avant de regénérer
+    const existingPhases = project.phases || [];
+    for (const ph of existingPhases) {
+      try { await projectsApi.deletePhase(id, ph.id); } catch {}
+    }
+    setProject(p => ({ ...p, phases: [] }));
+
     const trades = (fa.selected_trades || []).join(', ') || (project.trades||[]).map(t=>t.trade).join(', ') || 'non précisé';
     const startD = project.start_date ? new Date(project.start_date).toLocaleDateString('fr-CA') : (fa.start_label || 'non précisée');
     const endD   = project.end_date   ? new Date(project.end_date).toLocaleDateString('fr-CA')   : (fa.end_label   || 'non précisée');
+    const tradeList = (fa.selected_trades || []).length > 0 ? fa.selected_trades : ['Général'];
     const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
-Génère un plan de phases réaliste pour ce projet de construction :
+Génère un plan de phases réaliste pour ce projet :
 - Description : ${project.description || fa.work_type || project.name || 'Rénovation'}
-- Adresse : ${project.address || 'Non précisée'}
-- Corps de métier : ${trades}
-- Début estimé : ${startD}
-- Fin estimée : ${endD}
+- Corps de métier disponibles : ${trades}
+- Début : ${startD} · Fin : ${endD}
 
-Réponds UNIQUEMENT en JSON avec ce format (sans texte autour) :
+IMPORTANT : chaque phase doit avoir trade_name = exactement l'un de ces corps de métier : ${tradeList.join(', ')}.
+Si une phase implique plusieurs corps de métier, crée une phase par corps de métier.
+
+Réponds UNIQUEMENT en JSON (aucun texte avant ou après) :
 {"phases":[{"name":"Démolition","trade_name":"Démolition","start_date":"2026-07-01","end_date":"2026-07-05","progress_pct":0,"status":"not_started"},{"name":"Électricité brute","trade_name":"Électricité","start_date":"2026-07-06","end_date":"2026-07-12","progress_pct":0,"status":"not_started"}]}
-Génère entre 4 et 8 phases logiques selon le type de travaux. Utilise des dates ISO (AAAA-MM-JJ).`;
+Génère 4 à 8 phases. Dates ISO (AAAA-MM-JJ). Ne jamais laisser trade_name vide.`;
 
     try {
       const token = localStorage.getItem('token');
@@ -1366,8 +1427,7 @@ Génère entre 4 et 8 phases logiques selon le type de travaux. Utilise des date
       if (!match) return;
       let parsed;
       try { parsed = JSON.parse(match[0]); } catch { return; }
-      const newPhases = parsed.phases || [];
-      for (const ph of newPhases) {
+      for (const ph of (parsed.phases || [])) {
         try {
           const { data } = await projectsApi.addPhase(id, { name: ph.name, trade_name: ph.trade_name || '', start_date: ph.start_date || null, end_date: ph.end_date || null, progress_pct: 0, status: 'not_started' });
           setProject(p => ({ ...p, phases: [...(p.phases || []), data] }));
@@ -3336,7 +3396,19 @@ Règles :
           {/* ── Gantt ── */}
           {project.phases?.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <GanttChart phases={project.phases} projectStart={project.start_date} projectEnd={project.end_date}/>
+              <GanttChart
+                phases={project.phases}
+                projectStart={project.start_date}
+                projectEnd={project.end_date}
+                onUpdatePhase={async (phId, patch) => {
+                  try {
+                    const { data } = await projectsApi.updatePhase(id, phId, patch);
+                    setProject(p => ({ ...p, phases: p.phases.map(ph => ph.id === phId ? data : ph) }));
+                  } catch {}
+                }}
+                onDeletePhase={removePhase}
+                onEditPhase={(ph) => setEditPhase(ph)}
+              />
             </div>
           )}
 
