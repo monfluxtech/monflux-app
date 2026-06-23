@@ -529,8 +529,21 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [barDrag, setBarDrag]     = useState(null); // {phId,startX,origStart,origEnd,delta,pxPerDay}
   const [resize, setResize]       = useState(null); // {phId,side,startX,origStart,origEnd,delta,pxPerDay}
   const [tooltip, setTooltip]     = useState(null); // {ph,trade,x,y}
+  const [addingPhase, setAddingPhase] = useState(false);
+  const [newPhaseName, setNewPhaseName] = useState('');
+  const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
+  const dateDragRef = useRef(null);
   const scrollRef  = useRef(null);
   const ganttElRef = useRef(null);
+
+  const fixedColW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!scrollRef.current || todayPx <= 0) return;
+    const viewW = scrollRef.current.clientWidth;
+    scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - fixedColW) * 0.3);
+  }, [scale]);
 
   if (!phases || phases.length === 0) return null;
 
@@ -725,6 +738,22 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     setResize(null);
   };
 
+  // Date label drag handlers
+  const handleDateLabelDown = (e, phId, isStart) => {
+    e.preventDefault(); e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const key = `${phId}-${isStart ? 'start' : 'end'}`;
+    dateDragRef.current = { key, startX: e.clientX, baseOffset: dateOffsets[key] || 0 };
+  };
+  const handleDateLabelMove = (e, phId, isStart) => {
+    if (!dateDragRef.current) return;
+    const key = `${phId}-${isStart ? 'start' : 'end'}`;
+    if (dateDragRef.current.key !== key) return;
+    const delta = e.clientX - dateDragRef.current.startX;
+    setDateOffsets(prev => ({ ...prev, [key]: dateDragRef.current.baseOffset + delta }));
+  };
+  const handleDateLabelUp = () => { dateDragRef.current = null; };
+
   // Inline name edit
   const startEdit = (ph) => { setEditingId(ph.id); setEditingName(ph.name); };
   const commitEdit = (ph) => {
@@ -825,10 +854,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
-            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF' }}>Phase</div>
-            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Début</div>
-            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Durée</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3' }}>Assigné</div>
+            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', position:'sticky', left:0, zIndex:6, background:'#fff' }}>Phase</div>
+            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20, zIndex:6, background:'#fff' }}>Début</div>
+            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20+DATE_W, zIndex:6, background:'#fff' }}>Durée</div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20+DATE_W+DUR_W, zIndex:6, background:'#fff', boxShadow:'3px 0 6px rgba(0,0,0,.06)' }}>Assigné</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => (
                 <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden' }}>
@@ -875,6 +904,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const progress = ph.progress_pct || 0;
             const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
 
+            const rowBg = isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
+
             return (
               <div key={ph.id} draggable
                 onDragStart={ev => { if (!barDrag && !resize) onRowDragStart(ev, i); }}
@@ -882,35 +913,37 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 style={{
                   display:'flex', alignItems:'center', minHeight:42,
-                  background: isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff',
-                  borderLeft: `3px solid ${borderColor}`,
+                  background: rowBg,
                   borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
                   marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
                 }}>
-                {/* Drag handle */}
-                <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.2, padding:'0 2px' }}>
-                  {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
-                </div>
-                {/* Name */}
-                <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
-                  <button onClick={ev=>{ev.stopPropagation();onDeletePhase?.(ph.id);}}
-                    style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'#fff',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
-                  <div style={{minWidth:0,flex:1}}>
-                    {editingId===ph.id ? (
-                      <input autoFocus value={editingName} onChange={ev=>setEditingName(ev.target.value)}
-                        onBlur={()=>commitEdit(ph)} onClick={ev=>ev.stopPropagation()}
-                        onKeyDown={ev=>{if(ev.key==='Enter')commitEdit(ph);if(ev.key==='Escape')setEditingId(null);}}
-                        style={{fontSize:12,fontWeight:700,color:'#15171C',border:`1.5px solid ${BRAND}`,borderRadius:5,padding:'2px 5px',width:'100%',outline:'none',background:'#FFF8F5'}}/>
-                    ):(
-                      <div onClick={()=>startEdit(ph)} title="Cliquer pour renommer"
-                        style={{fontSize:12,fontWeight:700,color:'#15171C',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',cursor:'text',padding:'1px 2px',borderRadius:3}}>
-                        {ph.name}
-                      </div>
-                    )}
+                {/* Phase section — sticky (drag handle + name) */}
+                <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', position:'sticky', left:0, zIndex:4, background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch' }}>
+                  {/* Drag handle */}
+                  <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.2, padding:'0 2px' }}>
+                    {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
+                  </div>
+                  {/* Name */}
+                  <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
+                    <button onClick={ev=>{ev.stopPropagation();onDeletePhase?.(ph.id);}}
+                      style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'transparent',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
+                    <div style={{minWidth:0,flex:1}}>
+                      {editingId===ph.id ? (
+                        <input autoFocus value={editingName} onChange={ev=>setEditingName(ev.target.value)}
+                          onBlur={()=>commitEdit(ph)} onClick={ev=>ev.stopPropagation()}
+                          onKeyDown={ev=>{if(ev.key==='Enter')commitEdit(ph);if(ev.key==='Escape')setEditingId(null);}}
+                          style={{fontSize:12,fontWeight:700,color:'#15171C',border:`1.5px solid ${BRAND}`,borderRadius:5,padding:'2px 5px',width:'100%',outline:'none',background:'#FFF8F5'}}/>
+                      ):(
+                        <div onClick={()=>startEdit(ph)} title="Cliquer pour renommer"
+                          style={{fontSize:12,fontWeight:700,color:'#15171C',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',cursor:'text',padding:'1px 2px',borderRadius:3}}>
+                          {ph.name}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {/* Date/Heure de début */}
-                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center' }}>
+                {/* Date/Heure de début — sticky */}
+                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', position:'sticky', left:LABEL_W+20, zIndex:4, background:rowBg }}>
                   {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                     <input
                       type="datetime-local"
@@ -937,8 +970,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </button>
                   )}
                 </div>
-                {/* Durée (h) */}
-                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center' }}>
+                {/* Durée (h) — sticky */}
+                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', position:'sticky', left:LABEL_W+20+DATE_W, zIndex:4, background:rowBg }}>
                   {editCell?.id===ph.id && editCell?.field==='duration' ? (
                     <input
                       type="number"
@@ -963,8 +996,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </button>
                   )}
                 </div>
-                {/* Assignee */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center'}}>
+                {/* Assignee — sticky (last fixed col, has shadow) */}
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',position:'sticky',left:LABEL_W+20+DATE_W+DUR_W,zIndex:4,background:rowBg,boxShadow:'3px 0 6px rgba(0,0,0,.04)'}}>
                   <AssigneeChip trade={matchedTrade}
                     assignedToName={ph.assigned_to_name||null}
                     onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}
@@ -1032,13 +1065,33 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
                     />
                   </div>
-                  {/* Date labels outside bar */}
+                  {/* Date labels outside bar — draggable horizontally */}
                   {showDates && ph.start_date && (
                     <>
-                      <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',right:ganttW-left+4,fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',pointerEvents:'none',zIndex:4}}>
+                      <div
+                        onPointerDown={ev => handleDateLabelDown(ev, ph.id, true)}
+                        onPointerMove={ev => handleDateLabelMove(ev, ph.id, true)}
+                        onPointerUp={handleDateLabelUp}
+                        onPointerCancel={handleDateLabelUp}
+                        style={{position:'absolute',top:'50%',transform:'translateY(-50%)',
+                          right: ganttW - left + 4 - (dateOffsets[`${ph.id}-start`]||0),
+                          fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',
+                          zIndex:5,cursor:'ew-resize',userSelect:'none',
+                          background:'rgba(255,255,255,.85)',borderRadius:3,padding:'1px 3px',
+                        }}>
                         {new Date(ph.start_date.slice(0,10)+'T'+(ph.start_time||'08:00')).toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} {ph.start_time||'08:00'}
                       </div>
-                      <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',left:left+width+4,fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',pointerEvents:'none',zIndex:4}}>
+                      <div
+                        onPointerDown={ev => handleDateLabelDown(ev, ph.id, false)}
+                        onPointerMove={ev => handleDateLabelMove(ev, ph.id, false)}
+                        onPointerUp={handleDateLabelUp}
+                        onPointerCancel={handleDateLabelUp}
+                        style={{position:'absolute',top:'50%',transform:'translateY(-50%)',
+                          left: left + width + 4 + (dateOffsets[`${ph.id}-end`]||0),
+                          fontSize:9,fontWeight:700,color:'#374151',whiteSpace:'nowrap',
+                          zIndex:5,cursor:'ew-resize',userSelect:'none',
+                          background:'rgba(255,255,255,.85)',borderRadius:3,padding:'1px 3px',
+                        }}>
                         {e.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} {String(e.getHours()).padStart(2,'0')}:{String(e.getMinutes()).padStart(2,'0')}
                       </div>
                     </>
@@ -1048,10 +1101,37 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             );
           })}
 
+          {/* ── Ligne inline "nouvelle phase" ── */}
+          {addingPhase && (
+            <div style={{ display:'flex', alignItems:'center', minHeight:42, background:'#fff', borderLeft:`3px solid ${BRAND_BORDER}`, marginBottom:2 }}>
+              <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', position:'sticky', left:0, zIndex:4, background:'#fff', alignSelf:'stretch' }}>
+                <div style={{ width:16, flexShrink:0 }}/>
+                <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
+                  <button onClick={() => { setAddingPhase(false); setNewPhaseName(''); }}
+                    style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'transparent',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
+                  <input autoFocus
+                    value={newPhaseName}
+                    onChange={ev => setNewPhaseName(ev.target.value)}
+                    placeholder="Nom de la phase…"
+                    onBlur={() => { if (newPhaseName.trim()) onAddPhase?.(newPhaseName.trim()); setAddingPhase(false); setNewPhaseName(''); }}
+                    onKeyDown={ev => {
+                      if (ev.key==='Enter' && newPhaseName.trim()) { onAddPhase?.(newPhaseName.trim()); setAddingPhase(false); setNewPhaseName(''); }
+                      if (ev.key==='Escape') { setAddingPhase(false); setNewPhaseName(''); }
+                    }}
+                    style={{fontSize:12,fontWeight:700,color:'#15171C',border:`1.5px solid ${BRAND}`,borderRadius:5,padding:'2px 6px',width:'100%',outline:'none',background:'#FFF8F5'}}
+                  />
+                </div>
+              </div>
+              <div style={{width:DATE_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20,zIndex:4,background:'#fff'}}/>
+              <div style={{width:DUR_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20+DATE_W,zIndex:4,background:'#fff'}}/>
+              <div style={{width:ASSIGN_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20+DATE_W+DUR_W,zIndex:4,background:'#fff'}}/>
+              <div style={{width:ganttW,flexShrink:0,height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}/>
+            </div>
+          )}
           {/* ── + Phase en bas du tableau ── */}
           <div style={{ padding:'8px 16px', borderTop:'1px solid #F0F2F4' }}>
-            <button onClick={onAddPhase}
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, border:`1.5px dashed ${BRAND_BORDER}`, background:'transparent', color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            <button onClick={() => setAddingPhase(true)}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:5, border:`1.5px dashed ${BRAND_BORDER}`, background:'transparent', color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
               <Plus size={12}/> Ajouter une phase
             </button>
           </div>
@@ -4286,7 +4366,13 @@ Règles :
                 onReorderPhases={reorderPhases}
                 onRenamePhase={renamePhase}
                 onDatesChange={handleDatesChange}
-                onAddPhase={() => setShowPhase(true)}
+                onAddPhase={async (name) => {
+                  if (!name) { setShowPhase(true); return; }
+                  try {
+                    const { data } = await projectsApi.addPhase(id, { name, status:'not_started', display_order:(project.phases?.length||0) });
+                    setProject(p => ({ ...p, phases:[...(p.phases||[]), data] }));
+                  } catch(err) { console.error('addPhaseInline', err); }
+                }}
                 onUpdatePhase={handleUpdatePhase}
                 currentUserName={currentUser?.name || currentUser?.email || null}
                 onSelfAssign={handleSelfAssign}
