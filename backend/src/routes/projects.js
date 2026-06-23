@@ -239,12 +239,44 @@ router.post('/:id/reset-portal-token', async (req, res) => {
 
 // POST /api/projects/:id/phases
 router.post('/:id/phases', async (req, res) => {
-  const { name, display_order, color, start_date, end_date } = req.body;
+  const {
+    name,
+    display_order,
+    color,
+    start_date,
+    end_date,
+    trade_name,
+    progress_pct,
+    status,
+  } = req.body;
   try {
+    const nextOrder = Number.isFinite(Number(display_order))
+      ? Number(display_order)
+      : (
+          await query(
+            `SELECT COALESCE(MAX(display_order), -1) + 1 AS next_order
+             FROM project_phases
+             WHERE project_id = $1`,
+            [req.params.id]
+          )
+        ).rows[0]?.next_order ?? 0;
     const { rows: [phase] } = await query(
-      `INSERT INTO project_phases (project_id, name, display_order, color, start_date, end_date)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.params.id, name, display_order ?? 0, color || '#F26522', start_date || null, end_date || null]
+      `INSERT INTO project_phases (
+         project_id, name, display_order, color, start_date, end_date, trade_name, progress_pct, status
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING *`,
+      [
+        req.params.id,
+        name,
+        nextOrder,
+        color || '#F26522',
+        start_date || null,
+        end_date || null,
+        trade_name || null,
+        Number.isFinite(Number(progress_pct)) ? Number(progress_pct) : 0,
+        status || 'not_started',
+      ]
     );
     res.status(201).json(phase);
   } catch (err) {

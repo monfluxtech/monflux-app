@@ -242,34 +242,81 @@ Retourne UNIQUEMENT un JSON valide :
 // POST /api/ai/generate-phases — génère les phases de chantier à partir de la description
 router.post('/generate-phases', enforceAiQuota, async (req, res) => {
   if (!aiReady()) return aiNotConfigured(res);
-  const { description, project_type, start_date } = req.body;
-  if (!description) return res.status(400).json({ error: 'Description requise' });
+  const {
+    description,
+    project_type,
+    start_date,
+    end_date,
+    project_name,
+    address,
+    client_name,
+    budget,
+    notes,
+    trades = [],
+    visit_answers = {},
+    approx_lines = [],
+  } = req.body;
+  const tradeList = [...new Set((trades || []).map((t) => String(t || '').trim()).filter(Boolean))];
+  const visitLines = Object.entries(visit_answers || {})
+    .map(([key, value]) => `- ${key}: ${value}`)
+    .join('\n');
+  const estimateLines = (approx_lines || [])
+    .map((line) => `- ${line?.name || 'Ligne'}: ${line?.qty || ''} ${line?.unit || ''}`.trim())
+    .join('\n');
+  const projectSummary = [
+    description,
+    project_type,
+    project_name,
+    notes,
+    visitLines,
+    estimateLines,
+  ].filter(Boolean).join('\n');
+
+  if (!projectSummary.trim()) {
+    return res.status(400).json({ error: 'Contexte projet requis' });
+  }
   try {
-    const prompt = `Tu es un gestionnaire de projets de construction expert au Québec.
-Génère les phases d'exécution pour ce projet de construction.
+    const prompt = `Tu es Florence, planificatrice de chantier MONFLUX spécialisée en construction au Québec.
+Tu construis un plan de phases réaliste et adapté au projet décrit.
 
-Description: ${description}
-Type: ${project_type || 'non spécifié'}
-${start_date ? `Début prévu: ${start_date}` : ''}
+CONTEXTE DU PROJET
+- Nom: ${project_name || 'Projet sans nom'}
+- Description: ${description || 'Non précisée'}
+- Type de travaux: ${project_type || 'non spécifié'}
+- Adresse: ${address || 'Non précisée'}
+- Client: ${client_name || 'Non précisé'}
+- Début prévu: ${start_date || 'non précisé'}
+- Fin cible: ${end_date || 'non précisée'}
+- Budget: ${budget ? `${Number(budget).toLocaleString('fr-CA')} $` : 'non précisé'}
+- Corps de métier connus: ${tradeList.length ? tradeList.join(', ') : 'à déduire selon le chantier'}
+${visitLines ? `- Observations terrain:\n${visitLines}` : ''}
+${estimateLines ? `- Lignes d'estimation:\n${estimateLines}` : ''}
+${notes ? `- Notes: ${notes}` : ''}
 
-Identifie les corps de métiers et phases selon l'ordre logique d'intervention sur le chantier (pratiques québécoises, CCQ, normes RBQ).
+CONTRAINTES
+1. Génère entre 4 et 9 phases séquentielles vraiment pertinentes pour CE projet seulement.
+2. Chaque phase doit avoir un nom clair, un trade_name précis et non vide.
+3. Utilise prioritairement les corps de métier fournis. Si la liste est incomplète, complète-la intelligemment.
+4. Les dates doivent être plausibles, ordonnées et au format YYYY-MM-DD.
+5. N'inclus pas de phase inutile ou générique si elle ne s'applique pas au chantier.
+6. Statut initial: "not_started". progress_pct initial: 0.
 
-Retourne UNIQUEMENT un JSON valide:
+Réponds UNIQUEMENT en JSON valide, sans texte autour:
 {
+  "summary": "vue d'ensemble concise",
   "phases": [
     {
-      "name": "Excavation et fondations",
-      "trade": "excavation",
-      "description": "Creusage, semelles, dalles",
-      "estimated_duration_days": 10,
-      "order": 1,
-      "color": "#3b82f6"
+      "name": "Démolition intérieure",
+      "trade_name": "Démolition",
+      "start_date": "2026-07-02",
+      "end_date": "2026-07-05",
+      "progress_pct": 0,
+      "status": "not_started",
+      "color": "#E8794E",
+      "display_order": 0
     }
-  ],
-  "summary": "vue d'ensemble en 1-2 phrases"
-}
-
-Inclure seulement les phases pertinentes au type de projet. Corps de métiers courants: excavation, fondation, charpente, électricité, plomberie, isolation, gypse, peinture, céramique, finition, HVAC, toiture, externe/terrain.`;
+  ]
+}`;
 
     const client = initAnthropicIfReady();
     const msg = await client.messages.create({
@@ -279,7 +326,26 @@ Inclure seulement les phases pertinentes au type de projet. Corps de métiers co
     });
     const raw = msg.content[0]?.text || '{}';
     const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
-    res.json(result);
+    const phases = Array.isArray(result?.phases)
+      ? result.phases
+          .map((phase, index) => ({
+            name: String(phase?.name || '').trim(),
+            trade_name: String(phase?.trade_name || phase?.trade || '').trim(),
+            start_date: phase?.start_date || null,
+            end_date: phase?.end_date || null,
+            progress_pct: 0,
+            status: 'not_started',
+            color: phase?.color || null,
+            display_order: Number.isFinite(Number(phase?.display_order))
+              ? Number(phase.display_order)
+              : index,
+          }))
+          .filter((phase) => phase.name && phase.trade_name)
+      : [];
+    res.json({
+      summary: result?.summary || '',
+      phases,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur génération phases' });

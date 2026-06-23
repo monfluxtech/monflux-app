@@ -470,6 +470,7 @@ const PHASE_TEMPLATES = [
 function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePhase, onDeletePhase, onEditPhase }) {
   const [editingTrade, setEditingTrade] = useState(null);
   const [tradeVal, setTradeVal] = useState('');
+  const [customTradeMode, setCustomTradeMode] = useState(null);
 
   if (!phases || phases.length === 0) return null;
 
@@ -492,6 +493,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePha
   const saveTrade = (ph) => {
     const val = tradeVal.trim();
     setEditingTrade(null);
+    setCustomTradeMode(null);
     if (val !== ph.trade_name) onUpdatePhase && onUpdatePhase(ph.id, { trade_name: val });
   };
 
@@ -551,24 +553,41 @@ function GanttChart({ phases, projectStart, projectEnd, trades = [], onUpdatePha
                 {isEditing ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <select autoFocus
-                      value={tradeVal}
-                      onChange={e => { if (e.target.value === '__custom__') return; setTradeVal(e.target.value); }}
-                      onBlur={() => saveTrade(ph)}
+                      value={customTradeMode === ph.id ? '__custom__' : tradeVal}
+                      onChange={e => {
+                        if (e.target.value === '__custom__') {
+                          setCustomTradeMode(ph.id);
+                          setTradeVal('');
+                          return;
+                        }
+                        setCustomTradeMode(null);
+                        setTradeVal(e.target.value);
+                        setEditingTrade(null);
+                        if (e.target.value !== ph.trade_name) {
+                          onUpdatePhase && onUpdatePhase(ph.id, { trade_name: e.target.value.trim() });
+                        }
+                      }}
                       style={{ width: '100%', fontSize: 12, fontWeight: 600, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 5px', outline: 'none', background: '#fff', color: '#15171C' }}>
                       <option value="">— Non assigné —</option>
                       {trades.map(t => <option key={t} value={t}>{t}</option>)}
                       <option value="__custom__" style={{ fontStyle: 'italic', color: '#9CA3AF' }}>+ Autre (saisir)</option>
                     </select>
-                    {!trades.includes(tradeVal) && tradeVal && tradeVal !== '__custom__' && (
-                      <input value={tradeVal} onChange={e => setTradeVal(e.target.value)}
+                    {customTradeMode === ph.id && (
+                      <input autoFocus value={tradeVal} onChange={e => setTradeVal(e.target.value)}
                         onBlur={() => saveTrade(ph)}
-                        onKeyDown={e => { if (e.key === 'Enter') saveTrade(ph); if (e.key === 'Escape') setEditingTrade(null); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveTrade(ph);
+                          if (e.key === 'Escape') {
+                            setCustomTradeMode(null);
+                            setEditingTrade(null);
+                          }
+                        }}
                         placeholder="Nom du corps de métier"
                         style={{ width: '100%', fontSize: 12, border: `1.5px solid ${BRAND}`, borderRadius: 6, padding: '3px 7px', outline: 'none' }}/>
                     )}
                   </div>
                 ) : (
-                  <div onClick={() => { setEditingTrade(ph.id); setTradeVal(ph.trade_name || ''); }}
+                  <div onClick={() => { setEditingTrade(ph.id); setTradeVal(ph.trade_name || ''); setCustomTradeMode(null); }}
                     title="Cliquer pour assigner un corps de métier"
                     style={{ cursor: 'pointer', minHeight: 24, display: 'flex', alignItems: 'center' }}>
                     {ph.trade_name
@@ -1231,6 +1250,9 @@ export default function ProjectDetail() {
         ? p.phases.map(ph => ph.id === data.id ? data : ph)
         : [...(p.phases||[]), data]
     }));
+    if (data?.trade_name) {
+      void ensureProjectTradesExist([data.trade_name]);
+    }
     setShowPhase(false); setEditPhase(null);
   };
 
@@ -1337,22 +1359,73 @@ export default function ProjectDetail() {
     refreshProfit();
   };
 
+  const normalizeTradeName = (value) => String(value || '').trim();
+
+  const normalizePhaseDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  };
+
+  const ensureProjectTradesExist = async (tradeNames = []) => {
+    const existing = new Set((project.trades || []).map(t => normalizeTradeName(t.trade).toLowerCase()).filter(Boolean));
+    const missing = [...new Set(tradeNames.map(normalizeTradeName).filter(Boolean))]
+      .filter((trade) => !existing.has(trade.toLowerCase()));
+    if (!missing.length) return;
+
+    const added = [];
+    for (const trade of missing) {
+      try {
+        const { data } = await projectsApi.addTrade(id, {
+          trade,
+          estimated_cost: null,
+          chosen_subcontractor_id: null,
+        });
+        added.push(data);
+        existing.add(trade.toLowerCase());
+      } catch (err) {
+        console.error('ensureProjectTradesExist', err);
+      }
+    }
+
+    if (added.length) {
+      setProject((p) => ({ ...p, trades: [...(p.trades || []), ...added] }));
+    }
+  };
+
+  const normalizeGeneratedPhases = (phases = []) => (
+    (Array.isArray(phases) ? phases : [])
+      .map((ph, index) => {
+        const name = String(ph?.name || '').trim();
+        const tradeName = normalizeTradeName(ph?.trade_name || ph?.trade);
+        const startDate = normalizePhaseDate(ph?.start_date);
+        const endDate = normalizePhaseDate(ph?.end_date);
+        return {
+          name,
+          trade_name: tradeName,
+          start_date: startDate,
+          end_date: endDate,
+          progress_pct: 0,
+          status: 'not_started',
+          display_order: Number.isFinite(Number(ph?.display_order)) ? Number(ph.display_order) : index,
+          color: ph?.color || PHASE_COLORS[index % PHASE_COLORS.length],
+        };
+      })
+      .filter((ph) => ph.name && ph.trade_name)
+      .sort((a, b) => {
+        if (a.display_order !== b.display_order) return a.display_order - b.display_order;
+        if (a.start_date && b.start_date) return new Date(a.start_date) - new Date(b.start_date);
+        return 0;
+      })
+  );
+
   // Auto-ajouter les corps de métier depuis fa.selected_trades
   const autoAddTradesFromEstim = async () => {
     const fa = project.field_assessment || {};
-    const estimTrades = fa.selected_trades || [];
-    const existing = (project.trades || []).map(t => t.trade?.toLowerCase());
-    const missing = estimTrades.filter(t => !existing.includes(t.toLowerCase()));
-    if (!missing.length) return;
     setAutoAddingTrades(true);
-    try {
-      const added = [];
-      for (const trade of missing) {
-        const { data } = await projectsApi.addTrade(id, { trade, estimated_cost: null, chosen_subcontractor_id: null });
-        added.push(data);
-      }
-      setProject(p => ({ ...p, trades: [...(p.trades || []), ...added] }));
-    } catch {} finally { setAutoAddingTrades(false); }
+    try { await ensureProjectTradesExist(fa.selected_trades || []); }
+    finally { setAutoAddingTrades(false); }
   };
 
   // Florence recommande des sous-traitants pour les corps non assignés
@@ -1395,94 +1468,48 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
   const generatePhasesFromAI = async () => {
     setGeneratingPhases(true);
     const fa = project.field_assessment || {};
-    // Supprimer les phases existantes avant de regénérer
-    const existingPhases = project.phases || [];
-    for (const ph of existingPhases) {
-      try { await projectsApi.deletePhase(id, ph.id); } catch {}
-    }
-    setProject(p => ({ ...p, phases: [] }));
-
     const tradeList = [
       ...(fa.selected_trades || []),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
     ].filter((v, i, a) => v && a.indexOf(v) === i);
 
-    const startD = project.start_date
-      ? new Date(project.start_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })
-      : fa.start_label || 'non précisée';
-    const endD = project.end_date
-      ? new Date(project.end_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })
-      : fa.end_label || 'non précisée';
-
-    // Contexte complet du projet
-    const visitAnswers = fa.visite_answers
-      ? Object.entries(fa.visite_answers).map(([k, v]) => `  - ${k}: ${v}`).join('\n')
-      : '';
-    const approxLines = (fa.approx_lines || []).map(l => `  - ${l.name}: ${l.qty || ''} ${l.unit || ''}`).join('\n');
-
-    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en gestion de chantier au Québec.
-
-CONTEXTE DU PROJET :
-- Nom : ${project.name || ''}
-- Description : ${project.description || ''}
-- Type de travaux : ${fa.work_type || ''}
-- Adresse : ${project.address || 'Non précisée'}
-- Client : ${project.client_name || ''}
-- Début prévu : ${startD}
-- Fin prévue : ${endD}
-- Budget estimé : ${project.budget ? `${Number(project.budget).toLocaleString('fr-CA')} $` : 'non précisé'}
-- Corps de métier identifiés : ${tradeList.length ? tradeList.join(', ') : 'à déterminer selon le type de travaux'}
-${visitAnswers ? `- Observations terrain :\n${visitAnswers}` : ''}
-${approxLines ? `- Lignes d'estimation :\n${approxLines}` : ''}
-${project.notes ? `- Notes : ${project.notes}` : ''}
-
-CONGÉS ET JOURS FÉRIÉS AU QUÉBEC (construction — à éviter pour les fins de phase) :
-- 1 jan : Jour de l'An
-- 18 avr 2025 / 3 avr 2026 : Vendredi saint
-- 19 mai 2025 / 18 mai 2026 : Journée nationale des Patriotes
-- 24 juin : Fête nationale du Québec (St-Jean-Baptiste)
-- 1 juil : Fête du Canada
-- 14–25 juil 2025 / 13–24 juil 2026 : Congé annuel de la construction (CCQ) — chantiers arrêtés 2 semaines
-- 1er lun sept : Fête du Travail (1 sept 2025 / 7 sept 2026)
-- 2e lun oct : Action de grâces (13 oct 2025 / 12 oct 2026)
-- 25 déc : Noël · 26 déc : Lendemain de Noël
-
-INSTRUCTIONS :
-1. Analyse le contexte complet et détermine les phases réalistes selon le type de travaux.
-2. Assigne un trade_name précis à chaque phase, choisi parmi : ${tradeList.length ? tradeList.join(', ') : 'les corps de métier typiques de ce type de chantier'}.
-3. Si aucune liste de corps de métier n'est fournie, déduis-les du type de travaux.
-4. NE planifie PAS de fin de phase durant le congé CCQ ni les fériés majeurs.
-5. Génère entre 4 et 9 phases logiques et séquentielles.
-6. trade_name ne doit jamais être vide.
-
-Réponds UNIQUEMENT en JSON, aucun texte avant ou après :
-{"phases":[{"name":"Démolition","trade_name":"Démolition","start_date":"2026-07-01","end_date":"2026-07-10","progress_pct":0,"status":"not_started"}]}`;
-
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      const { data } = await aiApi.generatePhases({
+        description: project.description || project.name || '',
+        project_name: project.name || '',
+        project_type: fa.work_type || project.type || '',
+        start_date: project.start_date || null,
+        end_date: project.end_date || null,
+        address: project.address || '',
+        client_name: project.client_name || '',
+        budget: project.budget || project.contract_value || null,
+        notes: project.notes || '',
+        trades: tradeList,
+        visit_answers: fa.visite_answers || {},
+        approx_lines: fa.approx_lines || [],
       });
-      if (!res.ok) return;
-      const reader = res.body.getReader(); const dec = new TextDecoder(); let raw = '';
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
-          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') raw += evt.text; } catch {}
-        }
+      const nextPhases = normalizeGeneratedPhases(data?.phases || []);
+      if (!nextPhases.length) {
+        alert("Flo n'a pas réussi à générer des phases valides pour ce projet.");
+        return;
       }
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return;
-      let parsed;
-      try { parsed = JSON.parse(match[0]); } catch { return; }
-      for (const ph of (parsed.phases || [])) {
-        try {
-          const { data } = await projectsApi.addPhase(id, { name: ph.name, trade_name: ph.trade_name || '', start_date: ph.start_date || null, end_date: ph.end_date || null, progress_pct: 0, status: 'not_started' });
-          setProject(p => ({ ...p, phases: [...(p.phases || []), data] }));
-        } catch {}
+
+      for (const ph of (project.phases || [])) {
+        await projectsApi.deletePhase(id, ph.id);
       }
-    } catch {} finally { setGeneratingPhases(false); }
+
+      const createdPhases = [];
+      for (const ph of nextPhases) {
+        const { data: created } = await projectsApi.addPhase(id, ph);
+        createdPhases.push(created);
+      }
+
+      await ensureProjectTradesExist(createdPhases.map((ph) => ph.trade_name));
+      setProject((p) => ({ ...p, phases: createdPhases }));
+    } catch (err) {
+      console.error('generatePhasesFromAI', err);
+      alert("Impossible de générer les phases avec Florence pour l'instant.");
+    } finally { setGeneratingPhases(false); }
   };
 
   const addTemplatePhase = async (tpl) => {
@@ -1499,6 +1526,7 @@ Réponds UNIQUEMENT en JSON, aucun texte avant ou après :
         start_date: startDate.toISOString().slice(0,10), end_date: endDate.toISOString().slice(0,10),
       });
       setProject(p => ({ ...p, phases: [...(p.phases||[]), data] }));
+      await ensureProjectTradesExist([data.trade_name || tpl.trade_name]);
     } catch {} finally { setAddingTemplatePhase(null); }
   };
 
@@ -3459,6 +3487,9 @@ Règles :
                   try {
                     const { data } = await projectsApi.updatePhase(id, phId, patch);
                     setProject(p => ({ ...p, phases: p.phases.map(ph => ph.id === phId ? data : ph) }));
+                    if (patch.trade_name) {
+                      await ensureProjectTradesExist([patch.trade_name]);
+                    }
                   } catch {}
                 }}
                 onDeletePhase={removePhase}
