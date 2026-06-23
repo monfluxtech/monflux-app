@@ -500,9 +500,10 @@ function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeleteP
       <div style={{ minWidth: 640, fontFamily: 'inherit' }}>
         {/* Header */}
         <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#F9FAFB' }}>
-          <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 14px' }}>Phase</div>
+          <div style={{ width: 24, flexShrink: 0 }}/>
+          <div style={{ width: LW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 10px 8px 4px' }}>Phase</div>
           <div style={{ width: CW, flexShrink: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', padding: '8px 12px', borderLeft: '1px solid #E8EAED' }}>Corps de métier</div>
-          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED', position: 'relative' }}>
+          <div style={{ flex: 1, display: 'flex', borderLeft: '1px solid #E8EAED' }}>
             {months.map((m, i) => {
               const nextM = new Date(m.getFullYear(), m.getMonth()+1, 1);
               const w = Math.min(pct(nextM), 100) - Math.max(pct(m), 0);
@@ -513,7 +514,6 @@ function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeleteP
               );
             })}
           </div>
-          <div style={{ width: 24, flexShrink: 0 }}/>
         </div>
 
         {/* Rows */}
@@ -528,8 +528,16 @@ function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeleteP
 
           return (
             <div key={ph.id} style={{ display: 'flex', alignItems: 'center', borderBottom: i < phases.length-1 ? '1px solid #F0F1F3' : 'none', background: isEven ? '#FAFAFA' : '#fff', minHeight: ROW_H }}>
+              {/* Delete — à gauche */}
+              <div style={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
+                  style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #E0E4E8', background: 'transparent', color: '#C0C4CC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  title="Supprimer">
+                  <X size={10}/>
+                </button>
+              </div>
               {/* Phase name */}
-              <div style={{ width: LW, flexShrink: 0, padding: '0 14px', cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Cliquer pour modifier">
+              <div style={{ width: LW, flexShrink: 0, padding: '0 10px 0 4px', cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Cliquer pour modifier">
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
                 {(ph.start_date || ph.end_date) && (
                   <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2, whiteSpace: 'nowrap' }}>
@@ -576,14 +584,6 @@ function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeleteP
                 </div>
               </div>
 
-              {/* Delete */}
-              <div style={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                <button onClick={() => onDeletePhase && onDeletePhase(ph.id)}
-                  style={{ width: 20, height: 20, borderRadius: 5, border: '1px solid #E0E4E8', background: '#F9FAFB', color: '#C0C4CC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                  title="Supprimer cette phase">
-                  <X size={11}/>
-                </button>
-              </div>
             </div>
           );
         })}

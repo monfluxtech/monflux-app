@@ -255,8 +255,9 @@ router.post('/:id/phases', async (req, res) => {
 
 // PATCH /api/projects/:id/phases/:phaseId
 router.patch('/:id/phases/:phaseId', async (req, res) => {
-  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order'];
+  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order','trade_name'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.params.phaseId];
   try {
@@ -266,6 +267,17 @@ router.patch('/:id/phases/:phaseId', async (req, res) => {
       values
     );
     res.json(phase);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /api/projects/:id/phases/:phaseId
+router.delete('/:id/phases/:phaseId', async (req, res) => {
+  try {
+    await query(`DELETE FROM project_phases WHERE id = $1 AND project_id = $2`, [req.params.phaseId, req.params.id]);
+    res.json({ ok: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
