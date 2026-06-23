@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import Layout from '../components/Layout';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -532,6 +532,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
+  const [freezeCols, setFreezeCols]     = useState(true);
+  const [recurrenceEdit, setRecurrenceEdit] = useState(null); // phase id
+  const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
   const dateDragRef = useRef(null);
   const scrollRef  = useRef(null);
   const ganttElRef = useRef(null);
@@ -625,6 +628,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const ASSIGN_W = 140;
   const ganttW   = Math.max(columns.length * colW, 400);
   const totalMinW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
+
+  // Sticky helpers — conditioned on freezeCols toggle
+  const stickyH = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:6, ...extra } : extra;
+  const stickyC = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:4, ...extra } : extra;
+
+  // Weekend check for a given date (only visible in day/halfday/hour scales)
+  const isWeekendCol = (col) =>
+    (scale==='day'||scale==='halfday'||scale==='hour') &&
+    (col.start.getDay()===0 || col.start.getDay()===6);
 
   // Pixel helpers — positions within the ganttW space
   const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - refStart) / totalMs * ganttW));
@@ -782,6 +794,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           [showArrows, ()=>setShowArrows(v=>!v), <GitBranch size={10}/>, 'Dépend.'],
           [showLegend, ()=>setShowLegend(v=>!v), null,                   'Légende'],
           [cascade,    ()=>setCascade(v=>!v),    <GitBranch size={10}/>, 'Cascade'],
+          [freezeCols, ()=>setFreezeCols(v=>!v), <Pin size={10}/>,       'Col. fixes'],
         ].map(([active, fn, icon, lbl], ki) => (
           <button key={ki} onClick={fn}
             style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
@@ -811,39 +824,46 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
       {/* ── Légende ── */}
       {showLegend && (
-        <div style={{ padding:'10px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6', display:'flex', gap:28, flexWrap:'wrap' }}>
-          {/* Section 1 — Personnes assignées */}
+        <div style={{ padding:'7px 18px', background:'#FAFBFC', borderBottom:'1px solid #F4F5F6', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 }}>
+          {/* Gauche — Assigné */}
           <div>
-            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Assigné — couleur de statut</div>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <div style={{ fontSize:8, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', marginBottom:4 }}>Assigné</div>
+            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
               {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => (
-                <div key={key} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 7px', borderRadius:5, background:st.bg, border:`1px solid ${st.border}`, fontSize:10, fontWeight:600, color:st.text }}>
-                  <span style={{ width:5, height:5, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
+                <div key={key} style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 6px', borderRadius:4, background:st.bg, border:`1px solid ${st.border}`, fontSize:10, fontWeight:600, color:st.text }}>
+                  <span style={{ width:4, height:4, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
                   {st.label}
                 </div>
               ))}
             </div>
           </div>
-          {/* Divider */}
-          <div style={{ width:1, background:'#E5E7EB', flexShrink:0, alignSelf:'stretch' }}/>
-          {/* Section 2 — Statut de la phase */}
-          <div>
-            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#B0B5C0', marginBottom:6 }}>Phase — statut (bordure gauche)</div>
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+          {/* Droite — Phase */}
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:8, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', marginBottom:4 }}>Phase</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'flex-end', alignItems:'center' }}>
               {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                <div key={status} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#6B7280' }}>
-                  <span style={{ width:4, height:14, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
+                <div key={status} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
+                  <span style={{ width:3, height:12, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
                   {label}
                 </div>
               ))}
-              <div style={{ width:1, height:14, background:'#E5E7EB', flexShrink:0 }}/>
-              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-                <span style={{ width:20, height:9, background:BRAND, borderRadius:3, display:'block', opacity:.6 }}/>
-                Durée planifiée
+              <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+              {/* Baseline : prévu vs réel punch */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
+                <div style={{ width:28, height:8, borderRadius:3, flexShrink:0, overflow:'hidden', display:'flex' }}>
+                  <div style={{ flex:'0 0 60%', background:BRAND, opacity:.85 }}/>
+                  <div style={{ flex:'0 0 40%', background:'#22C55E', opacity:.85 }}/>
+                </div>
+                Prévu / Réel (punch)
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#9CA3AF' }}>
-                <span style={{ width:20, height:9, background:'rgba(0,0,0,.22)', borderRadius:3, display:'block' }}/>
-                % d'avancement
+              {/* Récurrence */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
+                <div style={{ display:'flex', gap:2, alignItems:'center', flexShrink:0 }}>
+                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.85 }}/>
+                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.4 }}/>
+                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.25 }}/>
+                </div>
+                Récurrence
               </div>
             </div>
           </div>
@@ -856,13 +876,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
-            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', position:'sticky', left:0, zIndex:6, background:'#fff' }}>Phase</div>
-            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20, zIndex:6, background:'#fff' }}>Début</div>
-            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20+DATE_W, zIndex:6, background:'#fff' }}>Durée</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', position:'sticky', left:LABEL_W+20+DATE_W+DUR_W, zIndex:6, background:'#fff', boxShadow:'3px 0 6px rgba(0,0,0,.06)' }}>Assigné</div>
+            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', background:'#fff', ...stickyH(0) }}>Phase</div>
+            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(LABEL_W+20) }}>Début</div>
+            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(LABEL_W+20+DATE_W) }}>Durée</div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(LABEL_W+20+DATE_W+DUR_W) }}>Assigné</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => (
-                <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden' }}>
+                <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden', background: isWeekendCol(col) ? 'rgba(0,0,0,.028)' : 'transparent' }}>
                   {scale === 'month' && <>
                     <div style={{ fontSize:11, fontWeight:800, color:'#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
                     <div style={{ fontSize:9.5, color:'#9CA3AF', fontWeight:600 }}>{col.start.getFullYear()}</div>
@@ -919,8 +939,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
                   marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
                 }}>
-                {/* Phase section — sticky (drag handle + name) */}
-                <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', position:'sticky', left:0, zIndex:4, background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch' }}>
+                {/* Phase section — conditionally sticky (drag handle + name) */}
+                <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch', ...stickyC(0) }}>
                   {/* Drag handle */}
                   <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.2, padding:'0 2px' }}>
                     {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
@@ -944,8 +964,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   </div>
                 </div>
-                {/* Date/Heure de début — sticky */}
-                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', position:'sticky', left:LABEL_W+20, zIndex:4, background:rowBg }}>
+                {/* Date/Heure de début — conditionally sticky + récurrence icon */}
+                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, position:'relative', ...stickyC(LABEL_W+20) }}>
                   {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                     <input
                       type="datetime-local"
@@ -962,18 +982,73 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5' }}
                     />
                   ) : (
-                    <button
-                      onClick={() => setEditCell({ id:ph.id, field:'datetime' })}
-                      style={{ width:'100%', textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
-                    >
-                      {ph.start_date
-                        ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
-                        : '— date'}
-                    </button>
+                    <div style={{ display:'flex', alignItems:'center', width:'100%' }}>
+                      <button
+                        onClick={() => setEditCell({ id:ph.id, field:'datetime' })}
+                        style={{ flex:1, textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 4px 3px 6px', borderRadius:5, fontFamily:'inherit', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
+                      >
+                        {ph.start_date
+                          ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
+                          : '— date'}
+                      </button>
+                      {/* Icône récurrence */}
+                      <button
+                        onClick={ev => { ev.stopPropagation(); setRecurrenceEdit(recurrenceEdit===ph.id ? null : ph.id); setRecurrenceForm({ type: ph.recurrence_type||'weekly', count: ph.recurrence_count||2 }); }}
+                        title="Récurrence"
+                        style={{ flexShrink:0, padding:'3px 3px', border:'none', background:'transparent', cursor:'pointer', borderRadius:3, display:'flex', alignItems:'center', opacity: ph.recurrence_type ? 1 : 0.35 }}
+                      >
+                        <Repeat size={9} color={ph.recurrence_type ? BRAND : '#9CA3AF'}/>
+                      </button>
+                    </div>
+                  )}
+                  {/* Popover récurrence */}
+                  {recurrenceEdit===ph.id && (
+                    <div onClick={ev => ev.stopPropagation()}
+                      style={{ position:'absolute', top:'100%', left:0, zIndex:50, background:'#fff', border:'1px solid #E5E7EB', borderRadius:8, padding:'12px 14px', boxShadow:'0 6px 20px rgba(0,0,0,.13)', minWidth:200, marginTop:2 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:'#374151', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+                        <Repeat size={11} color={BRAND}/> Récurrence
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                        <select value={recurrenceForm.type}
+                          onChange={ev => setRecurrenceForm(f=>({...f, type:ev.target.value}))}
+                          style={{ fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 7px', outline:'none', fontFamily:'inherit', background:'#fff' }}>
+                          <option value="">Aucune</option>
+                          <option value="daily">Quotidien</option>
+                          <option value="weekly">Hebdomadaire</option>
+                          <option value="biweekly">Aux 2 semaines</option>
+                          <option value="monthly">Mensuel</option>
+                        </select>
+                        {recurrenceForm.type && (
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <input type="number" min="1" max="52" value={recurrenceForm.count}
+                              onChange={ev => setRecurrenceForm(f=>({...f, count:Math.max(1,parseInt(ev.target.value)||1)}))}
+                              style={{ width:44, fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 6px', outline:'none', textAlign:'center' }}/>
+                            <span style={{ fontSize:11, color:'#6B7280' }}>occurrences</span>
+                          </div>
+                        )}
+                        <div style={{ display:'flex', gap:5, marginTop:2 }}>
+                          <button
+                            onClick={() => {
+                              const updates = recurrenceForm.type
+                                ? { recurrence_type: recurrenceForm.type, recurrence_count: recurrenceForm.count }
+                                : { recurrence_type: null, recurrence_count: null };
+                              onUpdatePhase?.(ph.id, updates);
+                              setRecurrenceEdit(null);
+                            }}
+                            style={{ flex:1, padding:'6px', borderRadius:5, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                            Appliquer
+                          </button>
+                          <button onClick={() => setRecurrenceEdit(null)}
+                            style={{ padding:'6px 8px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', color:'#9CA3AF', fontSize:11, cursor:'pointer' }}>
+                            <X size={11}/>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-                {/* Durée (h) — sticky */}
-                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', position:'sticky', left:LABEL_W+20+DATE_W, zIndex:4, background:rowBg }}>
+                {/* Durée (h) — conditionally sticky */}
+                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, ...stickyC(LABEL_W+20+DATE_W) }}>
                   {editCell?.id===ph.id && editCell?.field==='duration' ? (
                     <input
                       type="number"
@@ -998,8 +1073,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </button>
                   )}
                 </div>
-                {/* Assignee — sticky (last fixed col, has shadow) */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',position:'sticky',left:LABEL_W+20+DATE_W+DUR_W,zIndex:4,background:rowBg,boxShadow:'3px 0 6px rgba(0,0,0,.04)'}}>
+                {/* Assignee — conditionally sticky (last fixed col, has shadow) */}
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',background:rowBg,boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.04)' : 'none', ...stickyC(LABEL_W+20+DATE_W+DUR_W)}}>
                   <AssigneeChip trade={matchedTrade}
                     assignedToName={ph.assigned_to_name||null}
                     onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}
@@ -1007,9 +1082,12 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
                 <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
-                  {/* Grid lines aligned with header columns */}
-                  {columns.map((_col, ci) => (
-                    <div key={ci} style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:1,background:'#ECEEF0',zIndex:0,pointerEvents:'none'}}/>
+                  {/* Grid lines + weekend overlays */}
+                  {columns.map((col, ci) => (
+                    <div key={ci}>
+                      {isWeekendCol(col) && <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:colW,background:'rgba(0,0,0,.032)',zIndex:0,pointerEvents:'none'}}/>}
+                      <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:1,background:'#ECEEF0',zIndex:1,pointerEvents:'none'}}/>
+                    </div>
                   ))}
                   {/* Today line */}
                   {todayPx>=0&&todayPx<=ganttW&&<div style={{position:'absolute',top:0,bottom:0,left:todayPx,width:2,background:BRAND,opacity:.25,zIndex:2,borderRadius:1,pointerEvents:'none'}}/>}
@@ -1067,6 +1145,29 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
                     />
                   </div>
+                  {/* Recurrence ghost bars */}
+                  {ph.recurrence_type && (ph.recurrence_count||1) > 1 && ph.start_date && (() => {
+                    const REC_INTERVAL = { daily:86400000, weekly:7*86400000, biweekly:14*86400000, monthly:30*86400000 };
+                    const intervalMs = REC_INTERVAL[ph.recurrence_type] || 7*86400000;
+                    const baseMs = new Date(ph.start_date.slice(0,10)+'T'+(ph.start_time||'08:00')).getTime();
+                    const durMs  = ph.duration_hours ? ph.duration_hours*3600000 : 8*3600000;
+                    const refMs  = refStart.getTime();
+                    return Array.from({ length: (ph.recurrence_count||1)-1 }, (_, i) => {
+                      const oMs    = baseMs + (i+1)*intervalMs;
+                      const oLeft  = Math.max(0, Math.min(ganttW, (oMs - refMs) / totalMs * ganttW));
+                      const oWidth = Math.max(6, Math.min(ganttW - oLeft, durMs / totalMs * ganttW));
+                      return (
+                        <div key={`rec-${i}`} style={{
+                          position:'absolute', top:7, bottom:7,
+                          left:oLeft, width:oWidth, minWidth:6,
+                          borderRadius:99, background:color,
+                          opacity: Math.max(0.15, 0.4 - i*0.05),
+                          pointerEvents:'none', zIndex:2,
+                          border:`1.5px dashed ${color}`,
+                        }}/>
+                      );
+                    });
+                  })()}
                   {/* Date labels outside bar — draggable horizontally */}
                   {showDates && ph.start_date && (
                     <>
@@ -1106,7 +1207,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {/* ── Ligne inline "nouvelle phase" ── */}
           {addingPhase && (
             <div style={{ display:'flex', alignItems:'center', minHeight:42, background:'#fff', borderLeft:`3px solid ${BRAND_BORDER}`, marginBottom:2 }}>
-              <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', position:'sticky', left:0, zIndex:4, background:'#fff', alignSelf:'stretch' }}>
+              <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:'#fff', alignSelf:'stretch', ...stickyC(0) }}>
                 <div style={{ width:16, flexShrink:0 }}/>
                 <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
                   <button onClick={() => { setAddingPhase(false); setNewPhaseName(''); }}
@@ -1124,9 +1225,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   />
                 </div>
               </div>
-              <div style={{width:DATE_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20,zIndex:4,background:'#fff'}}/>
-              <div style={{width:DUR_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20+DATE_W,zIndex:4,background:'#fff'}}/>
-              <div style={{width:ASSIGN_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',position:'sticky',left:LABEL_W+20+DATE_W+DUR_W,zIndex:4,background:'#fff'}}/>
+              <div style={{width:DATE_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20)}}/>
+              <div style={{width:DUR_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20+DATE_W)}}/>
+              <div style={{width:ASSIGN_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20+DATE_W+DUR_W)}}/>
               <div style={{width:ganttW,flexShrink:0,height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}/>
             </div>
           )}

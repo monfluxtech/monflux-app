@@ -398,6 +398,10 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS duration_hours NUMERIC(6,2)`);
   await run('project_phases: assigned_to_name',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS assigned_to_name TEXT`);
+  await run('project_phases: recurrence_type',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR(20)`);
+  await run('project_phases: recurrence_count',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_count INTEGER DEFAULT 1`);
 }
 
 export async function initializeDatabase() {
