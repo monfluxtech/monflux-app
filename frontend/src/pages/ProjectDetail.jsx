@@ -468,8 +468,8 @@ const PHASE_TEMPLATES = [
 ];
 
 function GanttChart({ phases, projectStart, projectEnd, onUpdatePhase, onDeletePhase, onEditPhase }) {
-  const [editingTrade, setEditingTrade] = React.useState(null);
-  const [tradeVal, setTradeVal] = React.useState('');
+  const [editingTrade, setEditingTrade] = useState(null);
+  const [tradeVal, setTradeVal] = useState('');
 
   if (!phases || phases.length === 0) return null;
 
