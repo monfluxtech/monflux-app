@@ -467,7 +467,40 @@ const PHASE_TEMPLATES = [
   { name: 'Nettoyage final',   trade_name: null,           durationDays: 2  },
 ];
 
-function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPhase }) {
+const ASSIGNEE_STATUS = {
+  to_find:   { label: 'À trouver',              bg: '#F3F4F6', border: '#D1D5DB', text: '#6B7280', dot: '#9CA3AF' },
+  contacted: { label: 'À contacter',            bg: '#EFF6FF', border: '#BFDBFE', text: '#2563EB', dot: '#3B82F6' },
+  quoted:    { label: 'Demande envoyée',         bg: '#FFFBEB', border: '#FDE68A', text: '#B45309', dot: '#F59E0B' },
+  confirmed: { label: 'Accepté',                bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#22C55E' },
+  done:      { label: 'Confirmé',               bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
+};
+
+function AssigneeChip({ trade }) {
+  const st = ASSIGNEE_STATUS[trade?.status] || ASSIGNEE_STATUS.to_find;
+  const name = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
+  const displayName = name || st.label;
+  const tooltip = [
+    name && `Entreprise: ${name}`,
+    trade?.trade && `Corps de métier: ${trade.trade}`,
+    `Statut: ${st.label}`,
+    trade?.estimated_cost && `Budget estimé: ${Number(trade.estimated_cost).toLocaleString('fr-CA')} $`,
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div title={tooltip} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 8px', borderRadius: 99,
+      background: st.bg, border: `1px solid ${st.border}`,
+      fontSize: 11, fontWeight: 600, color: st.text,
+      maxWidth: 150, cursor: 'default',
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot, flexShrink: 0 }}/>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
+    </div>
+  );
+}
+
+function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase }) {
   if (!phases || phases.length === 0) return null;
 
   const datedStarts = phases.map((ph) => ph.start_date).filter(Boolean).map((d) => new Date(d));
@@ -489,7 +522,11 @@ function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPha
   const todayPct = pct(new Date());
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
 
-  const labelWidth = 210;
+  const labelWidth = 180;
+  const assigneeWidth = 160;
+
+  const tradesByName = {};
+  (trades || []).forEach(t => { if (t.trade) tradesByName[t.trade.toLowerCase()] = t; });
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', padding: '18px 18px 14px' }}>
@@ -501,6 +538,9 @@ function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPha
           <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 4 }}>
             <div style={{ width: labelWidth, flexShrink: 0, padding: '0 14px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
               Phase
+            </div>
+            <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 12px 8px 0', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF' }}>
+              Assigné
             </div>
             <div style={{ flex: 1, display: 'flex', borderBottom: '1px solid #EEF0F2', paddingBottom: 8 }}>
             {months.map((m, i) => {
@@ -524,6 +564,7 @@ function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPha
             const pW = barW(s, e);
             const isEven = i % 2 === 0;
             const barLabel = ph.trade_name || ph.name;
+            const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
 
             return (
               <div key={ph.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, background: isEven ? '#FBFCFD' : '#fff', borderRadius: 10, marginBottom: 6 }}>
@@ -535,10 +576,10 @@ function GanttChart({ phases, projectStart, projectEnd, onDeletePhase, onEditPha
                   </button>
                   <div style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => onEditPhase && onEditPhase(ph)} title="Modifier la phase">
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#15171C', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{ph.name}</div>
-                    <div style={{ fontSize: 10.5, color: '#A0A6AF', marginTop: 2, whiteSpace: 'nowrap' }}>
-                      {fmtDate(ph.start_date)}{ph.end_date ? ` → ${fmtDate(ph.end_date)}` : ''}
-                    </div>
                   </div>
+                </div>
+                <div style={{ width: assigneeWidth, flexShrink: 0, padding: '0 12px 0 0' }}>
+                  <AssigneeChip trade={matchedTrade} />
                 </div>
                 <div style={{ flex: 1, position: 'relative', height: 34, borderRadius: 999, background: '#F1F4F6', overflow: 'hidden' }}>
                   {todayPct >= 0 && todayPct <= 100 && (
@@ -3762,6 +3803,7 @@ Règles :
                 phases={project.phases}
                 projectStart={project.start_date}
                 projectEnd={project.end_date}
+                trades={project.trades}
                 onDeletePhase={removePhase}
                 onEditPhase={(ph) => setEditPhase(ph)}
               />
