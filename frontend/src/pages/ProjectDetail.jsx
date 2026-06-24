@@ -808,6 +808,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   // Bar drag (shift all dates) — delta in snapMs units
   const handleBarDown = (e, ph) => {
+    if (showArrows) return; // dep mode: ignore bar drag
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const rawStart = ph.start_date?.slice(0,10);
@@ -969,10 +970,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const type = getDepType(fromPt, toPt);
             saveDep(toId, { pred: fromId, type, fromPt, toPt });
           }
-        } else {
-          // Dropped somewhere other than a connection point → exit dep mode
-          const ptContainer = el?.closest('[data-dep-pt]');
-          if (!ptContainer) setShowArrows(false);
+        // Dropped somewhere other than a connection point → just cancel, stay in dep mode
         }
       }
       setDepDrag(null);
@@ -1835,56 +1833,60 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     />
                   </div>
                   {/* ── Points de connexion dépendance (mode Dépendance uniquement) ── */}
-                  {showArrows && width > 0 && (() => {
-                    const DOT = 12; // diameter
-                    const ptStyle = (bg, l, t) => ({
+                  {showArrows && (() => {
+                    const DOT = 14;
+                    const R = DOT / 2;
+                    // Bar center Y within the 38px container (bar is top:5 bottom:5 → center at 19)
+                    const barMidY = 19;
+                    // Place left/right dots clearly OUTSIDE bar pill, centered on bar vertical midpoint
+                    // Ensure they don't overlap: if bar too narrow, keep at least 4px gap
+                    const lx = left - R - 2;          // left dot: fully outside left edge
+                    const rx = left + Math.max(width, DOT + 8) + 2; // right dot: fully outside right edge
+                    const mx = left + width / 2;       // mid top/bottom: horizontally centered
+
+                    const ptBase = (bg, l, t) => ({
                       position:'absolute', width:DOT, height:DOT, borderRadius:'50%',
                       border:'2.5px solid #fff', cursor:'crosshair', zIndex:12,
-                      boxShadow:'0 1px 6px rgba(0,0,0,.35)', pointerEvents:'all',
-                      background: bg, left: l, top: t,
-                      transition:'transform .1s',
+                      boxShadow:'0 2px 8px rgba(0,0,0,.4)', pointerEvents:'all',
+                      background: bg, left: l - R, top: t - R,
                     });
                     const startDrag = (e, pt) => {
                       e.stopPropagation(); e.preventDefault();
-                      const r = e.currentTarget.getBoundingClientRect();
-                      const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
-                      const state = { fromPhId: ph.id, fromIdx: i, fromPt: pt, curX: cx, curY: cy, startX: cx, startY: cy };
+                      const state = { fromPhId: ph.id, fromIdx: i, fromPt: pt, curX: e.clientX, curY: e.clientY, startX: e.clientX, startY: e.clientY };
                       depDragRef.current = state; setDepDrag(state);
                     };
                     const PT_LABELS = {
-                      left:       'Début\nFin→Début (FS) si relié à la droite\nDébut→Début (SS) si relié à gauche',
-                      right:      'Fin\nFin→Début (FS) si relié à gauche\nFin→Fin (FF) si relié à droite',
-                      'mid-top':  'Parallèle (haut)\nLes deux tâches s\'exécutent simultanément',
-                      'mid-bottom':'Parallèle (bas)\nLes deux tâches s\'exécutent simultanément',
+                      left:       '🔵 Début\nFin→Début (FS) si relié à droite\nDébut→Début (SS) si relié à gauche',
+                      right:      '🟠 Fin\nFin→Début (FS) si relié à gauche\nFin→Fin (FF) si relié à droite',
+                      'mid-top':  '🟢 Parallèle\nLes deux tâches s\'exécutent simultanément',
+                      'mid-bottom':'🟢 Parallèle\nLes deux tâches s\'exécutent simultanément',
                     };
-                    // Positions: left/right dots at bar edge midpoints (slightly outside), mid dots centered on bar top/bottom
-                    const barCy = 13; // top of 12px dot centered at y=19 (bar center)
                     return (
                       <>
-                        {/* Début — gauche (bleu) */}
+                        {/* Début — gauche (bleu) — toujours à gauche du pill */}
                         <div data-dep-pt="left" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'left')}
                           onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.left, x: ev.clientX, y: ev.clientY })}
                           onMouseLeave={() => setPtTooltip(null)}
-                          style={ptStyle('#3B82F6', Math.max(-6, left - DOT/2), barCy)}/>
-                        {/* Fin — droite (orange) */}
+                          style={ptBase('#3B82F6', lx, barMidY)}/>
+                        {/* Fin — droite (orange) — toujours à droite du pill */}
                         <div data-dep-pt="right" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'right')}
                           onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.right, x: ev.clientX, y: ev.clientY })}
                           onMouseLeave={() => setPtTooltip(null)}
-                          style={ptStyle('#E8794E', left + width - DOT/2, barCy)}/>
+                          style={ptBase('#E8794E', rx, barMidY)}/>
                         {/* Parallèle haut (vert) */}
                         <div data-dep-pt="mid-top" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-top')}
                           onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-top'], x: ev.clientX, y: ev.clientY })}
                           onMouseLeave={() => setPtTooltip(null)}
-                          style={ptStyle('#10B981', left + width/2 - DOT/2, -DOT/2)}/>
+                          style={ptBase('#10B981', mx, 2)}/>
                         {/* Parallèle bas (vert) */}
                         <div data-dep-pt="mid-bottom" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-bottom')}
                           onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-bottom'], x: ev.clientX, y: ev.clientY })}
                           onMouseLeave={() => setPtTooltip(null)}
-                          style={ptStyle('#10B981', left + width/2 - DOT/2, 38 - DOT/2)}/>
+                          style={ptBase('#10B981', mx, 36)}/>
                       </>
                     );
                   })()}
