@@ -586,7 +586,7 @@ const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', do
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
 
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
-  const [scale, setScale]         = useState('week');
+  const [scale, setScale]         = useState('day');
   const [editCell, setEditCell]   = useState(null); // { id, field: 'datetime'|'duration' }
   const [cascade, setCascade]     = useState(true);
   const [showDates, setShowDates]     = useState(false);
@@ -1030,6 +1030,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         ? { ...depDragRef.current, curX: e.clientX, curY: e.clientY }
         : null;
       setDepDrag(d => d ? { ...d, curX: e.clientX, curY: e.clientY } : null);
+      // elementFromPoint is unaffected by pointer capture — reliably finds the dot under cursor
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const dotEl = el?.closest('[data-dep-pt]') || (el?.dataset?.depPt ? el : null);
+      if (dotEl) {
+        const phId = dotEl.getAttribute('data-phase-id');
+        const pt   = dotEl.getAttribute('data-dep-pt');
+        if (phId && pt) { depHoverRef.current = { phId, pt }; return; }
+      }
+      depHoverRef.current = null;
     };
     const up = () => {
       if (depDragRef.current) {
@@ -1343,11 +1352,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           <span style={{ fontWeight:700 }}>
             {depDrag
               ? `Relâcher sur un point de connexion de la phase cible`
-              : 'Cliquer-glisser un point coloré sur une barre : ● bleu = Début, ● orange = Fin, ● vert = Parallèle'}
+              : <span style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                  Cliquer-glisser un point coloré sur une barre :
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}><span style={{ width:9,height:9,borderRadius:'50%',background:'#3B82F6',display:'inline-block',flexShrink:0 }}/> Début</span>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}><span style={{ width:9,height:9,borderRadius:'50%',background:'#E8794E',display:'inline-block',flexShrink:0 }}/> Fin</span>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}><span style={{ width:9,height:9,borderRadius:'50%',background:'#10B981',display:'inline-block',flexShrink:0 }}/> Parallèle</span>
+                </span>}
           </span>
           <button onClick={() => { setShowArrows(false); setDepDrag(null); depDragRef.current = null; }}
-            style={{ marginLeft:'auto', background:'transparent', border:'1px solid #BFDBFE', borderRadius:5, padding:'2px 8px', color:'#1D4ED8', fontSize:10, fontWeight:700, cursor:'pointer' }}>
-            Fermer
+            style={{ marginLeft:'auto', background:'#fff', border:'1px solid #CBD5E1', borderRadius:5, padding:'3px 10px', color:'#374151', fontSize:10.5, fontWeight:600, cursor:'pointer' }}>
+            ✕ Fermer
           </button>
         </div>
       )}
@@ -2002,6 +2016,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     });
                     const startDrag = (e, pt) => {
                       e.stopPropagation(); e.preventDefault();
+                      // Release implicit pointer capture so pointerEnter fires on destination dots
+                      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
                       const state = { fromPhId: ph.id, fromIdx: i, fromPt: pt, curX: e.clientX, curY: e.clientY, startX: e.clientX, startY: e.clientY };
                       depDragRef.current = state; setDepDrag(state);
                     };
