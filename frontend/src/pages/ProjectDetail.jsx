@@ -511,8 +511,8 @@ function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
   );
 }
 
-const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF', waiting_supplier:'#A78BFA' };
-const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF', waiting_supplier:'#8B5CF6' };
+const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#FCD34D', waiting_supplier:'#A78BFA' };
+const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#F59E0B', waiting_supplier:'#8B5CF6' };
 const PUNCH_COLOR    = '#60A5FA'; // bleu — distingue le réel (punch) du prévu (statut)
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente client', waiting_supplier:'En attente fournisseur' };
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
@@ -925,6 +925,39 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   const exportPdf = () => window.print();
 
+  // Chemin critique (CPM simplifié) — calculé à chaque render quand activé
+  const computeCriticalPath = () => {
+    if (!phases.length) return new Set();
+    const phById = Object.fromEntries(phases.map(ph => [String(ph.id), ph]));
+    const getDur = (ph) => (ph.duration_hours || 8) / 8;
+    const order = [...phases].sort((a,b) => (a.display_order||0)-(b.display_order||0));
+    // Forward pass
+    const ef = {};
+    for (const ph of order) {
+      const predId = deps[ph.id];
+      const es = predId && ef[predId] != null ? ef[predId] : 0;
+      ef[ph.id] = es + getDur(ph);
+    }
+    const projectEnd = Math.max(...Object.values(ef));
+    // Backward pass
+    const ls = {};
+    for (const ph of [...order].reverse()) {
+      const successors = order.filter(s => String(deps[s.id]) === String(ph.id));
+      ls[ph.id] = !successors.length
+        ? projectEnd - getDur(ph)
+        : Math.min(...successors.map(s => ls[s.id])) - getDur(ph);
+    }
+    // Float ≈ 0 → critique
+    const critical = new Set();
+    for (const ph of order) {
+      const predId = deps[ph.id];
+      const es = predId && ef[predId] != null ? ef[predId] - getDur(phById[predId]) : 0;
+      if (Math.abs(Math.round((ls[ph.id] - es) * 100) / 100) < 0.01) critical.add(ph.id);
+    }
+    return critical;
+  };
+  const criticalIds = showCritical ? computeCriticalPath() : new Set();
+
   return (
     <>
       {/* ── Toolbar ── */}
@@ -1019,6 +1052,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {filters.phaseStatus.size > 0 && (
             <button onClick={() => clearFilter('phaseStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>
           )}
+        </div>
+        <div style={{ width:1, height:14, background:'#E5E7EB', flexShrink:0 }}/>
+        {/* Réel → punch */}
+        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC' }}>Réel</span>
+          <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', fontStyle:'italic' }}>→</span>
+          <div style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 7px', borderRadius:4, background:'#EFF6FF', border:'1.5px solid #BFDBFE', fontSize:10, fontWeight:600, color:'#1D4ED8' }}>
+            <span style={{ width:8, height:8, borderRadius:2, background:'#60A5FA', display:'inline-block', flexShrink:0 }}/>
+            Punch (temps réel)
+          </div>
         </div>
         {/* Info chemin critique si activé */}
         {showCritical && criticalIds.size > 0 && (
@@ -2825,42 +2868,6 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       setAiNotice('Impossible d\'ajuster les phases pour l\'instant.');
     } finally { setGeneratingPhases(false); }
   };
-
-  // Calcul du chemin critique (CPM simplifié sur les dépendances locales)
-  const computeCriticalPath = () => {
-    if (!phases.length) return new Set();
-    const phById = Object.fromEntries(phases.map(ph => [String(ph.id), ph]));
-    const getDur = (ph) => (ph.duration_hours || 8) / 8; // en jours ouvrables
-    // Forward pass — early finish de chaque phase
-    const ef = {}; // id → early_finish (jours depuis t=0)
-    const order = [...phases].sort((a,b) => (a.display_order||0)-(b.display_order||0));
-    for (const ph of order) {
-      const predId = deps[ph.id];
-      const es = predId && ef[predId] != null ? ef[predId] : 0;
-      ef[ph.id] = es + getDur(ph);
-    }
-    const projectEnd = Math.max(...Object.values(ef));
-    // Backward pass — late start de chaque phase
-    const ls = {};
-    for (const ph of [...order].reverse()) {
-      const successors = order.filter(s => String(deps[s.id]) === String(ph.id));
-      if (!successors.length) {
-        ls[ph.id] = projectEnd - getDur(ph);
-      } else {
-        ls[ph.id] = Math.min(...successors.map(s => ls[s.id])) - getDur(ph);
-      }
-    }
-    // Chemin critique = float (ls - es) ≈ 0
-    const critical = new Set();
-    for (const ph of order) {
-      const predId = deps[ph.id];
-      const es = predId && ef[predId] != null ? ef[predId] - getDur(phById[predId]) : 0;
-      const float = Math.round((ls[ph.id] - es) * 100) / 100;
-      if (Math.abs(float) < 0.01) critical.add(ph.id);
-    }
-    return critical;
-  };
-  const criticalIds = showCritical ? computeCriticalPath() : new Set();
 
   const addTemplatePhase = async (tpl) => {
     setAddingTemplatePhase(tpl.name);
