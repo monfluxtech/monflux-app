@@ -474,7 +474,7 @@ const ASSIGNEE_STATUS = {
   quoted:      { label: 'Devis demandé',       bg: '#FFFBEB', border: '#FDE68A', text: '#B45309', dot: '#F59E0B' },
   negotiating: { label: 'En négociation',      bg: '#FFF7ED', border: '#FDBA74', text: '#C2410C', dot: '#F97316' },
   confirmed:   { label: 'Accepté',             bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#22C55E' },
-  done:        { label: 'Relancé',             bg: '#ECFDF5', border: '#6EE7B7', text: '#065F46', dot: '#059669' },
+  done:        { label: 'Relancé',             bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', dot: '#3B82F6' },
 };
 
 function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
@@ -532,9 +532,11 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
-  const [freezeCols, setFreezeCols]     = useState(true);
-  const [recurrenceEdit, setRecurrenceEdit] = useState(null); // phase id
+  const [freezeCols, setFreezeCols]         = useState(true);
+  const [recurrenceEdit, setRecurrenceEdit] = useState(null);
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
+  const [sortField, setSortField]           = useState(null); // 'name'|'start_date'|'duration_hours'|'assigned'
+  const [sortDir, setSortDir]               = useState('asc');
   const dateDragRef = useRef(null);
   const scrollRef  = useRef(null);
   const ganttElRef = useRef(null);
@@ -629,19 +631,30 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const ganttW   = Math.max(columns.length * colW, 400);
   const totalMinW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
 
-  // Sticky helpers — conditioned on freezeCols toggle
-  const stickyH = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:6, ...extra } : extra;
-  const stickyC = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:4, ...extra } : extra;
+  // Sticky helpers — conditioned on freezeCols toggle (z-index high enough to cover Gantt overlays)
+  const stickyH = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:20, ...extra } : extra;
+  const stickyC = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:15, ...extra } : extra;
+
+  // Effective time span — for fixed-period scales the ganttW represents only the visible columns,
+  // NOT the full project span. Using the correct effMs fixes bar width in Heure/Jour/AM-PM.
+  const MS_PER_COL = { week: 7*86400000, day: 86400000, halfday: 12*3600000, hour: 3600000 };
+  const colMs = MS_PER_COL[scale]; // undefined for month
+  const effMs  = colMs ? columns.length * colMs : totalMs;
+  const effRefStart = (colMs && columns.length > 0) ? columns[0].start : refStart;
+
+  // Snap granularity (always ≤ 1 column): week/month snaps by day, others snap by 1 column period
+  const snapMs     = { month: 86400000, week: 86400000, day: 86400000, halfday: 12*3600000, hour: 3600000 }[scale] || 86400000;
+  const pxPerSnap  = ganttW / (effMs / snapMs); // pixels per snap unit
 
   // Weekend check for a given date (only visible in day/halfday/hour scales)
   const isWeekendCol = (col) =>
     (scale==='day'||scale==='halfday'||scale==='hour') &&
     (col.start.getDay()===0 || col.start.getDay()===6);
 
-  // Pixel helpers — positions within the ganttW space
-  const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - refStart) / totalMs * ganttW));
+  // Pixel helpers — use effective range so bar widths are correct in all views
+  const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - effRefStart) / effMs * ganttW));
   const todayPx = px(new Date());
-  todayPxRef.current = todayPx; // sync ref so the useEffect (above early return) can read it
+  todayPxRef.current = todayPx;
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
   const weekNum = (d) => {
@@ -653,7 +666,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const getBarBounds = (ph) => {
     const rawStart = ph.start_date?.slice(0,10);
     const rawTime  = ph.start_time || '08:00';
-    let sMs = rawStart ? new Date(rawStart + 'T' + rawTime).getTime() : refStart.getTime();
+    let sMs = rawStart ? new Date(rawStart + 'T' + rawTime).getTime() : effRefStart.getTime();
 
     let eMs;
     if (ph.duration_hours && rawStart) {
@@ -664,17 +677,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     }
 
     if (barDrag?.phId === ph.id) {
-      const d = (barDrag.delta || 0) * 86400000;
-      sMs += d; eMs += d;
+      const dMs = (barDrag.delta || 0) * (barDrag.snapMs || 86400000);
+      sMs += dMs; eMs += dMs;
     } else if (resize?.phId === ph.id) {
-      if (resize.side === 'left') sMs += (resize.delta || 0) * 86400000;
-      else                        eMs += (resize.delta || 0) * 86400000;
+      const rMs = (resize.delta || 0) * (resize.snapMs || 86400000);
+      if (resize.side === 'left') sMs += rMs;
+      else                        eMs += rMs;
     }
 
     const s = new Date(sMs), e = new Date(eMs);
-    const refMs = refStart.getTime();
-    const left  = Math.max(0, Math.min(ganttW, (sMs - refMs) / totalMs * ganttW));
-    const width = Math.max(8, Math.min(ganttW - left, (eMs - sMs) / totalMs * ganttW));
+    const refMs = effRefStart.getTime();
+    const left  = Math.max(0, Math.min(ganttW, (sMs - refMs) / effMs * ganttW));
+    const width = Math.max(8, Math.min(ganttW - left, (eMs - sMs) / effMs * ganttW));
     const sDate = new Date(sMs).toISOString().slice(0,10);
     const eDate = new Date(eMs).toISOString().slice(0,10);
     return { left, width, s, e, sDate, eDate };
@@ -693,60 +707,88 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     onReorderPhases?.(next); setDragIdx(null); setDragOverIdx(null);
   };
 
-  // Bar drag (shift all dates)
+  // Bar drag (shift all dates) — delta in snapMs units
   const handleBarDown = (e, ph) => {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const rawStart = ph.start_date?.slice(0,10);
-    let origEnd = ph.end_date?.slice(0,10);
-    if (!origEnd && ph.duration_hours && rawStart) {
-      const s = new Date(rawStart + 'T' + (ph.start_time||'08:00'));
-      origEnd = new Date(s.getTime() + Number(ph.duration_hours)*3600000).toISOString().slice(0,10);
+    const origStartMs = rawStart ? new Date(rawStart + 'T' + (ph.start_time||'08:00')).getTime() : Date.now();
+    let origEndMs;
+    if (ph.duration_hours && rawStart) {
+      origEndMs = origStartMs + Number(ph.duration_hours) * 3600000;
+    } else if (ph.end_date) {
+      origEndMs = new Date(ph.end_date.slice(0,10) + 'T17:00').getTime();
+    } else {
+      origEndMs = origStartMs + 8 * 3600000;
     }
-    setBarDrag({ phId: ph.id, startX: e.clientX, origStart: rawStart, origEnd, pxPerDay: ganttW / totalDays, delta: 0 });
+    setBarDrag({ phId: ph.id, startX: e.clientX, origStartMs, origEndMs, pxPerSnap, snapMs, delta: 0 });
   };
   const handleBarMove = (e) => {
     if (!barDrag) return;
-    const delta = Math.round((e.clientX - barDrag.startX) / barDrag.pxPerDay);
+    const delta = Math.round((e.clientX - barDrag.startX) / barDrag.pxPerSnap);
     if (delta !== barDrag.delta) setBarDrag(p => ({ ...p, delta }));
   };
   const handleBarUp = (e, ph) => {
     if (!barDrag || barDrag.phId !== ph.id) return;
-    if (barDrag.delta !== 0) {
-      const ns = new Date(barDrag.origStart); ns.setDate(ns.getDate() + barDrag.delta);
-      const ne = new Date(barDrag.origEnd || barDrag.origStart); ne.setDate(ne.getDate() + barDrag.delta);
-      onDatesChange?.(ph.id, ns.toISOString().slice(0,10), ne.toISOString().slice(0,10), cascade);
+    const d = barDrag.delta || 0;
+    if (d !== 0) {
+      const newStartMs = barDrag.origStartMs + d * barDrag.snapMs;
+      const ns = new Date(newStartMs);
+      const nsDate = ns.toISOString().slice(0,10);
+      const nsTime = `${String(ns.getHours()).padStart(2,'0')}:${String(ns.getMinutes()).padStart(2,'0')}`;
+      if (ph.duration_hours) {
+        onUpdatePhase?.(ph.id, { start_date: nsDate, start_time: nsTime });
+      } else {
+        const ne = new Date(barDrag.origEndMs + d * barDrag.snapMs);
+        onDatesChange?.(ph.id, nsDate, ne.toISOString().slice(0,10), cascade);
+      }
     }
     setBarDrag(null);
   };
 
-  // Resize handles (change duration)
+  // Resize handles (change duration) — delta in snapMs units, saves duration_hours
   const handleResizeDown = (e, ph, side) => {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const rawStart = ph.start_date?.slice(0,10);
-    let origEnd = ph.end_date?.slice(0,10);
-    if (!origEnd && ph.duration_hours && rawStart) {
-      const s = new Date(rawStart + 'T' + (ph.start_time||'08:00'));
-      origEnd = new Date(s.getTime() + Number(ph.duration_hours)*3600000).toISOString().slice(0,10);
+    const origStartMs = rawStart ? new Date(rawStart + 'T' + (ph.start_time||'08:00')).getTime() : Date.now();
+    let origEndMs;
+    if (ph.duration_hours && rawStart) {
+      origEndMs = origStartMs + Number(ph.duration_hours) * 3600000;
+    } else if (ph.end_date) {
+      origEndMs = new Date(ph.end_date.slice(0,10) + 'T17:00').getTime();
+    } else {
+      origEndMs = origStartMs + 8 * 3600000;
     }
-    setResize({ phId: ph.id, side, startX: e.clientX, origStart: rawStart, origEnd, pxPerDay: ganttW / totalDays, delta: 0 });
+    setResize({ phId: ph.id, side, startX: e.clientX, origStartMs, origEndMs, pxPerSnap, snapMs, delta: 0 });
   };
   const handleResizeMove = (e) => {
     if (!resize) return;
-    const delta = Math.round((e.clientX - resize.startX) / resize.pxPerDay);
+    const delta = Math.round((e.clientX - resize.startX) / resize.pxPerSnap);
     if (delta !== resize.delta) setResize(p => ({ ...p, delta }));
   };
   const handleResizeUp = (e, ph) => {
     if (!resize || resize.phId !== ph.id) return;
     const d = resize.delta || 0;
     if (d !== 0) {
+      const dMs = d * resize.snapMs;
       if (resize.side === 'left') {
-        const ns = new Date(resize.origStart); ns.setDate(ns.getDate() + d);
-        onDatesChange?.(ph.id, ns.toISOString().slice(0,10), resize.origEnd, false);
+        const newStartMs = resize.origStartMs + dMs;
+        const newDurH = Math.max(0.25, (resize.origEndMs - newStartMs) / 3600000);
+        const ns = new Date(newStartMs);
+        onUpdatePhase?.(ph.id, {
+          start_date: ns.toISOString().slice(0,10),
+          start_time: `${String(ns.getHours()).padStart(2,'0')}:${String(ns.getMinutes()).padStart(2,'0')}`,
+          duration_hours: Number(newDurH.toFixed(2)),
+        });
       } else {
-        const ne = new Date(resize.origEnd || resize.origStart); ne.setDate(ne.getDate() + d);
-        onDatesChange?.(ph.id, resize.origStart, ne.toISOString().slice(0,10), false);
+        const newEndMs = resize.origEndMs + dMs;
+        const newDurH = Math.max(0.25, (newEndMs - resize.origStartMs) / 3600000);
+        const ne = new Date(newEndMs);
+        onUpdatePhase?.(ph.id, {
+          end_date: ne.toISOString().slice(0,10),
+          duration_hours: Number(newDurH.toFixed(2)),
+        });
       }
     }
     setResize(null);
@@ -779,8 +821,25 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const scrollToToday = () => {
     if (!scrollRef.current) return;
     const viewW = scrollRef.current.clientWidth;
-    scrollRef.current.scrollLeft = Math.max(0, LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + todayPx - viewW * 0.4);
+    const FIXED = freezeCols ? (155 + 20 + 102 + 50 + 140) : 0;
+    // centre today within the visible Gantt area (after sticky columns)
+    scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - FIXED) * 0.4);
   };
+
+  // Sort helpers
+  const handleSort = (field) => {
+    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+  const sortIcon = (field) => sortField===field ? (sortDir==='asc'?'↑':'↓') : '';
+  const sortedPhases = sortField ? [...phases].sort((a,b) => {
+    let av, bv;
+    if (sortField==='name')           { av=a.name||'';                  bv=b.name||''; }
+    else if (sortField==='start_date'){ av=a.start_date||'';            bv=b.start_date||''; }
+    else if (sortField==='duration')  { av=Number(a.duration_hours||0); bv=Number(b.duration_hours||0); }
+    else if (sortField==='assigned')  { av=a.assigned_to_name||'';      bv=b.assigned_to_name||''; }
+    return sortDir==='asc' ? (av>bv?1:av<bv?-1:0) : (av<bv?1:av>bv?-1:0);
+  }) : phases;
 
   const exportPdf = () => window.print();
 
@@ -788,13 +847,21 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     <>
       {/* ── Toolbar ── */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
+        {/* Col. fixes — tout à gauche, séparé */}
+        <button onClick={() => setFreezeCols(v=>!v)}
+          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, flexShrink:0,
+            border:`1px solid ${freezeCols ? BRAND_BORDER : '#E5E7EB'}`,
+            background: freezeCols ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
+            color: freezeCols ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
+          <Pin size={10}/> Col. fixes
+        </button>
+        <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
         <span style={{ flex:1 }}/>
         {[
           [showDates,  ()=>setShowDates(v=>!v),  <Calendar size={10}/>,  'Dates'],
           [showArrows, ()=>setShowArrows(v=>!v), <GitBranch size={10}/>, 'Dépend.'],
           [showLegend, ()=>setShowLegend(v=>!v), null,                   'Légende'],
           [cascade,    ()=>setCascade(v=>!v),    <GitBranch size={10}/>, 'Cascade'],
-          [freezeCols, ()=>setFreezeCols(v=>!v), <Pin size={10}/>,       'Col. fixes'],
         ].map(([active, fn, icon, lbl], ki) => (
           <button key={ki} onClick={fn}
             style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
@@ -876,10 +943,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
-            <div style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', background:'#fff', ...stickyH(0) }}>Phase</div>
-            <div style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(LABEL_W+20) }}>Début</div>
-            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(LABEL_W+20+DATE_W) }}>Durée</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(LABEL_W+20+DATE_W+DUR_W) }}>Assigné</div>
+            <div onClick={() => handleSort('name')} style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='name' ? BRAND : '#9CA3AF', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(0) }}>Phase {sortIcon('name')}</div>
+            <div onClick={() => handleSort('start_date')} style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='start_date' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(LABEL_W+20) }}>Début {sortIcon('start_date')}</div>
+            <div onClick={() => handleSort('duration')} style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='duration' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(LABEL_W+20+DATE_W) }}>Durée {sortIcon('duration')}</div>
+            <div onClick={() => handleSort('assigned')} style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='assigned' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(LABEL_W+20+DATE_W+DUR_W) }}>Assigné {sortIcon('assigned')}</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => (
                 <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden', background: isWeekendCol(col) ? 'rgba(0,0,0,.028)' : 'transparent' }}>
@@ -915,7 +982,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           </div>
 
           {/* Phase rows */}
-          {phases.map((ph, i) => {
+          {sortedPhases.map((ph, i) => {
             const { left, width, s, e, sDate, eDate } = getBarBounds(ph);
             const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
             const isEven = i % 2 === 0;
