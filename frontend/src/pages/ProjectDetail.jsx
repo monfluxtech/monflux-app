@@ -346,11 +346,18 @@ function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
           {messages.map((m, i) => (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
               <div style={{
-                maxWidth: '85%', padding: '10px 14px', borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                background: m.role === 'user' ? BRAND : '#F4F5F6',
-                color: m.role === 'user' ? '#fff' : '#15171C', fontSize: 13.5, lineHeight: 1.5,
+                maxWidth: '88%', padding: m.role === 'user' ? '10px 14px' : '12px 16px',
+                borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                background: m.role === 'user' ? BRAND : '#fff',
+                border: m.role === 'user' ? 'none' : '1px solid #ECEEF0',
+                boxShadow: m.role === 'assistant' ? '0 1px 6px rgba(0,0,0,.06)' : 'none',
+                color: m.role === 'user' ? '#fff' : '#15171C', fontSize: 13, lineHeight: 1.65,
               }}>
-                {m.content || (loading && i === messages.length - 1 ? <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span> : '…')}
+                {m.role === 'assistant' ? (
+                  loading && i === messages.length - 1 && !m.content
+                    ? <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></span>
+                    : <FloMessage content={m.content || '…'} />
+                ) : (m.content || '…')}
               </div>
             </div>
           ))}
@@ -477,6 +484,67 @@ const ASSIGNEE_STATUS = {
   done:        { label: 'Relancé',             bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', dot: '#3B82F6' },
 };
 
+// Renders Flo's markdown-ish responses with colors, bold highlights, and clickable URLs
+function FloMessage({ content }) {
+  const lines = content.split('\n');
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+      {lines.map((line, i) => {
+        if (!line.trim()) return <div key={i} style={{ height:4 }}/>;
+        // H2 ## → section header with color strip
+        if (line.startsWith('## ')) return (
+          <div key={i} style={{ fontSize:12, fontWeight:800, color:'#E8794E', textTransform:'uppercase', letterSpacing:'.06em', marginTop:6, marginBottom:2, borderLeft:'3px solid #E8794E', paddingLeft:8 }}>
+            {line.slice(3)}
+          </div>
+        );
+        // H3 ### → smaller header
+        if (line.startsWith('### ')) return (
+          <div key={i} style={{ fontSize:12, fontWeight:700, color:'#3B82F6', marginTop:4, marginBottom:1 }}>{line.slice(4)}</div>
+        );
+        // Bullet list items
+        if (line.match(/^[\-\*] /)) {
+          const text = line.slice(2);
+          return <div key={i} style={{ display:'flex', gap:6, alignItems:'flex-start', paddingLeft:4 }}>
+            <span style={{ color:'#E8794E', fontWeight:900, flexShrink:0, marginTop:2 }}>•</span>
+            <span>{renderInline(text)}</span>
+          </div>;
+        }
+        // Numbered list
+        if (line.match(/^\d+\. /)) {
+          const num = line.match(/^(\d+)\. /)[1];
+          const text = line.replace(/^\d+\. /, '');
+          return <div key={i} style={{ display:'flex', gap:6, alignItems:'flex-start', paddingLeft:4 }}>
+            <span style={{ color:'#E8794E', fontWeight:800, flexShrink:0, minWidth:16, marginTop:2 }}>{num}.</span>
+            <span>{renderInline(text)}</span>
+          </div>;
+        }
+        // Source / URL line
+        if (line.match(/https?:\/\//)) return (
+          <div key={i} style={{ fontSize:11, color:'#6B7280', paddingLeft:4 }}>{renderInline(line)}</div>
+        );
+        // Normal paragraph
+        return <div key={i} style={{ paddingLeft:4 }}>{renderInline(line)}</div>;
+      })}
+    </div>
+  );
+}
+
+function renderInline(text) {
+  // Split on **bold**, *italic*, `code`, and URLs
+  const parts = text.split(/(https?:\/\/[^\s)]+|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return parts.map((part, j) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={j} style={{ color:'#15171C', fontWeight:700 }}>{part.slice(2,-2)}</strong>;
+    if (part.startsWith('*') && part.endsWith('*'))
+      return <em key={j} style={{ color:'#374151' }}>{part.slice(1,-1)}</em>;
+    if (part.startsWith('`') && part.endsWith('`'))
+      return <code key={j} style={{ background:'#F3F4F6', borderRadius:4, padding:'1px 5px', fontSize:11.5, fontFamily:'monospace', color:'#E8794E' }}>{part.slice(1,-1)}</code>;
+    if (part.match(/^https?:\/\//))
+      return <a key={j} href={part} target="_blank" rel="noreferrer" style={{ color:'#3B82F6', textDecoration:'underline', fontSize:11.5, wordBreak:'break-all' }}>{part}</a>;
+    return part;
+  });
+}
+
 function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
   // assignedToName (self-assign stored on phase) takes priority over trade subcontractor
   const tradeName = trade?.subcontractor_name || trade?.chosen_subcontractor_name || null;
@@ -535,8 +603,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
-  const [pinnedCols, setPinnedCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_pinned'); return s ? new Set(JSON.parse(s)) : new Set(['phase','start','dur_prev','dur_real','assigned']); } catch { return new Set(['phase','start','dur_prev','dur_real','assigned']); } });
-  const [hiddenCols, setHiddenCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_hidden'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); } });
+  const [pinnedCols, setPinnedCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_pinned'); return s ? new Set(JSON.parse(s)) : new Set(['phase','start','dur_prev','assigned']); } catch { return new Set(['phase','start','dur_prev','assigned']); } });
+  const [hiddenCols, setHiddenCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_hidden'); return s ? new Set(JSON.parse(s)) : new Set(['dur_real','dep_pred','dep_succ']); } catch { return new Set(['dur_real','dep_pred','dep_succ']); } });
   const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
   const [filters, setFilters]               = useState({ name:'', start_date:'', assigned:'', phaseStatus: new Set(), assigneeStatus: new Set() });
@@ -557,8 +625,11 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [depConnectMode, setDepConnectMode] = useState(false);
   const [depDrag, setDepDrag]               = useState(null); // { fromPhId, fromIdx, fromPt, curX, curY, startX, startY }
   const [hoveredDepKey, setHoveredDepKey]   = useState(null); // 'predId-succId'
+  const [longPressDepKey, setLongPressDepKey] = useState(null); // key showing delete UI
+  const longPressDepTimer                   = useRef(null);
   const [ptTooltip, setPtTooltip]           = useState(null); // { pt, x, y }
   const depDragRef                          = useRef(null);
+  const depHoverRef                         = useRef(null); // { phId, pt } — dot under cursor during drag
   const dateDragRef = useRef(null);
   const scrollRef   = useRef(null);
   const ganttElRef  = useRef(null);
@@ -589,7 +660,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // (fixedColW hardcodé car LABEL_W/DATE_W etc. sont définis après le return null)
   useEffect(() => {
     if (!scrollRef.current || todayPxRef.current <= 0) return;
-    const FIXED = 24 + 155 + 20 + 102 + 55 + 62 + 140; // CHECK_W+LABEL_W+20+DATE_W+DUR_W+REAL_DUR_W+ASSIGN_W (approx — hiddenCols not available here)
+    const FIXED = 24 + 155 + 20 + 102 + 55 + 140; // CHECK_W+LABEL_W+20+DATE_W+DUR_W+ASSIGN_W (approx — dur_real/dep hidden by default)
     const viewW = scrollRef.current.clientWidth;
     scrollRef.current.scrollLeft = Math.max(0, todayPxRef.current - (viewW - FIXED) * 0.3);
   }, [scale]);
@@ -676,6 +747,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const DUR_W      = 55;
   const REAL_DUR_W = 62;
   const ASSIGN_W   = 140;
+  const DEP_W      = 110;
   const ganttW     = Math.max(columns.length * colW, 400);
 
   // Colonnes optionnelles (ordre gauche→droite) — cachables via hiddenCols
@@ -684,6 +756,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     { key: 'dur_prev', w: colWidths.dur_prev ?? DUR_W,      label: 'Durée prévue' },
     { key: 'dur_real', w: colWidths.dur_real ?? REAL_DUR_W, label: 'Durée réelle' },
     { key: 'assigned', w: colWidths.assigned ?? ASSIGN_W,   label: 'Assigné' },
+    { key: 'dep_pred', w: colWidths.dep_pred ?? DEP_W,      label: 'Prédécesseur' },
+    { key: 'dep_succ', w: colWidths.dep_succ ?? DEP_W,      label: 'Successeur' },
   ];
 
   // Drag-resize a column — call from onMouseDown on the separator handle
@@ -957,21 +1031,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         : null;
       setDepDrag(d => d ? { ...d, curX: e.clientX, curY: e.clientY } : null);
     };
-    const up = (e) => {
+    const up = () => {
       if (depDragRef.current) {
-        const el = document.elementFromPoint(e.clientX, e.clientY);
         const fromId = String(depDragRef.current.fromPhId);
         const fromPt = depDragRef.current.fromPt || 'right';
-        const ptEl = el?.closest('[data-dep-pt]');
-        if (ptEl) {
-          const toId = ptEl.getAttribute('data-phase-id');
-          const toPt = ptEl.getAttribute('data-dep-pt');
-          if (toId && toId !== fromId) {
-            const type = getDepType(fromPt, toPt);
-            saveDep(toId, { pred: fromId, type, fromPt, toPt });
-          }
-        // Dropped somewhere other than a connection point → just cancel, stay in dep mode
+        // depHoverRef is set by onPointerEnter on dots — more reliable than elementFromPoint
+        const hover = depHoverRef.current;
+        if (hover && String(hover.phId) !== fromId) {
+          const toPt = hover.pt;
+          const type = getDepType(fromPt, toPt);
+          saveDep(String(hover.phId), { pred: fromId, type, fromPt, toPt });
         }
+        depHoverRef.current = null;
       }
       setDepDrag(null);
       depDragRef.current = null;
@@ -1219,7 +1290,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         {/* Rangée 1 : pin | séparateur — — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
         <div style={{ display:'flex', alignItems:'center', padding:'8px 16px', gap:5 }}>
           <button
-            onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned']))}
+            onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned','dep_pred','dep_succ']))}
             title={hiddenCols.size > 0 ? 'Ramener les colonnes à gauche' : 'Déplacer les colonnes optionnelles à droite'}
             style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
               border:`1.5px solid ${hiddenCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
@@ -1490,42 +1561,42 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           </div>
 
           {/* Phase rows */}
-          {/* Dependency arrows SVG overlay */}
+          {/* Dependency arrows SVG — positioned at start of timeline, coords relative to timeline */}
           {showArrows && Object.keys(deps).length > 0 && (() => {
             const rowH = 44;
-            const barCY = 21; // vertical center of bar in row (5px top + 14px half-bar + 2px row-pad)
-            const barTY = 7;  // top of bar
-            const barBY = 35; // bottom of bar
+            const barCY = 21;
+            const barTY = 7;
+            const barBY = 35;
 
+            // coords are relative to the timeline start (NOT the full content div)
             const getAnchor = (bar, pt, idx) => {
-              const bx = fixedColsW + bar.left;
               switch(pt) {
-                case 'left':       return { x: bx, y: idx * rowH + barCY };
-                case 'right':      return { x: bx + bar.width, y: idx * rowH + barCY };
-                case 'mid-top':    return { x: bx + bar.width / 2, y: idx * rowH + barTY };
-                case 'mid-bottom': return { x: bx + bar.width / 2, y: idx * rowH + barBY };
-                default:           return { x: bx + bar.width, y: idx * rowH + barCY };
+                case 'left':       return { x: bar.left, y: idx * rowH + barCY };
+                case 'right':      return { x: bar.left + bar.width, y: idx * rowH + barCY };
+                case 'mid-top':    return { x: bar.left + bar.width / 2, y: idx * rowH + barTY };
+                case 'mid-bottom': return { x: bar.left + bar.width / 2, y: idx * rowH + barBY };
+                default:           return { x: bar.left + bar.width, y: idx * rowH + barCY };
               }
             };
 
-            // Arrowhead polygon at (x, y) pointing INTO the target anchor
             const makeArrow = (x, y, toPt) => {
               const sz = 6;
-              if (toPt === 'mid-top')    return `${x},${y} ${x-sz/2},${y-sz} ${x+sz/2},${y-sz}`;  // ↓ into top
-              if (toPt === 'mid-bottom') return `${x},${y} ${x-sz/2},${y+sz} ${x+sz/2},${y+sz}`;  // ↑ into bottom
-              if (toPt === 'left')       return `${x},${y} ${x+sz},${y-sz/2} ${x+sz},${y+sz/2}`;  // → into start
-              return                            `${x},${y} ${x-sz},${y-sz/2} ${x-sz},${y+sz/2}`;  // ← into end
+              if (toPt === 'mid-top')    return `${x},${y} ${x-sz/2},${y-sz} ${x+sz/2},${y-sz}`;
+              if (toPt === 'mid-bottom') return `${x},${y} ${x-sz/2},${y+sz} ${x+sz/2},${y+sz}`;
+              if (toPt === 'left')       return `${x},${y} ${x+sz},${y-sz/2} ${x+sz},${y+sz/2}`;
+              return                            `${x},${y} ${x-sz},${y-sz/2} ${x-sz},${y+sz/2}`;
             };
 
             const TYPE_COLOR = { FS: BRAND, SS: '#10B981', FF: '#F59E0B', SF: '#8B5CF6', PAR: '#6366F1' };
             const TYPE_DASH  = { FS: '4 3', SS: '3 3', FF: '6 2 2 2', SF: '2 4', PAR: '1 0' };
 
             return (
-              <svg style={{ position:'absolute', top:0, left:0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
+              // SVG left = fixedColsW so it starts exactly at the timeline start
+              // width/height cover the gantt bar area only
+              <svg style={{ position:'absolute', top:0, left: fixedColsW, width: ganttW, height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
                 {Object.entries(deps).map(([succId, depVal]) => {
                   const predId  = typeof depVal === 'object' ? depVal.pred : String(depVal);
                   const depType = typeof depVal === 'object' ? (depVal.type || 'FS') : 'FS';
-                  // Determine fromPt/toPt — legacy deps without these fields fall back to type-based defaults
                   const fromPt = typeof depVal === 'object' && depVal.fromPt ? depVal.fromPt :
                                  (depType === 'SS' ? 'left' : 'right');
                   const toPt   = typeof depVal === 'object' && depVal.toPt   ? depVal.toPt   :
@@ -1540,13 +1611,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   const a1 = getAnchor(pb, fromPt, predIdx);
                   const a2 = getAnchor(sb, toPt,   succIdx);
 
-                  // Bezier control points — vertical curves for mid anchors, S-curve for horizontal
                   let pathD;
                   if (fromPt.startsWith('mid') || toPt.startsWith('mid')) {
                     const midX = (a1.x + a2.x) / 2;
-                    const cy1  = fromPt.startsWith('mid') ? a1.y : a1.y;
-                    const cy2  = toPt.startsWith('mid')   ? a2.y : a2.y;
-                    pathD = `M${a1.x},${a1.y} C${fromPt.startsWith('mid')?a1.x:midX},${cy1} ${toPt.startsWith('mid')?a2.x:midX},${cy2} ${a2.x},${a2.y}`;
+                    pathD = `M${a1.x},${a1.y} C${fromPt.startsWith('mid')?a1.x:midX},${a1.y} ${toPt.startsWith('mid')?a2.x:midX},${a2.y} ${a2.x},${a2.y}`;
                   } else {
                     const cx = Math.max(a1.x + 20, Math.min(a2.x - 20, (a1.x + a2.x) / 2));
                     pathD = `M${a1.x},${a1.y} C${cx},${a1.y} ${cx},${a2.y} ${a2.x},${a2.y}`;
@@ -1559,22 +1627,34 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
                   const depKey = `${predId}-${succId}`;
                   const isHov = hoveredDepKey === depKey;
+                  const isLongPressed = longPressDepKey === depKey;
+
+                  const startLongPress = () => {
+                    longPressDepTimer.current = setTimeout(() => setLongPressDepKey(depKey), 500);
+                  };
+                  const cancelLongPressDep = () => {
+                    clearTimeout(longPressDepTimer.current);
+                    longPressDepTimer.current = null;
+                  };
+
                   return (
                     <g key={`dep-${depKey}`}
                       onMouseEnter={() => setHoveredDepKey(depKey)}
-                      onMouseLeave={() => setHoveredDepKey(null)}
-                      style={{ cursor:'pointer', pointerEvents:'visiblePainted' }}>
+                      onMouseLeave={() => { setHoveredDepKey(null); cancelLongPressDep(); }}
+                      onMouseDown={startLongPress}
+                      onMouseUp={cancelLongPressDep}
+                      style={{ cursor: isLongPressed ? 'pointer' : 'default', pointerEvents:'visiblePainted' }}>
                       {/* Invisible fat hit area */}
-                      <path d={pathD} fill="none" stroke="transparent" strokeWidth={12}/>
+                      <path d={pathD} fill="none" stroke="transparent" strokeWidth={14}/>
                       <path d={pathD} fill="none" stroke={col} strokeWidth={isHov ? 2.5 : 1.5} strokeDasharray={dash} opacity={isHov ? 1 : 0.7}/>
                       <polygon points={makeArrow(a2.x, a2.y, toPt)} fill={col} opacity={isHov ? 1 : 0.8}/>
                       <text x={midX} y={midY-4} textAnchor="middle" fill={col} fontSize={8} fontWeight={800} opacity={0.85}>{depType}</text>
-                      {/* Scissors delete button on hover */}
-                      {isHov && (
-                        <g onClick={() => deleteDep(succId)} style={{ cursor:'pointer' }}
-                          transform={`translate(${midX - 10}, ${midY - 16})`}>
-                          <rect x={0} y={0} width={20} height={14} rx={4} fill={col} opacity={0.95}/>
-                          <text x={10} y={11} textAnchor="middle" fontSize={11} fill="#fff">✂</text>
+                      {/* Scissors — appear after long press (hold ~0.5s) */}
+                      {isLongPressed && (
+                        <g onClick={() => { deleteDep(succId); setLongPressDepKey(null); }} style={{ cursor:'pointer' }}
+                          transform={`translate(${midX - 14}, ${midY - 13})`}>
+                          <rect x={0} y={0} width={28} height={18} rx={5} fill={col} opacity={0.97}/>
+                          <text x={14} y={13} textAnchor="middle" fontSize={13} fill="#fff">✂</text>
                         </g>
                       )}
                     </g>
@@ -1702,6 +1782,38 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                         onUnassign={ph.assigned_to_name?()=>onSelfAssign?.(ph.id,null):undefined}/>
                     </div>
                   );
+                  if (cd.key === 'dep_pred') {
+                    const myDep = deps[String(ph.id)];
+                    const predPh = myDep ? phases.find(p=>String(p.id)===String(myDep.pred)) : null;
+                    const DC={FS:'#E8794E',SS:'#10B981',FF:'#F59E0B',SF:'#8B5CF6',PAR:'#6366F1'};
+                    const t = myDep?.type||'FS';
+                    return (
+                      <div key="dep_pred" data-opt-col="dep_pred" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_pred'],'dep_pred') }}>
+                        {predPh ? (
+                          <button onClick={() => setShowArrows(true)} style={{ display:'flex',alignItems:'center',gap:4,background:'transparent',border:'none',cursor:'pointer',padding:0,maxWidth:'100%',overflow:'hidden' }}>
+                            <span style={{fontSize:9,fontWeight:800,padding:'2px 4px',borderRadius:4,background:DC[t]+'22',color:DC[t],flexShrink:0}}>{t}</span>
+                            <span style={{fontSize:10.5,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{predPh.name}</span>
+                          </button>
+                        ) : <span style={{color:'#D1D5DB',fontSize:10}}>—</span>}
+                      </div>
+                    );
+                  }
+                  if (cd.key === 'dep_succ') {
+                    const DC={FS:'#E8794E',SS:'#10B981',FF:'#F59E0B',SF:'#8B5CF6',PAR:'#6366F1'};
+                    const succs=Object.entries(deps).filter(([sid,dv])=>String((typeof dv==='object'?dv.pred:dv))===String(ph.id));
+                    return (
+                      <div key="dep_succ" data-opt-col="dep_succ" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_succ'],'dep_succ') }}>
+                        {succs.length>0 ? succs.map(([sid,dv])=>{
+                          const sph=phases.find(p=>String(p.id)===sid); if(!sph)return null;
+                          const t=typeof dv==='object'?(dv.type||'FS'):'FS';
+                          return <button key={sid} onClick={()=>setShowArrows(true)} style={{display:'flex',alignItems:'center',gap:3,background:'transparent',border:'none',cursor:'pointer',padding:0,maxWidth:'100%',overflow:'hidden'}}>
+                            <span style={{fontSize:9,fontWeight:800,padding:'2px 4px',borderRadius:4,background:DC[t]+'22',color:DC[t],flexShrink:0}}>{t}</span>
+                            <span style={{fontSize:10.5,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sph.name}</span>
+                          </button>;
+                        }) : <span style={{color:'#D1D5DB',fontSize:10}}>—</span>}
+                      </div>
+                    );
+                  }
                   return null;
                 })}
                 {/* ── Colonnes dépinées — GAUCHE du Gantt (grisées, non-sticky) ── */}
@@ -1754,6 +1866,44 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                         onUnassign={ph.assigned_to_name?()=>onSelfAssign?.(ph.id,null):undefined}/>
                     </div>
                   );
+                  // Colonne Prédécesseur — phase dont cette phase dépend
+                  if (cd.key === 'dep_pred') {
+                    const myDep = deps[String(ph.id)];
+                    const predPhase = myDep ? phases.find(p => String(p.id) === String(myDep.pred)) : null;
+                    const DEP_TYPE_COLOR = { FS:'#E8794E', SS:'#10B981', FF:'#F59E0B', SF:'#8B5CF6', PAR:'#6366F1' };
+                    return (
+                      <div key={`rc-dep_pred-${ph.id}`} style={{ ...rcBase, padding:'0 6px', gap:4 }}>
+                        {predPhase ? (
+                          <button onClick={() => setShowArrows(true)}
+                            style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', padding:0, maxWidth:'100%', overflow:'hidden' }}>
+                            <span style={{ fontSize:9, fontWeight:800, padding:'2px 5px', borderRadius:4, background: DEP_TYPE_COLOR[myDep.type||'FS']+'22', color: DEP_TYPE_COLOR[myDep.type||'FS'], flexShrink:0 }}>{myDep.type||'FS'}</span>
+                            <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{predPhase.name}</span>
+                          </button>
+                        ) : <span style={{ color:'#D1D5DB', fontSize:10 }}>—</span>}
+                      </div>
+                    );
+                  }
+                  // Colonne Successeur — phases qui dépendent de cette phase
+                  if (cd.key === 'dep_succ') {
+                    const DEP_TYPE_COLOR = { FS:'#E8794E', SS:'#10B981', FF:'#F59E0B', SF:'#8B5CF6', PAR:'#6366F1' };
+                    const succs = Object.entries(deps).filter(([sid, dv]) => String((typeof dv==='object'?dv.pred:dv)) === String(ph.id));
+                    return (
+                      <div key={`rc-dep_succ-${ph.id}`} style={{ ...rcBase, padding:'0 6px', gap:3, flexWrap:'wrap' }}>
+                        {succs.length > 0 ? succs.map(([sid, dv]) => {
+                          const succPh = phases.find(p => String(p.id) === sid);
+                          if (!succPh) return null;
+                          const t = typeof dv==='object' ? (dv.type||'FS') : 'FS';
+                          return (
+                            <button key={sid} onClick={() => setShowArrows(true)}
+                              style={{ display:'flex', alignItems:'center', gap:3, background:'transparent', border:'none', cursor:'pointer', padding:0, maxWidth:'100%', overflow:'hidden' }}>
+                              <span style={{ fontSize:9, fontWeight:800, padding:'2px 4px', borderRadius:4, background: DEP_TYPE_COLOR[t]+'22', color: DEP_TYPE_COLOR[t], flexShrink:0 }}>{t}</span>
+                              <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{succPh.name}</span>
+                            </button>
+                          );
+                        }) : <span style={{ color:'#D1D5DB', fontSize:10 }}>—</span>}
+                      </div>
+                    );
+                  }
                   return null;
                 })}
                 {/* Gantt bar area — fixed pixel width, matches header */}
@@ -1866,25 +2016,33 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                         {/* Début — gauche (bleu) — toujours à gauche du pill */}
                         <div data-dep-pt="left" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'left')}
-                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.left, x: ev.clientX, y: ev.clientY })}
+                          onPointerEnter={() => { if (depDragRef.current) depHoverRef.current = { phId: ph.id, pt: 'left' }; }}
+                          onPointerLeave={() => { if (depHoverRef.current?.phId === ph.id && depHoverRef.current?.pt === 'left') depHoverRef.current = null; }}
+                          onMouseEnter={ev => { if (!depDrag) setPtTooltip({ pt: PT_LABELS.left, x: ev.clientX, y: ev.clientY }); }}
                           onMouseLeave={() => setPtTooltip(null)}
                           style={ptBase('#3B82F6', lx, barMidY)}/>
                         {/* Fin — droite (orange) — toujours à droite du pill */}
                         <div data-dep-pt="right" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'right')}
-                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.right, x: ev.clientX, y: ev.clientY })}
+                          onPointerEnter={() => { if (depDragRef.current) depHoverRef.current = { phId: ph.id, pt: 'right' }; }}
+                          onPointerLeave={() => { if (depHoverRef.current?.phId === ph.id && depHoverRef.current?.pt === 'right') depHoverRef.current = null; }}
+                          onMouseEnter={ev => { if (!depDrag) setPtTooltip({ pt: PT_LABELS.right, x: ev.clientX, y: ev.clientY }); }}
                           onMouseLeave={() => setPtTooltip(null)}
                           style={ptBase('#E8794E', rx, barMidY)}/>
                         {/* Parallèle haut (vert) */}
                         <div data-dep-pt="mid-top" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-top')}
-                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-top'], x: ev.clientX, y: ev.clientY })}
+                          onPointerEnter={() => { if (depDragRef.current) depHoverRef.current = { phId: ph.id, pt: 'mid-top' }; }}
+                          onPointerLeave={() => { if (depHoverRef.current?.phId === ph.id && depHoverRef.current?.pt === 'mid-top') depHoverRef.current = null; }}
+                          onMouseEnter={ev => { if (!depDrag) setPtTooltip({ pt: PT_LABELS['mid-top'], x: ev.clientX, y: ev.clientY }); }}
                           onMouseLeave={() => setPtTooltip(null)}
                           style={ptBase('#10B981', mx, 2)}/>
                         {/* Parallèle bas (vert) */}
                         <div data-dep-pt="mid-bottom" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-bottom')}
-                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-bottom'], x: ev.clientX, y: ev.clientY })}
+                          onPointerEnter={() => { if (depDragRef.current) depHoverRef.current = { phId: ph.id, pt: 'mid-bottom' }; }}
+                          onPointerLeave={() => { if (depHoverRef.current?.phId === ph.id && depHoverRef.current?.pt === 'mid-bottom') depHoverRef.current = null; }}
+                          onMouseEnter={ev => { if (!depDrag) setPtTooltip({ pt: PT_LABELS['mid-bottom'], x: ev.clientX, y: ev.clientY }); }}
                           onMouseLeave={() => setPtTooltip(null)}
                           style={ptBase('#10B981', mx, 36)}/>
                       </>
