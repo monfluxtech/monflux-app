@@ -2872,6 +2872,7 @@ export default function ProjectDetail() {
   const [tradeResourcesMap, setTradeResourcesMap] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-resources-${id}`) || '{}'); } catch { return {}; } });
   const [tradeConformite, setTradeConformite] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-conformite-${id}`) || '{}'); } catch { return {}; } });
   const [tradeResInput, setTradeResInput] = useState({});
+  const [loadingFloPersonCheck, setLoadingFloPersonCheck] = useState({});
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -3601,6 +3602,63 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
         try { const parsed = JSON.parse(match[0]); setTradeRecos(parsed.trades || {}); } catch { setTradeRecos({}); }
       } else { setTradeRecos({}); }
     } catch { setTradeRecos({}); } finally { setLoadingTradeRecos(false); }
+  };
+
+  const floCheckPersonConformite = async (tradeName, person, type, pi) => {
+    const pKey = `${tradeName}||${type}||${pi}`;
+    setLoadingFloPersonCheck(m => ({ ...m, [pKey]: true }));
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en conformité construction au Québec.
+Évalue la conformité réglementaire de cette personne/entreprise pour un chantier de construction au Québec :
+- Nom : ${person.name}
+- Corps de métier : ${tradeName}
+- Type : ${type === 'internal' ? 'Ressource interne (employé)' : 'Sous-traitant / entreprise externe'}
+- Projet : ${project.description || project.name || ''}
+
+Évalue les 3 certifications requises au Québec :
+1. RBQ — Licence de la Régie du bâtiment du Québec (obligatoire pour entreprise)
+2. CCQ — Conformité aux conventions collectives de la construction (si assujetti)
+3. Assurance responsabilité civile (obligatoire, min. 2M$ généralement)
+
+Pour chaque certification, dis si elle est probablement requise pour ce corps de métier et ce profil, et si oui quelle action recommander.
+Réponds en JSON UNIQUEMENT dans ce format :
+{"rbq":{"requis":true,"ok":null,"notes":"Vérifier licence RBQ active sur rbq.gouv.qc.ca"},"ccq":{"requis":true,"ok":null,"notes":"..."},"insurance":{"requis":true,"ok":null,"notes":"..."},"summary":"Résumé global en 1 phrase"}`;
+    try {
+      const token = localStorage.getItem('token');
+      const PROJ_CHAT_BASE_LOCAL = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const res = await fetch(`${PROJ_CHAT_BASE_LOCAL}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) return;
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let raw = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') raw += evt.text; } catch {}
+        }
+      }
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[0]);
+          setTradeConformite(prev => {
+            const updated = {
+              ...prev,
+              [pKey]: {
+                ...prev[pKey],
+                floNotes: parsed.summary || '',
+                floResult: parsed,
+              }
+            };
+            localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
+            return updated;
+          });
+        } catch {}
+      }
+    } catch {} finally {
+      setLoadingFloPersonCheck(m => ({ ...m, [pKey]: false }));
+    }
   };
 
   const generatePhasesFromAI = async () => {
@@ -5970,12 +6028,47 @@ Règles :
 
             if (!rowNames.length) return null;
 
-            const statusMeta = {
-              to_find: { label: 'A trouver', color: '#9CA3AF', bg: '#F3F4F6' },
-              contacted: { label: 'Contacté', color: '#F59E0B', bg: '#FFF7E8' },
-              quoted: { label: 'Soumissionné', color: '#3B82F6', bg: '#EFF6FF' },
-              confirmed: { label: 'Confirmé', color: '#16A34A', bg: '#ECFDF3' },
-              done: { label: 'Terminé', color: '#2563EB', bg: '#EEF2FF' },
+            const personStatuses = [
+              { key: 'a_contacter', label: 'À contacter', color: '#E8794E', bg: '#FFF1EB' },
+              { key: 'contacte',    label: 'Contacté',    color: '#F59E0B', bg: '#FFF7E8' },
+              { key: 'soumissionne',label: 'Soumissionné',color: '#3B82F6', bg: '#EFF6FF' },
+              { key: 'confirme',    label: 'Confirmé',    color: '#16A34A', bg: '#ECFDF3' },
+              { key: 'termine',     label: 'Terminé',     color: '#6B7280', bg: '#F9FAFB' },
+            ];
+
+            const parsePersons = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p, status: 'a_contacter' } : p);
+            const isDateExpired = (d) => d && new Date(d) < new Date();
+            const isCertFail = (c) => !c?.ok || isDateExpired(c?.validite);
+            const isPersonNonConforme = (cert) => isCertFail(cert?.rbq) || isCertFail(cert?.ccq) || isCertFail(cert?.insurance);
+            const personKey = (tn, type, pi) => `${tn}||${type}||${pi}`;
+
+            const hS = { fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' };
+            const subH = { fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE' };
+
+            const renderCertCell = (certObj, certLabel, color, onChange) => {
+              const c = certObj || {};
+              const expired = isDateExpired(c.validite);
+              return (
+                <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <input type="checkbox" checked={!!c.ok} onChange={e => onChange('ok', e.target.checked)}
+                      style={{ accentColor: c.ok ? color : '#DC2626', width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: c.ok ? color : '#DC2626' }}>{certLabel}</span>
+                    {expired && <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 4, padding: '1px 5px' }}>EXPIRÉ</span>}
+                    {c.ok && !expired && c.validite && <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}15`, borderRadius: 4, padding: '1px 5px' }}>✓</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 9.5, color: '#B0B4BB', fontWeight: 600, width: 32, flexShrink: 0 }}>Exp.</span>
+                    <input type="date" value={c.validite || ''} onChange={e => onChange('validite', e.target.value)}
+                      style={{ fontSize: 10, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 6, padding: '2px 5px', color: expired ? '#DC2626' : '#3A3D44', background: expired ? '#FFF5F5' : '#fff', width: '100%' }}/>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 9.5, color: '#B0B4BB', fontWeight: 600, width: 32, flexShrink: 0 }}>Vérif.</span>
+                    <input type="date" value={c.lastCheck || ''} onChange={e => onChange('lastCheck', e.target.value)}
+                      style={{ fontSize: 10, border: '1px solid #E8EAED', borderRadius: 6, padding: '2px 5px', color: '#3A3D44', background: '#fff', width: '100%' }}/>
+                  </div>
+                </div>
+              );
             };
 
             return (
@@ -5984,185 +6077,182 @@ Règles :
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 11, background: '#FFF4EC', display: 'grid', placeItems: 'center', fontSize: 18 }}>👷</div>
                     <div>
-                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & sous-traitants</p>
-                      <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Assigne les bons intervenants à chaque métier actif du projet.</p>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & équipe</p>
+                      <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Ressources internes et externes par métier, avec suivi de conformité (RBQ / CCQ / Assurance).</p>
                     </div>
                   </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 960 }}>
-                  {/* En-têtes de colonnes */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '220px 320px 160px 120px 150px', alignItems: 'end', borderBottom: '1px solid #F1F3F5' }}>
-                    <div style={{ padding: '8px 16px 8px 20px', borderRight: '1px solid #E8EAED' }}>
-                      <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' }}>Corps de métier</span>
-                    </div>
-                    <div style={{ padding: '6px 16px 0' }}>
-                      <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', display: 'block', marginBottom: 4 }}>Personne ressource</span>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid #F1F3F5' }}>
-                        <span style={{ fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE', padding: '4px 0' }}>Interne</span>
-                        <span style={{ fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE', padding: '4px 0', borderLeft: '1px solid #F1F3F5', paddingLeft: 10 }}>Externe</span>
+                  <div style={{ minWidth: 900 }}>
+
+                    {/* ── En-têtes ── */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid #F1F3F5', background: '#FAFAFA' }}>
+                      <div style={{ width: 200, flexShrink: 0, padding: '7px 14px 7px 20px', borderRight: '1px solid #E8EAED' }}>
+                        <span style={hS}>Corps de métier</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 1fr 110px', flex: 1 }}>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>Personne</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>🔧 RBQ</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>👷 CCQ</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>🛡️ Assurance</span></div>
+                        <div style={{ padding: '7px 12px' }}><span style={hS}>Flo</span></div>
                       </div>
                     </div>
-                    {['Action', 'Statut', 'Conformité'].map((h, hi) => (
-                      <div key={hi} style={{ padding: '8px 16px' }}>
-                        <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' }}>{h}</span>
-                      </div>
-                    ))}
-                  </div>
 
-                  {rowNames.map((tradeName, idx) => {
-                    const tradeRow = tradesFromProject.find((trade) => trade.trade?.toLowerCase() === tradeName.toLowerCase()) || null;
-                    const tradePhases = phases.filter((ph) => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
-                    const tradeHours = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
-                    const assignedSub = tradeRow ? subs.find((sub) => sub.id === tradeRow.chosen_subcontractor_id) : null;
-                    const status = statusMeta[tradeRow?.status || 'to_find'] || statusMeta.to_find;
-                    const suggestedSubs = subs.filter((sub) => {
-                      const haystack = [sub.name, sub.company_name, sub.specialty, ...(sub.trades || [])].filter(Boolean).join(' ').toLowerCase();
-                      return haystack.includes(tradeName.toLowerCase());
-                    });
-                    const resources = tradeResourcesMap[tradeName] || { internal: [], external: [] };
-                    const conformite = tradeConformite[tradeName] || { rbq: false, ccq: false, insurance: false };
+                    {/* ── Lignes par corps de métier ── */}
+                    {rowNames.map((tradeName, idx) => {
+                      const tradePhases = phases.filter(ph => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
+                      const tradeHours = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
+                      const rawRes = tradeResourcesMap[tradeName] || { internal: [], external: [] };
+                      const resources = { internal: parsePersons(rawRes.internal), external: parsePersons(rawRes.external) };
 
-                    const ensureTradeRow = async () => {
-                      if (tradeRow) return tradeRow;
-                      const { data } = await projectsApi.addTrade(id, { trade: tradeName, status: 'to_find', chosen_subcontractor_id: null, estimated_cost: null });
-                      setProject((p) => ({ ...p, trades: [...(p.trades || []), data] }));
-                      return data;
-                    };
+                      const updateResources = (type, newList) => {
+                        const updated = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [type]: newList } };
+                        setTradeResourcesMap(updated);
+                        localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+                      };
 
-                    const updateResources = (type, newList) => {
-                      const updated = { ...tradeResourcesMap, [tradeName]: { ...resources, [type]: newList } };
-                      setTradeResourcesMap(updated);
-                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
-                    };
+                      const cycleStatus = (type, pi) => {
+                        const list = resources[type];
+                        const cur = personStatuses.findIndex(s => s.key === (list[pi]?.status || 'a_contacter'));
+                        const next = personStatuses[(cur + 1) % personStatuses.length];
+                        updateResources(type, list.map((p, i) => i === pi ? { ...p, status: next.key } : p));
+                      };
 
-                    const updateConformite = (key, val) => {
-                      const updated = { ...tradeConformite, [tradeName]: { ...conformite, [key]: val } };
-                      setTradeConformite(updated);
-                      localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
-                    };
+                      const updateCert = (type, pi, certKey, field, val) => {
+                        const key = personKey(tradeName, type, pi);
+                        const cur = tradeConformite[key] || { rbq: {}, ccq: {}, insurance: {} };
+                        const updated = { ...tradeConformite, [key]: { ...cur, [certKey]: { ...cur[certKey], [field]: val } } };
+                        setTradeConformite(updated);
+                        localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
+                      };
 
-                    const addResource = (type, inputKey) => {
-                      const val = (tradeResInput[inputKey] || '').trim();
-                      if (!val) return;
-                      updateResources(type, [...resources[type], val]);
-                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
-                    };
+                      const renderPersonSection = (type) => {
+                        const list = resources[type];
+                        const typeColor = type === 'internal' ? '#7C3AED' : '#2563EB';
+                        const typeIcon  = type === 'internal' ? '🏠' : '🏗️';
+                        const typeLabel = type === 'internal' ? 'Interne' : 'Externe';
+                        const inputKey  = `${tradeName}_add_${type}`;
+                        return (
+                          <div>
+                            {/* section label */}
+                            <div style={{ padding: '5px 12px 5px 20px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: typeColor }}>{typeIcon} {typeLabel}</span>
+                            </div>
 
-                    const chipStyle = (color) => ({ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color, background: `${color}15`, borderRadius: 999, padding: '2px 8px', border: `1px solid ${color}30`, flexShrink: 0 });
+                            {/* person rows */}
+                            {list.map((person, pi) => {
+                              const cert = tradeConformite[personKey(tradeName, type, pi)] || { rbq: {}, ccq: {}, insurance: {} };
+                              const nonConforme = isPersonNonConforme(cert);
+                              const pStat = personStatuses.find(s => s.key === (person.status || 'a_contacter')) || personStatuses[0];
+                              const pKey = personKey(tradeName, type, pi);
+                              const isLoadingFlo = !!loadingFloPersonCheck[pKey];
 
-                    const renderResourceZone = (type, label, icon, color, borderSide) => {
-                      const inputKey = `${tradeName}_${type}`;
+                              return (
+                                <div key={pi} style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConforme ? '#FFF5F5' : 'transparent' }}>
+                                  {/* person info */}
+                                  <div style={{ width: 200, flexShrink: 0, padding: '10px 14px 10px 20px', borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                                      <p style={{ fontSize: 13, fontWeight: 700, color: nonConforme ? '#DC2626' : '#15171C', margin: 0, flex: 1 }}>{person.name}</p>
+                                      <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
+                                    </div>
+                                    <button onClick={() => cycleStatus(type, pi)}
+                                      style={{ alignSelf: 'flex-start', fontSize: 10.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 9px', cursor: 'pointer' }}>
+                                      {pStat.label}
+                                    </button>
+                                    {nonConforme && (
+                                      <span style={{ fontSize: 9.5, fontWeight: 800, color: '#DC2626', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                        ⚠ NON CONFORME
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* cert cells */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 110px', flex: 1 }}>
+                                    {renderCertCell(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
+                                    {renderCertCell(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
+                                    {renderCertCell(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
+                                    {/* Flo verify */}
+                                    <div style={{ padding: '10px 10px', borderLeft: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
+                                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px', borderRadius: 10, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}07`, cursor: isLoadingFlo ? 'wait' : 'pointer', width: '100%' }}>
+                                        {isLoadingFlo ? <Loader2 size={14} className="animate-spin" color={BRAND}/> : <Sparkles size={14} color={BRAND}/>}
+                                        <span style={{ fontSize: 9.5, fontWeight: 700, color: BRAND }}>{isLoadingFlo ? 'Vérif…' : 'Vérifier'}</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* Flo notes if any — show below last person of each type */}
+                            {list.map((_, pi) => {
+                              const cert = tradeConformite[personKey(tradeName, type, pi)] || {};
+                              if (!cert.floNotes) return null;
+                              return (
+                                <div key={`flo-${pi}`} style={{ padding: '6px 20px 7px', background: `${BRAND}06`, borderTop: '1px solid #F4F5F6', fontSize: 11, color: '#6B7280', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                                  <Sparkles size={10} color={BRAND} style={{ flexShrink: 0, marginTop: 2 }}/>
+                                  <span><strong style={{ color: BRAND }}>{resources[type][pi]?.name} : </strong>{cert.floNotes}</span>
+                                </div>
+                              );
+                            })}
+
+                            {/* Add person input */}
+                            <div style={{ padding: '8px 14px 8px 20px', borderTop: '1px solid #F4F5F6' }}>
+                              <input
+                                value={tradeResInput[inputKey] || ''}
+                                onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
+                                    e.preventDefault();
+                                    updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter' }]);
+                                    setTradeResInput(m => ({ ...m, [inputKey]: '' }));
+                                  }
+                                }}
+                                placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
+                                style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      };
+
                       return (
-                        <div style={{ flex: 1, padding: '10px 12px', ...(borderSide ? { borderLeft: '1px solid #F4F5F6' } : {}) }}>
-                          <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#B0B4BB', marginBottom: 6 }}>{icon} {label}</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                            {resources[type].map((r, i) => (
-                              <span key={i} style={chipStyle(color)}>
-                                {r}
-                                <span onClick={() => updateResources(type, resources[type].filter((_, j) => j !== i))}
-                                  style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, color, opacity: .6, marginLeft: 1 }}>×</span>
-                              </span>
-                            ))}
-                            <input
-                              value={tradeResInput[inputKey] || ''}
-                              onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
-                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addResource(type, inputKey); } }}
-                              onBlur={() => addResource(type, inputKey)}
-                              placeholder="+ Ajouter"
-                              style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#9CA3AF', width: 70, minWidth: 0, padding: 0, cursor: 'text' }}
-                            />
+                        <div key={tradeName} style={{ borderTop: idx > 0 ? '1px solid #EAECEF' : 'none' }}>
+                          <div style={{ display: 'flex' }}>
+                            {/* Corps de métier */}
+                            <div style={{ width: 200, flexShrink: 0, padding: '14px 14px 14px 20px', borderRight: '1px solid #E8EAED' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
+                                <p style={{ fontSize: 13.5, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                                {tradeHours > 0 && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
+                                    {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+                                {tradePhases.length ? tradePhases.map(phase => (
+                                  <span key={phase.id} onClick={() => setEditPhase(phase)}
+                                    style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
+                                    {phase.name}
+                                  </span>
+                                )) : <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>}
+                              </div>
+                            </div>
+                            {/* Persons + Conformité */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {renderPersonSection('internal')}
+                              {renderPersonSection('external')}
+                            </div>
                           </div>
                         </div>
                       );
-                    };
+                    })}
 
-                    return (
-                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: '220px 320px 160px 120px 150px', alignItems: 'stretch', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
-
-                        {/* Corps de métier */}
-                        <div style={{ padding: '16px 16px 16px 20px', borderRight: '1px solid #E8EAED', minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
-                            <p style={{ fontSize: 13.5, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
-                            {tradeHours > 0 && (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>
-                                {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-                            {tradePhases.length ? tradePhases.map((phase) => (
-                              <span key={phase.id} onClick={() => setEditPhase(phase)}
-                                style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
-                                {phase.name}
-                              </span>
-                            )) : (
-                              <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Personne ressource — split interne / externe */}
-                        <div style={{ display: 'flex', minWidth: 0 }}>
-                          {renderResourceZone('internal', 'Interne', '🏠', '#7C3AED', false)}
-                          {renderResourceZone('external', 'Externe', '🏗️', '#2563EB', true)}
-                        </div>
-
-                        {/* Action */}
-                        <div style={{ padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
-                          <select
-                            value={tradeRow?.chosen_subcontractor_id || ''}
-                            onChange={async (e) => {
-                              const row = await ensureTradeRow();
-                              await patchTrade(row.id, { chosen_subcontractor_id: e.target.value || null, status: e.target.value ? 'contacted' : row.status });
-                            }}
-                            style={{ width: '100%', fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '6px 8px', background: '#fff', color: '#3A3D44' }}>
-                            <option value="">Assigner</option>
-                            {suggestedSubs.map((sub) => (
-                              <option key={sub.id} value={sub.id}>{sub.name}{sub.company_name ? ` — ${sub.company_name}` : ''}</option>
-                            ))}
-                          </select>
-                          <button onClick={fetchTradeRecos}
-                            style={{ padding: '5px 8px', borderRadius: 8, border: `1px solid ${BRAND}33`, background: `${BRAND}08`, fontSize: 11, fontWeight: 700, color: BRAND, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                            <Sparkles size={10}/> Suggestions Flo
-                          </button>
-                        </div>
-
-                        {/* Statut */}
-                        <div style={{ padding: '14px 12px', display: 'flex', alignItems: 'center' }}>
-                          <select
-                            value={tradeRow?.status || 'to_find'}
-                            onChange={async (e) => {
-                              const row = await ensureTradeRow();
-                              await patchTrade(row.id, { status: e.target.value });
-                            }}
-                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 8px', borderRadius: 999, border: `1px solid ${status.color}33`, background: status.bg, color: status.color, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', width: '100%' }}>
-                            {Object.entries(statusMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-                          </select>
-                        </div>
-
-                        {/* Conformité */}
-                        <div style={{ padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
-                          {[
-                            { key: 'rbq', label: 'RBQ', color: '#7C3AED' },
-                            { key: 'ccq', label: 'CCQ', color: '#2563EB' },
-                            { key: 'insurance', label: 'Assurance', color: '#059669' },
-                          ].map(({ key, label, color }) => (
-                            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                              <input type="checkbox" checked={!!conformite[key]} onChange={e => updateConformite(key, e.target.checked)}
-                                style={{ accentColor: color, width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
-                              <span style={{ fontSize: 11.5, fontWeight: 700, color: conformite[key] ? color : '#B0B4BB', userSelect: 'none' }}>{label}</span>
-                            </label>
-                          ))}
-                        </div>
-
-                      </div>
-                    );
-                  })}
-                  </div>{/* fin minWidth inner */}
-                </div>{/* fin overflow-x wrapper */}
+                  </div>{/* fin minWidth */}
+                </div>{/* fin overflow-x */}
               </div>
             );
           })()}
