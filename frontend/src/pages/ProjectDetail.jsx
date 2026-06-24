@@ -17,7 +17,7 @@ const BRAND_BORDER = '#F9D5C0';
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
-  { id: 's-rfqs', icon: '📨', label: 'Demandes de prix' },
+  { id: 's-equipe', icon: '👥', label: 'Équipe & demandes de prix' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
@@ -5787,7 +5787,7 @@ Règles :
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, corps de métier & sous-traitants</div>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, Gantt et dépendances</div>
             </div>
           </div>
 
@@ -5942,6 +5942,20 @@ Règles :
           </div>
           </div>{/* fin carte blanche Gantt+Florence */}
 
+        </div>{/* fin s-pipeline */}
+
+        {/* ── Équipe & demande de prix/disponibilités ── */}
+        <div id="s-equipe" style={{ background: '#F5F0FF', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>👥</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe & demande de prix/disponibilités</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, sous-traitants et demandes de prix du projet</div>
+            </div>
+          </div>
+
           {(() => {
             const phases = project.phases || [];
             const phaseTradeNames = [...new Set(phases.map((ph) => ph.trade_name).filter(Boolean))];
@@ -5975,9 +5989,9 @@ Règles :
 
                 <div>
                   {/* En-têtes de colonnes */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.2fr) 96px minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '8px 20px', borderBottom: '1px solid #F1F3F5' }}>
-                    {['Corps de métier', 'Heures req.', 'Sous-traitant', 'Action', 'Statut'].map((h, hi) => (
-                      <span key={hi} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', textAlign: hi === 1 ? 'center' : hi === 4 ? 'right' : 'left' }}>{h}</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1.5fr) minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '8px 20px', borderBottom: '1px solid #F1F3F5' }}>
+                    {['Corps de métier', 'Sous-traitant', 'Action', 'Statut'].map((h, hi) => (
+                      <span key={hi} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', textAlign: hi === 3 ? 'right' : 'left' }}>{h}</span>
                     ))}
                   </div>
                   {rowNames.map((tradeName, idx) => {
@@ -6012,11 +6026,16 @@ Règles :
                     };
 
                     return (
-                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.2fr) 96px minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
+                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1.5fr) minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
                             <p style={{ fontSize: 14, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                            {tradeHours > 0 && (
+                              <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '2px 8px', flexShrink: 0 }}>
+                                {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
+                              </span>
+                            )}
                           </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                             {tradePhases.length ? tradePhases.map((phase) => (
@@ -6028,18 +6047,6 @@ Règles :
                               <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>
                             )}
                           </div>
-                        </div>
-
-                        {/* Heures requises — calculées dynamiquement depuis les durées du Gantt */}
-                        <div style={{ minWidth: 0, textAlign: 'center' }}>
-                          {tradeHours > 0 ? (
-                            <>
-                              <p style={{ fontSize: 17, fontWeight: 800, color: '#15171C', margin: 0, lineHeight: 1.1 }}>{tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)}<span style={{ fontSize: 11, fontWeight: 700, color: '#8B919A' }}> h</span></p>
-                              <p style={{ fontSize: 10.5, color: '#9CA3AF', margin: '2px 0 0' }}>≈ {tradeDays % 1 === 0 ? tradeDays : tradeDays.toFixed(1)} j</p>
-                            </>
-                          ) : (
-                            <p style={{ fontSize: 12, color: '#C4C8CE', margin: 0 }}>—</p>
-                          )}
                         </div>
 
                         <div style={{ minWidth: 0 }}>
@@ -6173,8 +6180,8 @@ Règles :
             );
           })()}
 
-          {/* ── Demandes de prix — remontée sous les phases, avec les corps de métier ── */}
-          <div id="s-rfqs" style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 14 }}>
+          {/* ── Demandes de prix ── */}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 14 }}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 36, height: 36, borderRadius: 11, background: '#F0EBFD', display: 'grid', placeItems: 'center', fontSize: 18 }}>🤝</div>
               <div style={{ flex: 1 }}>
@@ -6233,7 +6240,7 @@ Règles :
               )}
             </div>
           </div>
-        </div>
+        </div>{/* fin s-equipe */}
 
         {/* ── Médias chantier ── (cream) */}
         {/* ── Fil du chantier ── */}
