@@ -1233,7 +1233,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {showArrows && Object.keys(deps).length > 0 && (() => {
             const rowH = 44; // minHeight:42 + marginBottom:2
             return (
-              <svg style={{ position:'absolute', top:0, left: freezeCols ? 0 : 0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
+              <svg style={{ position:'absolute', top:0, left:0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
                 {Object.entries(deps).map(([succId, predId]) => {
                   const predIdx = filteredPhases.findIndex(p => String(p.id) === String(predId));
                   const succIdx = filteredPhases.findIndex(p => String(p.id) === String(succId));
