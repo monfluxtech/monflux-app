@@ -537,18 +537,25 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [freezeCols, setFreezeCols]         = useState(true);
   const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
-  const [sortField, setSortField]           = useState(null); // 'name'|'start_date'|'duration_hours'|'assigned'
-  const [sortDir, setSortDir]               = useState('asc');
+  const [filters, setFilters]               = useState({}); // { name, start_date, assigned, status }
+  const [activeFilter, setActiveFilter]     = useState(null); // header col open for filter
+  const [selectedIds, setSelectedIds]       = useState(new Set());
+  const [bulkPanel, setBulkPanel]           = useState(null); // null | 'status' | 'start' | 'duration' | 'assign' | 'dep'
+  const [bulkForm, setBulkForm]             = useState({});
+  const [statusPicker, setStatusPicker]     = useState(null); // { phId, x, y }
+  const [deps, setDeps]                     = useState({}); // { succPhId: predPhId }
+  const [depFirst, setDepFirst]             = useState(null); // phase ID of first clicked in dep-connect mode
   const dateDragRef = useRef(null);
-  const scrollRef  = useRef(null);
-  const ganttElRef = useRef(null);
-  const todayPxRef = useRef(0); // updated each render after todayPx is computed
+  const scrollRef   = useRef(null);
+  const ganttElRef  = useRef(null);
+  const todayPxRef  = useRef(0);
+  const longPressRef = useRef(null);
 
   // Centrer sur aujourd'hui au chargement et à chaque changement de vue
   // (fixedColW hardcodé car LABEL_W/DATE_W etc. sont définis après le return null)
   useEffect(() => {
     if (!scrollRef.current || todayPxRef.current <= 0) return;
-    const FIXED = 155 + 20 + 102 + 50 + 140; // LABEL_W+20+DATE_W+DUR_W+ASSIGN_W
+    const FIXED = 24 + 155 + 20 + 102 + 50 + 140; // CHECK_W+LABEL_W+20+DATE_W+DUR_W+ASSIGN_W // LABEL_W+20+DATE_W+DUR_W+ASSIGN_W
     const viewW = scrollRef.current.clientWidth;
     scrollRef.current.scrollLeft = Math.max(0, todayPxRef.current - (viewW - FIXED) * 0.3);
   }, [scale]);
@@ -584,14 +591,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       return cols;
     }
     if (scale === 'hour') {
-      // Partir de min(refStart, aujourd'hui) pour que today soit toujours dans la fenêtre
+      // Partir de min(refStart, aujourd'hui - 1j) pour couvrir today ET les phases futures
       const cols = [];
-      const startFrom = new Date(Math.min(refStart.getTime(), new Date().getTime()));
+      const todayMinus1 = new Date(); todayMinus1.setDate(todayMinus1.getDate() - 1); todayMinus1.setMinutes(0,0,0);
+      const startFrom = new Date(Math.min(refStart.getTime(), todayMinus1.getTime()));
       startFrom.setMinutes(0,0,0);
       const cur = new Date(startFrom);
-      const cap = new Date(cur); cap.setDate(cap.getDate() + 14); // 14 jours
+      const cap = new Date(cur); cap.setDate(cap.getDate() + 60); // 60 jours
       const stop = refEnd < cap ? refEnd : cap;
-      while (cur <= stop && cols.length < 336) {
+      while (cur <= stop && cols.length < 1440) {
         cols.push({ start: new Date(cur), end: new Date(cur.getTime() + 3599999) });
         cur.setHours(cur.getHours() + 1);
       }
@@ -628,12 +636,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     return cols;
   })();
 
+  const CHECK_W  = 24;  // checkbox column
   const LABEL_W  = 155;
   const DATE_W   = 102;
   const DUR_W    = 50;
   const ASSIGN_W = 140;
   const ganttW   = Math.max(columns.length * colW, 400);
-  const totalMinW = LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
+  const totalMinW = CHECK_W + LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
+  const hasSel = selectedIds.size > 0;
 
   // Sticky helpers — conditioned on freezeCols toggle (z-index high enough to cover Gantt overlays)
   const stickyH = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:20, ...extra } : extra;
@@ -829,25 +839,64 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const scrollToToday = () => {
     if (!scrollRef.current) return;
     const viewW = scrollRef.current.clientWidth;
-    const FIXED = freezeCols ? (155 + 20 + 102 + 50 + 140) : 0;
+    const FIXED = freezeCols ? (24 + 155 + 20 + 102 + 50 + 140) : 0;
     // centre today within the visible Gantt area (after sticky columns)
     scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - FIXED) * 0.4);
   };
 
-  // Sort helpers
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc');
-    else { setSortField(field); setSortDir('asc'); }
+  // Filter helpers
+  const setFilter = (field, val) => setFilters(f => ({ ...f, [field]: val }));
+  const clearFilter = (field) => setFilters(f => { const n={...f}; delete n[field]; return n; });
+  const hasFilter = (field) => !!filters[field];
+  const filteredPhases = phases.filter(ph => {
+    if (filters.name && !(ph.name||'').toLowerCase().includes(filters.name.toLowerCase())) return false;
+    if (filters.start_date && !(ph.start_date||'').includes(filters.start_date)) return false;
+    if (filters.assigned && !(ph.assigned_to_name||'').toLowerCase().includes(filters.assigned.toLowerCase())) return false;
+    if (filters.status && ph.status !== filters.status) return false;
+    return true;
+  });
+
+  // Long-press on bar → status picker
+  const startLongPress = (ev, ph) => {
+    const cx = ev.clientX, cy = ev.clientY;
+    longPressRef.current = setTimeout(() => {
+      setStatusPicker({ phId: ph.id, x: cx, y: cy });
+      setBarDrag(null);
+    }, 600);
   };
-  const sortIcon = (field) => sortField===field ? (sortDir==='asc'?'↑':'↓') : '';
-  const sortedPhases = sortField ? [...phases].sort((a,b) => {
-    let av, bv;
-    if (sortField==='name')           { av=a.name||'';                  bv=b.name||''; }
-    else if (sortField==='start_date'){ av=a.start_date||'';            bv=b.start_date||''; }
-    else if (sortField==='duration')  { av=Number(a.duration_hours||0); bv=Number(b.duration_hours||0); }
-    else if (sortField==='assigned')  { av=a.assigned_to_name||'';      bv=b.assigned_to_name||''; }
-    return sortDir==='asc' ? (av>bv?1:av<bv?-1:0) : (av<bv?1:av>bv?-1:0);
-  }) : phases;
+  const cancelLongPress = () => { clearTimeout(longPressRef.current); longPressRef.current = null; };
+
+  // Bulk select helpers
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectAll = () => setSelectedIds(new Set(filteredPhases.map(p => p.id)));
+  const clearSelection = () => { setSelectedIds(new Set()); setBulkPanel(null); };
+
+  // Apply bulk action
+  const applyBulk = async () => {
+    const ids = [...selectedIds];
+    if (bulkPanel === 'delete') {
+      ids.forEach(id => onDeletePhase?.(id));
+    } else if (bulkPanel === 'status' && bulkForm.status) {
+      ids.forEach(id => onUpdatePhase?.(id, { status: bulkForm.status }));
+    } else if (bulkPanel === 'start' && bulkForm.start_date) {
+      ids.forEach(id => onUpdatePhase?.(id, { start_date: bulkForm.start_date }));
+    } else if (bulkPanel === 'duration' && bulkForm.duration_hours) {
+      ids.forEach(id => onUpdatePhase?.(id, { duration_hours: parseFloat(bulkForm.duration_hours) }));
+    } else if (bulkPanel === 'assign' && bulkForm.assigned_to_name) {
+      ids.forEach(id => onUpdatePhase?.(id, { assigned_to_name: bulkForm.assigned_to_name }));
+    } else if (bulkPanel === 'self') {
+      ids.forEach(id => onSelfAssign?.(id, currentUserName));
+    } else if (bulkPanel === 'dep' && depFirst && ids.length === 1) {
+      const succId = ids[0];
+      setDeps(d => ({ ...d, [succId]: depFirst }));
+      setDepFirst(null);
+    }
+    clearSelection();
+  };
 
   const exportPdf = () => window.print();
 
@@ -915,21 +964,26 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {/* Droite — Phase */}
           <div style={{ textAlign:'right' }}>
             <div style={{ fontSize:8, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', marginBottom:4 }}>Phase</div>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'flex-end', alignItems:'center' }}>
-              {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                <div key={status} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
-                  <span style={{ width:3, height:12, background:STATUS_BORDER[status], borderRadius:2, display:'block', flexShrink:0 }}/>
-                  {label}
-                </div>
-              ))}
-              <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
-              {/* Baseline : prévu vs réel punch */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
+            {/* Statuts = Prévu (accolade) + Réel (punch) */}
+            <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-end' }}>
+              {/* Prévu — les 5 statuts avec accolade */}
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ fontSize:9, color:'#9CA3AF', fontWeight:700, fontStyle:'italic' }}>Prévu&nbsp;→</span>
+                {Object.entries(STATUS_LABELS).map(([status, label]) => (
+                  <div key={status} style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color:'#6B7280' }}>
+                    <span style={{ width:10, height:10, borderRadius:3, background:STATUS_FILL[status], display:'inline-block', flexShrink:0 }}/>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              {/* Réel punch */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#6B7280' }}>
+                <span style={{ fontSize:9, color:'#9CA3AF', fontWeight:700, fontStyle:'italic' }}>Réel&nbsp;→</span>
                 <div style={{ width:28, height:8, borderRadius:3, flexShrink:0, overflow:'hidden', display:'flex' }}>
-                  <div style={{ flex:'0 0 55%', background:BRAND, opacity:.85 }}/>
-                  <div style={{ flex:'0 0 45%', background:PUNCH_COLOR, opacity:.85 }}/>
+                  <div style={{ flex:'0 0 60%', background:BRAND, opacity:.85 }}/>
+                  <div style={{ flex:'0 0 40%', background:PUNCH_COLOR, opacity:.85 }}/>
                 </div>
-                Prévu / Réel (punch)
+                Overlay punch (% complété)
               </div>
             </div>
           </div>
@@ -942,10 +996,53 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
-            <div onClick={() => handleSort('name')} style={{ width:LABEL_W+20, flexShrink:0, padding:'7px 0 7px 18px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='name' ? BRAND : '#9CA3AF', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(0) }}>Phase {sortIcon('name')}</div>
-            <div onClick={() => handleSort('start_date')} style={{ width:DATE_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='start_date' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(LABEL_W+20) }}>Début {sortIcon('start_date')}</div>
-            <div onClick={() => handleSort('duration')} style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='duration' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(LABEL_W+20+DATE_W) }}>Durée {sortIcon('duration')}</div>
-            <div onClick={() => handleSort('assigned')} style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='assigned' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(LABEL_W+20+DATE_W+DUR_W) }}>Assigné {sortIcon('assigned')}</div>
+            {/* Checkbox select-all */}
+            <div style={{ width:CHECK_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff', ...stickyH(0) }}>
+              <input type="checkbox" checked={filteredPhases.length>0 && filteredPhases.every(p=>selectedIds.has(p.id))}
+                onChange={ev => ev.target.checked ? selectAll() : clearSelection()}
+                style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
+            </div>
+            {/* Phase header with filter */}
+            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', ...stickyH(CHECK_W) }}>
+              <div style={{ padding:'7px 0 7px 4px', display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', flex:1 }}>Phase</span>
+                <button onClick={() => setActiveFilter(activeFilter==='name'?null:'name')} title="Filtrer" style={{ border:'none', background:'transparent', cursor:'pointer', padding:'2px 4px', borderRadius:3, color: hasFilter('name') ? BRAND : '#C0C4CC' }}>▼</button>
+                {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10 }}>✕</button>}
+              </div>
+              {activeFilter==='name' && <input autoFocus value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Filtrer…"
+                style={{ display:'block', width:'calc(100% - 12px)', margin:'0 6px 4px', fontSize:10, border:`1px solid ${BRAND}`, borderRadius:4, padding:'3px 5px', outline:'none' }}/>}
+            </div>
+            {/* Début header with filter */}
+            <div style={{ width:DATE_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(CHECK_W+LABEL_W+20) }}>
+              <div style={{ padding:'7px 6px', display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('start_date') ? BRAND : '#9CA3AF', flex:1 }}>Début</span>
+                <button onClick={() => setActiveFilter(activeFilter==='start_date'?null:'start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', padding:'2px', color: hasFilter('start_date') ? BRAND : '#C0C4CC' }}>▼</button>
+                {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10 }}>✕</button>}
+              </div>
+              {activeFilter==='start_date' && <input autoFocus value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil, 2026…"
+                style={{ display:'block', width:'calc(100% - 12px)', margin:'0 6px 4px', fontSize:10, border:`1px solid ${BRAND}`, borderRadius:4, padding:'3px 5px', outline:'none' }}/>}
+            </div>
+            {/* Durée header */}
+            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(CHECK_W+LABEL_W+20+DATE_W) }}>Durée</div>
+            {/* Assigné header with filter */}
+            <div style={{ width:ASSIGN_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(CHECK_W+LABEL_W+20+DATE_W+DUR_W) }}>
+              <div style={{ padding:'7px 10px', display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: (hasFilter('assigned')||hasFilter('status')) ? BRAND : '#9CA3AF', flex:1 }}>Assigné</span>
+                <button onClick={() => setActiveFilter(activeFilter==='assigned'?null:'assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', padding:'2px', color: (hasFilter('assigned')||hasFilter('status')) ? BRAND : '#C0C4CC' }}>▼</button>
+                {(hasFilter('assigned')||hasFilter('status')) && <button onClick={()=>{clearFilter('assigned');clearFilter('status');}} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10 }}>✕</button>}
+              </div>
+              {activeFilter==='assigned' && (
+                <div style={{ padding:'0 6px 6px', display:'flex', flexDirection:'column', gap:3 }}>
+                  <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…" autoFocus
+                    style={{ fontSize:10, border:`1px solid ${BRAND}`, borderRadius:4, padding:'3px 5px', outline:'none' }}/>
+                  <select value={filters.status||''} onChange={ev=>setFilter('status',ev.target.value)}
+                    style={{ fontSize:10, border:'1px solid #E5E7EB', borderRadius:4, padding:'3px 4px', outline:'none' }}>
+                    <option value="">Tous les statuts</option>
+                    {Object.entries(STATUS_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => {
                 const isToday = isTodayCol(col);
@@ -980,7 +1077,36 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           </div>
 
           {/* Phase rows */}
-          {sortedPhases.map((ph, i) => {
+          {/* Dependency arrows SVG overlay */}
+          {showArrows && Object.keys(deps).length > 0 && (() => {
+            const rowH = 44; // minHeight:42 + marginBottom:2
+            return (
+              <svg style={{ position:'absolute', top:0, left: freezeCols ? 0 : 0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
+                {Object.entries(deps).map(([succId, predId]) => {
+                  const predIdx = filteredPhases.findIndex(p => String(p.id) === String(predId));
+                  const succIdx = filteredPhases.findIndex(p => String(p.id) === String(succId));
+                  if (predIdx < 0 || succIdx < 0) return null;
+                  const pb = getBarBounds(filteredPhases[predIdx]);
+                  const sb = getBarBounds(filteredPhases[succIdx]);
+                  const fixedW = CHECK_W + LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W;
+                  const x1 = fixedW + pb.left + pb.width;
+                  const y1 = predIdx * rowH + 21;
+                  const x2 = fixedW + sb.left;
+                  const y2 = succIdx * rowH + 21;
+                  const cx = Math.max(x1 + 20, Math.min(x2 - 20, (x1+x2)/2));
+                  return (
+                    <g key={`dep-${predId}-${succId}`}>
+                      <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
+                        fill="none" stroke={BRAND} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.55}/>
+                      <polygon points={`${x2},${y2} ${x2-6},${y2-3} ${x2-6},${y2+3}`} fill={BRAND} opacity={0.6}/>
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          })()}
+
+          {filteredPhases.map((ph, i) => {
             const { left, width, s, e, sDate, eDate } = getBarBounds(ph);
             const barColor = STATUS_FILL[ph.status] || STATUS_FILL.not_started;
             const isEven = i % 2 === 0;
@@ -990,24 +1116,30 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const matchedTrade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
             const progress = ph.progress_pct || 0;
             const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
+            const isSelected = selectedIds.has(ph.id);
 
-            const rowBg = isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
+            const rowBg = isSelected ? '#FFF8F5' : isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
 
             return (
-              <div key={ph.id} draggable
-                onDragStart={ev => { if (!barDrag && !resize) onRowDragStart(ev, i); }}
+              <div key={ph.id} draggable={!hasSel}
+                onDragStart={ev => { if (!barDrag && !resize && !hasSel) onRowDragStart(ev, i); }}
                 onDragOver={ev => onRowDragOver(ev, i)} onDrop={ev => onRowDrop(ev, i)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 style={{
                   display:'flex', alignItems:'center', minHeight:42,
                   background: rowBg,
-                  borderTop: isDragOver ? `2px solid ${BRAND}` : '2px solid transparent',
+                  borderTop: isDragOver ? `2px solid ${BRAND}` : isSelected ? `2px solid ${BRAND_BORDER}` : '2px solid transparent',
                   marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
                 }}>
+                {/* Checkbox column */}
+                <div style={{ width:CHECK_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:rowBg, alignSelf:'stretch', ...stickyC(0) }}>
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(ph.id)}
+                    style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
+                </div>
                 {/* Phase section — conditionally sticky (drag handle + name) */}
-                <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch', ...stickyC(0) }}>
+                <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch', ...stickyC(CHECK_W) }}>
                   {/* Drag handle */}
-                  <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor:'grab', opacity:.2, padding:'0 2px' }}>
+                  <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor: hasSel ? 'default' : 'grab', opacity: hasSel ? 0.05 : .2, padding:'0 2px' }}>
                     {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
                   </div>
                   {/* Name */}
@@ -1030,7 +1162,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   </div>
                 </div>
                 {/* Date/Heure de début — conditionally sticky + récurrence icon */}
-                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, position:'relative', ...stickyC(LABEL_W+20) }}>
+                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, position:'relative', ...stickyC(CHECK_W+LABEL_W+20) }}>
                   {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                     <input
                       type="datetime-local"
@@ -1068,7 +1200,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   )}
                 </div>
                 {/* Durée (h) — conditionally sticky */}
-                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, ...stickyC(LABEL_W+20+DATE_W) }}>
+                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, ...stickyC(CHECK_W+LABEL_W+20+DATE_W) }}>
                   {editCell?.id===ph.id && editCell?.field==='duration' ? (
                     <input
                       type="number"
@@ -1094,7 +1226,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   )}
                 </div>
                 {/* Assignee — conditionally sticky (last fixed col, has shadow) */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',background:rowBg,boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.04)' : 'none', ...stickyC(LABEL_W+20+DATE_W+DUR_W)}}>
+                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',background:rowBg,boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.04)' : 'none', ...stickyC(CHECK_W+LABEL_W+20+DATE_W+DUR_W)}}>
                   <AssigneeChip trade={matchedTrade}
                     assignedToName={ph.assigned_to_name||null}
                     onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}
@@ -1112,10 +1244,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   ))}
                   {/* Phase bar */}
                   <div
-                    onPointerDown={ev => handleBarDown(ev, ph)}
-                    onPointerMove={ev => { if (isBarDrag_) handleBarMove(ev); }}
-                    onPointerUp={ev => handleBarUp(ev, ph)}
-                    onPointerCancel={() => setBarDrag(null)}
+                    onPointerDown={ev => { handleBarDown(ev, ph); startLongPress(ev, ph); }}
+                    onPointerMove={ev => { cancelLongPress(); if (isBarDrag_) handleBarMove(ev); }}
+                    onPointerUp={ev => { cancelLongPress(); handleBarUp(ev, ph); }}
+                    onPointerCancel={() => { cancelLongPress(); setBarDrag(null); }}
                     onMouseEnter={ev => { if (!barDrag && !resize) setTooltip({ ph, trade: matchedTrade, x: ev.clientX, y: ev.clientY }); }}
                     onMouseMove={ev => { if (tooltip && !barDrag && !resize) setTooltip(t => t ? { ...t, x: ev.clientX, y: ev.clientY } : null); }}
                     onMouseLeave={() => setTooltip(null)}
@@ -1254,9 +1386,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   />
                 </div>
               </div>
-              <div style={{width:DATE_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20)}}/>
-              <div style={{width:DUR_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20+DATE_W)}}/>
-              <div style={{width:ASSIGN_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(LABEL_W+20+DATE_W+DUR_W)}}/>
+              <div style={{width:DATE_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(CHECK_W+LABEL_W+20)}}/>
+              <div style={{width:DUR_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(CHECK_W+LABEL_W+20+DATE_W)}}/>
+              <div style={{width:ASSIGN_W,flexShrink:0,borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',background:'#fff',...stickyC(CHECK_W+LABEL_W+20+DATE_W+DUR_W)}}/>
               <div style={{width:ganttW,flexShrink:0,height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}/>
             </div>
           )}
@@ -1269,6 +1401,101 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           </div>
         </div>
       </div>
+
+      {/* ── Status picker (long press on bar) ── */}
+      {statusPicker && (
+        <div style={{ position:'fixed', zIndex:9999, top: statusPicker.y - 8, left: statusPicker.x + 8,
+          background:'#fff', border:'1px solid #E5E7EB', borderRadius:10, padding:'8px', boxShadow:'0 6px 24px rgba(0,0,0,.16)', minWidth:160 }}
+          onClick={ev => ev.stopPropagation()}>
+          <div style={{ fontSize:10, fontWeight:800, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:6, padding:'0 4px' }}>Statut de la phase</div>
+          {Object.entries(STATUS_LABELS).map(([key, label]) => (
+            <button key={key} onClick={() => { onUpdatePhase?.(statusPicker.phId, { status: key }); setStatusPicker(null); }}
+              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:'6px 8px', border:'none', background:'transparent', cursor:'pointer', borderRadius:6, textAlign:'left',
+                color: STATUS_FILL[key]==='#D1D5DB' ? '#374151' : '#fff', fontSize:11, fontWeight:600,
+                backgroundColor: STATUS_FILL[key] }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {statusPicker && <div style={{ position:'fixed', inset:0, zIndex:9998 }} onClick={() => setStatusPicker(null)}/>}
+
+      {/* ── Bulk action bar (fixed bottom) ── */}
+      {hasSel && (
+        <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', zIndex:9990,
+          background:'#15171C', borderRadius:12, padding:'8px 12px', boxShadow:'0 8px 32px rgba(0,0,0,.4)',
+          display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', maxWidth:'90vw' }}>
+          <span style={{ fontSize:11, color:'#9CA3AF', fontWeight:700, marginRight:4 }}>{selectedIds.size} sélectionné{selectedIds.size>1?'s':''}</span>
+          {/* Action buttons */}
+          {[
+            ['status','Statut','#6B7280'],
+            ['start','Début','#6B7280'],
+            ['duration','Durée','#6B7280'],
+            ['assign','Assigner','#6B7280'],
+            ['self','Auto-assigner','#6B7280'],
+            ['dep','Dépendance','#6B7280'],
+            ['delete','Supprimer','#EF4444'],
+          ].map(([action, label, col]) => (
+            <button key={action} onClick={() => setBulkPanel(bulkPanel===action ? null : action)}
+              style={{ padding:'5px 10px', borderRadius:7, border:`1px solid ${bulkPanel===action?BRAND:'rgba(255,255,255,.15)'}`,
+                background: bulkPanel===action ? BRAND : 'rgba(255,255,255,.07)', color: action==='delete'?'#F87171':'#E5E7EB',
+                fontSize:11, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
+              {label}
+            </button>
+          ))}
+          {/* Inline form for selected action */}
+          {bulkPanel && bulkPanel !== 'delete' && bulkPanel !== 'self' && bulkPanel !== 'dep' && (
+            <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+              {bulkPanel === 'status' && (
+                <select value={bulkForm.status||''} onChange={ev=>setBulkForm(f=>({...f,status:ev.target.value}))}
+                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none', fontFamily:'inherit' }}>
+                  <option value="">— choisir —</option>
+                  {Object.entries(STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+              )}
+              {bulkPanel === 'start' && (
+                <input type="date" value={bulkForm.start_date||''} onChange={ev=>setBulkForm(f=>({...f,start_date:ev.target.value}))}
+                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none', colorScheme:'dark' }}/>
+              )}
+              {bulkPanel === 'duration' && (
+                <input type="number" min="0.25" step="0.25" value={bulkForm.duration_hours||''} placeholder="heures"
+                  onChange={ev=>setBulkForm(f=>({...f,duration_hours:ev.target.value}))}
+                  style={{ width:80, fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none' }}/>
+              )}
+              {bulkPanel === 'assign' && (
+                <input value={bulkForm.assigned_to_name||''} placeholder="Nom ou métier"
+                  onChange={ev=>setBulkForm(f=>({...f,assigned_to_name:ev.target.value}))}
+                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none' }}/>
+              )}
+              <button onClick={applyBulk}
+                style={{ padding:'5px 10px', borderRadius:7, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                OK
+              </button>
+            </div>
+          )}
+          {bulkPanel === 'delete' && (
+            <button onClick={applyBulk}
+              style={{ padding:'5px 10px', borderRadius:7, border:'none', background:'#EF4444', color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+              Confirmer suppression
+            </button>
+          )}
+          {bulkPanel === 'self' && (
+            <button onClick={applyBulk}
+              style={{ padding:'5px 10px', borderRadius:7, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+              S'auto-assigner
+            </button>
+          )}
+          {bulkPanel === 'dep' && (
+            <span style={{ fontSize:10, color:'#9CA3AF' }}>
+              {depFirst ? `Lier vers ${phases.find(p=>p.id===depFirst)?.name||'?'} — cliquer OK` : 'Sélectionner 1 phase successeur puis choisir le prédécesseur :'}
+            </span>
+          )}
+          <button onClick={clearSelection}
+            style={{ padding:'5px 8px', borderRadius:7, border:'1px solid rgba(255,255,255,.15)', background:'transparent', color:'#9CA3AF', fontSize:11, cursor:'pointer', marginLeft:4 }}>
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Recurrence popover (fixed, hors contexte sticky) ── */}
       {recurrenceEdit && (() => {
