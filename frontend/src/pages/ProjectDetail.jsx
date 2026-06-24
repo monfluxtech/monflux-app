@@ -792,8 +792,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // Pin = sticky. colKey defaults to 'phase' so checkbox/phase rows follow the phase pin.
   const togglePin  = (key) => setPinnedCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const pinned     = (key) => pinnedCols.has(key);
-  const stickyH    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:20, ...extra } : extra;
-  const stickyC    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:15, ...extra } : extra;
+  // background is set here so sticky cells are always opaque (no content bleeds through on horizontal scroll)
+  const stickyH    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:20, backgroundColor:'#fff', ...extra } : extra;
+  const stickyC    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:15, backgroundColor:'#fff', ...extra } : extra;
 
   // Effective time span — for fixed-period scales the ganttW represents only the visible columns,
   // NOT the full project span. Using the correct effMs fixes bar width in Heure/Jour/AM-PM.
@@ -1583,13 +1584,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const barBY = 35;
 
             // coords are relative to the timeline start (NOT the full content div)
+            // dot radius and offsets match the actual connection point positions
+            const _R = 7; // DOT/2
             const getAnchor = (bar, pt, idx) => {
+              const lx = bar.left - _R - 2;                           // left dot center
+              const rx = bar.left + Math.max(bar.width, 14 + 8) + 2; // right dot center
+              const mx = bar.left + bar.width / 2;                    // mid dots center
               switch(pt) {
-                case 'left':       return { x: bar.left, y: idx * rowH + barCY };
-                case 'right':      return { x: bar.left + bar.width, y: idx * rowH + barCY };
-                case 'mid-top':    return { x: bar.left + bar.width / 2, y: idx * rowH + barTY };
-                case 'mid-bottom': return { x: bar.left + bar.width / 2, y: idx * rowH + barBY };
-                default:           return { x: bar.left + bar.width, y: idx * rowH + barCY };
+                case 'left':       return { x: lx, y: idx * rowH + barCY };
+                case 'right':      return { x: rx, y: idx * rowH + barCY };
+                case 'mid-top':    return { x: mx, y: idx * rowH + barTY };
+                case 'mid-bottom': return { x: mx, y: idx * rowH + barBY };
+                default:           return { x: rx, y: idx * rowH + barCY };
               }
             };
 
@@ -1605,9 +1611,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const TYPE_DASH  = { FS: '4 3', SS: '3 3', FF: '6 2 2 2', SF: '2 4', PAR: '1 0' };
 
             return (
-              // SVG left = fixedColsW so it starts exactly at the timeline start
-              // width/height cover the gantt bar area only
-              <svg style={{ position:'absolute', top:0, left: fixedColsW, width: ganttW, height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
+              // SVG left = fixedColsW + rightColsW — both pinned AND unpinned opt cols appear before the Gantt
+              <svg style={{ position:'absolute', top:0, left: fixedColsW + rightColsW, width: ganttW, height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
                 {Object.entries(deps).map(([succId, depVal]) => {
                   const predId  = typeof depVal === 'object' ? depVal.pred : String(depVal);
                   const depType = typeof depVal === 'object' ? (depVal.type || 'FS') : 'FS';
