@@ -677,14 +677,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     document.addEventListener('mouseup', onUp);
   };
   const visibleOptCols = OPTIONAL_COLS.filter(c => !hiddenCols.has(c.key));
+  const rightOptCols   = OPTIONAL_COLS.filter(c =>  hiddenCols.has(c.key));
   const toggleColPin = (key) => setHiddenCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   // Offsets sticky dynamiques (Phase toujours en premier)
   let _cumLeft = CHECK_W + LABEL_W + 20;
   const colLeftMap = {};
   for (const cd of visibleOptCols) { colLeftMap[cd.key] = _cumLeft; _cumLeft += cd.w; }
   const fixedColsW = _cumLeft;
+  const rightColsW = rightOptCols.reduce((s, c) => s + c.w, 0);
 
-  const totalMinW = fixedColsW + ganttW;
+  const totalMinW = fixedColsW + ganttW + rightColsW;
   const hasSel = selectedIds.size > 0;
 
   // Sticky helpers — conditioned on stickyAll toggle (z-index high enough to cover Gantt overlays)
@@ -1061,50 +1063,55 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   return (
     <div data-gantt-print style={{ background:'#fff' }}>
-      {/* ── Toolbar ── */}
-      <div data-gantt-no-print style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        {/* Restaurer colonnes masquées / pin global */}
-        <button
-          onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned']))}
-          title={hiddenCols.size > 0 ? 'Afficher toutes les colonnes' : 'Masquer les colonnes optionnelles'}
-          style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
-            border:`1.5px solid ${hiddenCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
-            background: hiddenCols.size > 0 ? BRAND_SOFT : '#fff',
-            color: hiddenCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
-          <Pin size={13}/>
-        </button>
-        <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
-        <span style={{ flex:1 }}/>
-        {[
-          [showDates,    ()=>setShowDates(v=>!v),    <Calendar size={10}/>,  'Dates'],
-          [showArrows,   ()=>setShowArrows(v=>!v),   <GitBranch size={10}/>, 'Dépend.'],
-          [cascade,      ()=>setCascade(v=>!v),      <GitBranch size={10}/>, 'Cascade'],
-          [showCritical, ()=>setShowCritical(v=>!v), null,                   'Critique'],
-        ].map(([active, fn, icon, lbl], ki) => (
-          <button key={ki} onClick={fn}
-            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
-              border:`1px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
-              background: active ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
-              color: active ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
-            {icon}{lbl}
+      {/* ── Toolbar — 2 rangées fixes ── */}
+      <div data-gantt-no-print style={{ borderBottom:'1px solid #F4F5F6' }}>
+        {/* Rangée 1 : pin | séparateur — — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
+        <div style={{ display:'flex', alignItems:'center', padding:'8px 16px', gap:5 }}>
+          <button
+            onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned']))}
+            title={hiddenCols.size > 0 ? 'Ramener les colonnes à gauche' : 'Déplacer les colonnes optionnelles à droite'}
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
+              border:`1.5px solid ${hiddenCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
+              background: hiddenCols.size > 0 ? BRAND_SOFT : '#fff',
+              color: hiddenCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
+            <Pin size={13}/>
           </button>
-        ))}
-        <button onClick={scrollToToday}
-          style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
-          Aujourd'hui
-        </button>
-        <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
-          {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
-            <button key={s} onClick={() => setScale(s)}
-              style={{ padding:'4px 9px', borderRadius:3, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
-                background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
-                boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
+          <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
+          <span style={{ flex:1 }}/>
+          {[
+            [showDates,    ()=>setShowDates(v=>!v),    <Calendar size={10}/>,  'Dates'],
+            [showArrows,   ()=>setShowArrows(v=>!v),   <GitBranch size={10}/>, 'Dépend.'],
+            [cascade,      ()=>setCascade(v=>!v),      <GitBranch size={10}/>, 'Cascade'],
+            [showCritical, ()=>setShowCritical(v=>!v), null,                   'Critique'],
+          ].map(([active, fn, icon, lbl], ki) => (
+            <button key={ki} onClick={fn}
+              style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
+                border:`1px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
+                background: active ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
+                color: active ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
+              {icon}{lbl}
+            </button>
           ))}
+          <button onClick={scrollToToday}
+            style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
+            Aujourd'hui
+          </button>
         </div>
-        <button onClick={exportPdf} title="Exporter PDF"
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
-          <Download size={10}/> PDF
-        </button>
+        {/* Rangée 2 : vues temporelles + PDF — alignée à droite */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'0 16px 8px 16px', gap:5 }}>
+          <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
+            {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
+              <button key={s} onClick={() => setScale(s)}
+                style={{ padding:'4px 9px', borderRadius:3, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
+                  background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
+                  boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
+            ))}
+          </div>
+          <button onClick={exportPdf} title="Exporter PDF"
+            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
+            <Download size={10}/> PDF
+          </button>
+        </div>
       </div>
 
       {/* ── Filtres / Légende ── 2 lignes: recherche texte (gauche) | statuts (droite) */}
@@ -1273,6 +1280,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
               );
             })}
+            {/* ── Colonnes optionnelles DROITE (dépinées) ── */}
+            {rightOptCols.map(cd => (
+              <div key={`rh-${cd.key}`} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#FAFBFC', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, position:'relative' }}>
+                <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{cd.label}</span>
+                <button onClick={() => toggleColPin(cd.key)} title={`Ramener ${cd.label} à gauche`}
+                  style={{ background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, flexShrink:0 }}>
+                  <Pin size={8}/>
+                </button>
+              </div>
+            ))}
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => {
                 const isToday = isTodayCol(col);
@@ -1601,6 +1618,57 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </>
                   )}
                 </div>
+                {/* ── Colonnes optionnelles DROITE (dépinées) ── */}
+                {rightOptCols.map(cd => {
+                  const rcBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg };
+                  if (cd.key === 'start') return (
+                    <div key={`rc-start-${ph.id}`} style={{ ...rcBase, position:'relative' }}>
+                      {editCell?.id===ph.id && editCell?.field==='datetime' ? (
+                        <input type="datetime-local" autoFocus
+                          defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
+                          onBlur={ev => { if (ev.target.value) { const [d,t]=ev.target.value.split('T'); onUpdatePhase?.(ph.id,{start_date:d,start_time:t||'08:00'}); } setEditCell(null); }}
+                          onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                          style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5' }}/>
+                      ) : (
+                        <button onClick={() => setEditCell({id:ph.id,field:'datetime'})}
+                          style={{ flex:1, textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 4px 3px 6px', borderRadius:5, fontFamily:'inherit', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {ph.start_date ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}` : '— date'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                  if (cd.key === 'dur_prev') return (
+                    <div key={`rc-dur_prev-${ph.id}`} style={rcBase}>
+                      {editCell?.id===ph.id && editCell?.field==='duration' ? (
+                        <input type="number" autoFocus min="0" step="0.5" defaultValue={ph.duration_hours??''}
+                          onBlur={ev => { const val=ev.target.value===''?null:parseFloat(ev.target.value); onUpdatePhase?.(ph.id,{duration_hours:val}); setEditCell(null); }}
+                          onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                          style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5', textAlign:'right' }}/>
+                      ) : (
+                        <button onClick={() => setEditCell({id:ph.id,field:'duration'})}
+                          style={{ width:'100%', textAlign:'right', fontSize:11, color:ph.duration_hours?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}>
+                          {fmtDur(ph.duration_hours)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                  if (cd.key === 'dur_real') return (
+                    <div key={`rc-dur_real-${ph.id}`} style={{ ...rcBase, justifyContent:'flex-end' }}>
+                      <span style={{ fontSize:11, color: ph.logged_hours > 0 ? PUNCH_COLOR : '#D1D5DB', fontWeight:700, padding:'3px 6px', fontVariantNumeric:'tabular-nums' }}>
+                        {ph.logged_hours > 0 ? fmtDur(Number(ph.logged_hours)) : '—'}
+                      </span>
+                    </div>
+                  );
+                  if (cd.key === 'assigned') return (
+                    <div key={`rc-assigned-${ph.id}`} style={{ ...rcBase, padding:'0 10px' }}>
+                      <AssigneeChip trade={matchedTrade}
+                        assignedToName={ph.assigned_to_name||null}
+                        onSelfAssign={currentUserName?()=>onSelfAssign?.(ph.id,currentUserName):undefined}
+                        onUnassign={ph.assigned_to_name?()=>onSelfAssign?.(ph.id,null):undefined}/>
+                    </div>
+                  );
+                  return null;
+                })}
               </div>
             );
           })}
