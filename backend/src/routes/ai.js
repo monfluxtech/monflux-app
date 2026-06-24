@@ -471,11 +471,22 @@ Réponds UNIQUEMENT en JSON valide (pas de texte autour):
     const client = initAnthropicIfReady();
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1536,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = msg.content[0]?.text || '{}';
-    const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('adjust-phases: no JSON in response, raw:', raw.slice(0, 200));
+      return res.status(500).json({ error: 'Réponse IA invalide — réessaie.' });
+    }
+    let result;
+    try {
+      result = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error('adjust-phases: JSON parse failed:', parseErr.message, 'raw slice:', raw.slice(-200));
+      return res.status(500).json({ error: 'Réponse IA tronquée — réessaie.' });
+    }
     res.json({
       adjustments: Array.isArray(result?.phases) ? result.phases : [],
       recommendations: Array.isArray(result?.recommendations) ? result.recommendations : [],
