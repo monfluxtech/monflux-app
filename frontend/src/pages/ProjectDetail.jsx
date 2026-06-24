@@ -554,6 +554,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [statusPicker, setStatusPicker]     = useState(null); // { phId, x, y }
   const [deps, setDeps]                     = useState({}); // { succPhId: predPhId }
   const [depFirst, setDepFirst]             = useState(null); // phase ID of first clicked in dep-connect mode
+  const [depConnectMode, setDepConnectMode] = useState(false); // click-to-link dep mode
   const dateDragRef = useRef(null);
   const scrollRef   = useRef(null);
   const ganttElRef  = useRef(null);
@@ -990,42 +991,62 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const exportPdf = () => {
     const ganttEl = document.querySelector('[data-gantt-print]');
     if (!ganttEl) { window.print(); return; }
-    // Measure full content (including scrollable overflow)
-    const naturalW = Math.max(ganttEl.scrollWidth, ganttEl.offsetWidth);
-    const naturalH = Math.max(ganttEl.scrollHeight, ganttEl.offsetHeight);
-    // A4 landscape printable at 96 dpi: ~1058×748px (297×210mm minus 8mm margins)
+
+    // A4 paysage imprimable à 96 dpi : 297×210mm − 8mm marges = ~1058×748px
     const printW = 1058;
     const printH = 748;
-    const scale  = Math.min(printW / naturalW, printH / naturalH, 1).toFixed(4);
 
-    const el = document.createElement('style');
-    el.id = '__gantt_print_css';
-    el.textContent = `
-      @media print {
-        @page { size: A4 landscape; margin: 8mm; }
-        /* Force couleurs exactes — sans ça les barres colorées deviennent blanches */
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        /* Masquer tout sauf le Gantt */
-        body * { visibility: hidden !important; }
-        [data-gantt-print], [data-gantt-print] * { visibility: visible !important; }
-        /* Masquer toolbar et filtres à l'intérieur du Gantt */
-        [data-gantt-no-print] { visibility: hidden !important; display: none !important; }
-        /* Positionner + scaler pour tenir sur 1 page */
-        [data-gantt-print] {
-          position: fixed !important;
-          top: 0 !important; left: 0 !important;
-          overflow: visible !important;
-          transform-origin: top left !important;
-          transform: scale(${scale}) !important;
+    // Forcer les colonnes optionnelles à gauche temporairement (pour l'impression)
+    setHiddenCols(new Set());
+
+    // Laisser le render se mettre à jour avant de mesurer
+    setTimeout(() => {
+      const ganttEl2 = document.querySelector('[data-gantt-print]');
+      // Mesurer toutes les lignes (pas juste la zone visible)
+      const allRows = ganttEl2.querySelectorAll('[data-gantt-row]');
+      const naturalW = ganttEl2.scrollWidth;
+      const naturalH = Math.max(ganttEl2.scrollHeight, ganttEl2.offsetHeight, printH * 0.7);
+      const scale    = Math.min(printW / naturalW, printH / naturalH, 1).toFixed(4);
+
+      // Créer un wrapper d'impression avec dimensions fixes (= 1 seule page)
+      const wrapper = document.createElement('div');
+      wrapper.id = '__gantt_print_wrapper';
+      Object.assign(wrapper.style, {
+        position: 'fixed', top: '0', left: '0', zIndex: '99999',
+        width: `${printW}px`, height: `${printH}px`,
+        overflow: 'hidden', background: '#fff',
+      });
+      const clone = ganttEl2.cloneNode(true);
+      // Supprimer toolbar / filtres du clone
+      clone.querySelectorAll('[data-gantt-no-print]').forEach(n => n.remove());
+      Object.assign(clone.style, {
+        transformOrigin: 'top left',
+        transform: `scale(${scale})`,
+        width: `${naturalW}px`,
+        position: 'absolute', top: '0', left: '0',
+      });
+      wrapper.appendChild(clone);
+      document.body.appendChild(wrapper);
+
+      const printStyle = document.createElement('style');
+      printStyle.id = '__gantt_print_css';
+      printStyle.textContent = `
+        @media print {
+          @page { size: A4 landscape; margin: 8mm; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body > *:not(#__gantt_print_wrapper) { display: none !important; }
+          #__gantt_print_wrapper { display: block !important; }
         }
-        /* Débloquer les overflow internes pour afficher toutes les colonnes/barres */
-        [data-gantt-print] * { overflow: visible !important; }
-        .animate-spin { animation: none !important; }
-      }
-    `;
-    document.head.appendChild(el);
-    window.print();
-    setTimeout(() => document.getElementById('__gantt_print_css')?.remove(), 1500);
+      `;
+      document.head.appendChild(printStyle);
+
+      window.print();
+
+      setTimeout(() => {
+        document.getElementById('__gantt_print_css')?.remove();
+        document.getElementById('__gantt_print_wrapper')?.remove();
+      }, 1200);
+    }, 80);
   };
 
   // Chemin critique (CPM simplifié) — calculé à chaque render quand activé
@@ -1079,10 +1100,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
           <span style={{ flex:1 }}/>
           {[
-            [showDates,    ()=>setShowDates(v=>!v),    <Calendar size={10}/>,  'Dates'],
-            [showArrows,   ()=>setShowArrows(v=>!v),   <GitBranch size={10}/>, 'Dépend.'],
-            [cascade,      ()=>setCascade(v=>!v),      <GitBranch size={10}/>, 'Cascade'],
-            [showCritical, ()=>setShowCritical(v=>!v), null,                   'Critique'],
+            [showDates,       ()=>setShowDates(v=>!v),                                          <Calendar size={10}/>,  'Dates'],
+            [showArrows||depConnectMode, ()=>{ const next=!(showArrows||depConnectMode); setShowArrows(next); if(!next){setDepConnectMode(false);setDepFirst(null);} }, <GitBranch size={10}/>, 'Dépend.'],
+            [cascade,         ()=>setCascade(v=>!v),                                            <GitBranch size={10}/>, 'Cascade'],
+            [showCritical,    ()=>setShowCritical(v=>!v),                                       null,                   'Critique'],
           ].map(([active, fn, icon, lbl], ki) => (
             <button key={ki} onClick={fn}
               style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
@@ -1092,6 +1113,17 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               {icon}{lbl}
             </button>
           ))}
+          {/* Bouton Lier — visible si arrows actifs */}
+          {showArrows && (
+            <button onClick={() => { setDepConnectMode(v=>{ const next=!v; if(!next) setDepFirst(null); return next; }); }}
+              title="Mode liaison de dépendances (cliquer 2 phases)"
+              style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
+                border:`1px solid ${depConnectMode ? '#3B82F6' : '#E5E7EB'}`,
+                background: depConnectMode ? '#EFF6FF' : '#fff', fontSize:11, fontWeight:600,
+                color: depConnectMode ? '#1D4ED8' : '#9CA3AF', cursor:'pointer' }}>
+              🔗 Lier
+            </button>
+          )}
           <button onClick={scrollToToday}
             style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
             Aujourd'hui
@@ -1114,6 +1146,21 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         </div>
       </div>
 
+      {/* ── Bannière mode liaison de dépendances ── */}
+      {depConnectMode && (
+        <div data-gantt-no-print style={{ background:'#EFF6FF', borderBottom:'1px solid #BFDBFE', padding:'7px 16px', display:'flex', alignItems:'center', gap:10, fontSize:11, color:'#1D4ED8' }}>
+          <span style={{ fontSize:16 }}>🔗</span>
+          <span style={{ fontWeight:700 }}>
+            {depFirst
+              ? `Prédécesseur : « ${phases.find(p=>p.id===depFirst)?.name||'?'} » — Cliquer maintenant sur le successeur`
+              : 'Cliquer sur le prédécesseur (la phase qui doit finir en premier)'}
+          </span>
+          <button onClick={() => { setDepConnectMode(false); setDepFirst(null); }}
+            style={{ marginLeft:'auto', background:'transparent', border:'1px solid #BFDBFE', borderRadius:5, padding:'2px 8px', color:'#1D4ED8', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+            Annuler
+          </button>
+        </div>
+      )}
       {/* ── Filtres / Légende ── 2 lignes: recherche texte (gauche) | statuts (droite) */}
       <div style={{ background:'#FAFBFC', borderBottom:'1px solid #F0F1F2' }}>
         {/* Ligne 1 — FILTRES | Phase | Début | Assigné | sep | Durée prév | Avec dep | Récurrent */}
@@ -1365,19 +1412,32 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
             const isSelected = selectedIds.has(ph.id);
             const isCritical = criticalIds.has(ph.id);
+            const isDepHighlight = depConnectMode && ph.id === depFirst;
 
-            const rowBg = isSelected ? '#FFF8F5' : isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
+            const rowBg = isDepHighlight ? '#EFF6FF' : isSelected ? '#FFF8F5' : isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
+
+            const handleRowClick = () => {
+              if (!depConnectMode) return;
+              if (!depFirst) { setDepFirst(ph.id); return; }
+              if (ph.id === depFirst) { setDepFirst(null); return; } // désélectionner
+              // Créer la dépendance : depFirst → ph (prédécesseur → successeur)
+              setDeps(d => ({ ...d, [ph.id]: depFirst }));
+              setDepFirst(null);
+              // Ne pas quitter le mode pour pouvoir en créer plusieurs
+            };
 
             return (
-              <div key={ph.id} draggable={!hasSel}
+              <div key={ph.id} draggable={!hasSel && !depConnectMode}
                 onDragStart={ev => { if (!barDrag && !resize && !hasSel) onRowDragStart(ev, i); }}
                 onDragOver={ev => onRowDragOver(ev, i)} onDrop={ev => onRowDrop(ev, i)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                onClick={handleRowClick}
                 style={{
                   display:'flex', alignItems:'center', minHeight:42,
                   background: rowBg,
-                  borderTop: isDragOver ? `2px solid ${BRAND}` : isSelected ? `2px solid ${BRAND_BORDER}` : '2px solid transparent',
+                  borderTop: isDepHighlight ? `2px solid #3B82F6` : isDragOver ? `2px solid ${BRAND}` : isSelected ? `2px solid ${BRAND_BORDER}` : '2px solid transparent',
                   marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
+                  cursor: depConnectMode ? 'pointer' : 'default',
                 }}>
                 {/* Checkbox column */}
                 <div style={{ width:CHECK_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:rowBg, alignSelf:'stretch', ...stickyC(0) }}>
@@ -1903,17 +1963,28 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   <div style={{ fontSize:10, color:'#9CA3AF', marginTop:2 }}>{tph.progress_pct}% réel (punch)</div>
                 </div>
               )}
-              {tph.assigned_to_name && (
-                <div style={{ marginTop:6, fontSize:11, color:'#E2E8F0', display:'flex', alignItems:'center', gap:5 }}>
-                  <span style={{ width:16, height:16, borderRadius:'50%', background:'#374151', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, flexShrink:0 }}>
-                    {tph.assigned_to_name[0]?.toUpperCase()}
-                  </span>
-                  {tph.assigned_to_name}
-                </div>
-              )}
-              {tooltip.trade?.subcontractor_name && !tph.assigned_to_name && (
-                <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
-              )}
+              {(() => {
+                const tTrade = tooltip.trade;
+                const tName = tph.assigned_to_name || tTrade?.subcontractor_name || tTrade?.chosen_subcontractor_name || null;
+                const tSt = tph.assigned_to_name ? ASSIGNEE_STATUS.confirmed : (ASSIGNEE_STATUS[tTrade?.status] || ASSIGNEE_STATUS.to_find);
+                return (
+                  <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:6 }}>
+                    {tName ? (
+                      <span style={{ width:18, height:18, borderRadius:'50%', background: tSt.dot, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:800, color:'#fff', flexShrink:0 }}>
+                        {tName[0]?.toUpperCase()}
+                      </span>
+                    ) : (
+                      <span style={{ width:8, height:8, borderRadius:'50%', background: tSt.dot, flexShrink:0 }}/>
+                    )}
+                    <span style={{ fontSize:11, color: tName ? '#E2E8F0' : tSt.text, fontWeight: tName ? 600 : 500 }}>
+                      {tName || tSt.label}
+                    </span>
+                    <span style={{ fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:99, background: tSt.bg, color: tSt.text, border:`1px solid ${tSt.border}`, flexShrink:0 }}>
+                      {tSt.label}
+                    </span>
+                  </div>
+                );
+              })()}
               {/* Info chemin critique */}
               {criticalIds.has(tph.id) && !tph._recLabel && (
                 <div style={{ marginTop:6, fontSize:10, color:'#EF4444', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>

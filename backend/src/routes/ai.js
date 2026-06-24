@@ -481,8 +481,17 @@ Réponds UNIQUEMENT en JSON valide (pas de texte autour):
       recommendations: Array.isArray(result?.recommendations) ? result.recommendations : [],
     });
   } catch (err) {
-    console.error('adjust-phases', err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('adjust-phases error:', err?.status, err?.error?.type, err?.message);
+    if (err?.status === 401 || err?.error?.type === 'authentication_error') {
+      return res.status(503).json({ error: 'Clé API Anthropic invalide ou expirée', code: 'ai_not_configured' });
+    }
+    if (err?.status === 429 || err?.error?.type === 'rate_limit_error') {
+      return res.status(429).json({ error: 'Limite Anthropic atteinte — réessaie dans quelques secondes', code: 'ai_quota_exceeded' });
+    }
+    if (err?.status === 400) {
+      return res.status(400).json({ error: err?.error?.message || 'Requête invalide vers l\'API IA' });
+    }
+    res.status(500).json({ error: err?.message || 'Erreur serveur interne' });
   }
 });
 
