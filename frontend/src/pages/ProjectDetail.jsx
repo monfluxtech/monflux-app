@@ -543,7 +543,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [filterDurMin, setFilterDurMin]     = useState('');
   const [filterDurMax, setFilterDurMax]     = useState('');
   const [filterHasDep, setFilterHasDep]     = useState(false);
+  const [filterDepPred, setFilterDepPred]   = useState(''); // phase ID: show phases that depend ON this
+  const [filterDepSucc, setFilterDepSucc]   = useState(''); // phase ID: show phases that are predecessors OF this
   const [filterRecurrence, setFilterRecurrence] = useState(false);
+  const [colWidths, setColWidths]           = useState({}); // per-key width overrides
   const [activeFilter, setActiveFilter]     = useState(null);
   const [selectedIds, setSelectedIds]       = useState(new Set());
   const [bulkPanel, setBulkPanel]           = useState(null); // null | 'status' | 'start' | 'duration' | 'assign' | 'dep'
@@ -652,11 +655,27 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   // Colonnes optionnelles (ordre gauche→droite) — cachables via hiddenCols
   const OPTIONAL_COLS = [
-    { key: 'start',    w: DATE_W,     label: 'Début prévu' },
-    { key: 'dur_prev', w: DUR_W,      label: 'Durée prévue' },
-    { key: 'dur_real', w: REAL_DUR_W, label: 'Durée réelle' },
-    { key: 'assigned', w: ASSIGN_W,   label: 'Assigné' },
+    { key: 'start',    w: colWidths.start    ?? DATE_W,     label: 'Début prévu' },
+    { key: 'dur_prev', w: colWidths.dur_prev ?? DUR_W,      label: 'Durée prévue' },
+    { key: 'dur_real', w: colWidths.dur_real ?? REAL_DUR_W, label: 'Durée réelle' },
+    { key: 'assigned', w: colWidths.assigned ?? ASSIGN_W,   label: 'Assigné' },
   ];
+
+  // Drag-resize a column — call from onMouseDown on the separator handle
+  const startColResize = (key, initW, e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const onMove = (mv) => {
+      const delta = mv.clientX - startX;
+      setColWidths(prev => ({ ...prev, [key]: Math.max(40, initW + delta) }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
   const visibleOptCols = OPTIONAL_COLS.filter(c => !hiddenCols.has(c.key));
   const toggleColPin = (key) => setHiddenCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   // Offsets sticky dynamiques (Phase toujours en premier)
@@ -898,7 +917,20 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     if (filterPunch && !(ph.progress_pct > 0)) return false;
     if (filterDurMin !== '' && (ph.duration_hours || 0) < parseFloat(filterDurMin)) return false;
     if (filterDurMax !== '' && (ph.duration_hours || 0) > parseFloat(filterDurMax)) return false;
-    if (filterHasDep && !deps[ph.id]) return false;
+    if (filterHasDep) {
+      if (!filterDepPred && !filterDepSucc) {
+        // Show phases with ANY dependency (as dependent or as predecessor)
+        const linked = !!deps[ph.id] || Object.values(deps).includes(String(ph.id));
+        if (!linked) return false;
+      } else {
+        let matches = false;
+        // filterDepPred selected: show phases that depend ON filterDepPred (filterDepPred is their predecessor)
+        if (filterDepPred && String(deps[ph.id]) === filterDepPred) matches = true;
+        // filterDepSucc selected: show phases that ARE predecessors of filterDepSucc
+        if (filterDepSucc && String(deps[filterDepSucc]) === String(ph.id)) matches = true;
+        if (!matches) return false;
+      }
+    }
     if (filterRecurrence && !ph.recurrence_type) return false;
     if (filters.assigneeStatus?.size > 0) {
       const trade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
@@ -953,11 +985,19 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const exportPdf = () => {
     const el = document.createElement('style');
     el.id = '__gantt_print_css';
+    // visibility approach: unlike display:none, visibility:hidden on a parent
+    // can be overridden by children via visibility:visible
     el.textContent = `
       @media print {
-        @page { size: A4 landscape; margin: 6mm 8mm; }
-        body > *:not([data-gantt-print]) { display: none !important; }
-        [data-gantt-print] { display: block !important; width: 100% !important; overflow: visible !important; }
+        @page { size: A4 landscape; margin: 4mm 6mm; }
+        body * { visibility: hidden !important; }
+        [data-gantt-print], [data-gantt-print] * { visibility: visible !important; }
+        [data-gantt-print] {
+          position: fixed !important;
+          top: 0 !important; left: 0 !important;
+          width: 100vw !important;
+          overflow: visible !important;
+        }
         [data-gantt-no-print] { display: none !important; }
         .animate-spin { animation: none !important; }
       }
@@ -1001,7 +1041,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const criticalIds = showCritical ? computeCriticalPath() : new Set();
 
   return (
-    <>
+    <div data-gantt-print style={{ background:'#fff' }}>
       {/* ── Toolbar ── */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
         {/* Sticky colonnes — toggle global */}
@@ -1054,33 +1094,11 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
       {/* ── Filtres / Légende ── 2 lignes: recherche texte (gauche) | statuts (droite) */}
       <div style={{ background:'#FAFBFC', borderBottom:'1px solid #F0F1F2' }}>
-        {/* Ligne 1 — Champs texte + statut assigné */}
-        <div style={{ padding:'5px 12px', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
-          {/* Label gauche */}
+        {/* Ligne 1 — Filtres | Assignation | Phase | Début | Assigné | Durée prévue | Avec dépendance | Récurrent */}
+        <div style={{ padding:'5px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
           <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Filtres</span>
-          {/* Phase name */}
-          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Phase</span>
-            <input value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Chercher…"
-              style={{ width:90, fontSize:10, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
-            {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
-          </div>
-          {/* Début */}
-          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Début</span>
-            <input value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil 2026…"
-              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
-            {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
-          </div>
-          {/* Assigné nom */}
-          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Assigné</span>
-            <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…"
-              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
-            {hasFilter('assigned') && <button onClick={()=>clearFilter('assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
-          </div>
           <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
-          {/* Chips statut Assigné */}
+          {/* Assignation chips */}
           <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Assignation</span>
           {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => {
             const active = filters.assigneeStatus.has(key);
@@ -1096,6 +1114,75 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             );
           })}
           {filters.assigneeStatus.size > 0 && <button onClick={() => clearFilter('assigneeStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>}
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {/* Phase name */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Phase</span>
+            <input value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Chercher…"
+              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          {/* Début */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Début</span>
+            <input value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil 2026…"
+              style={{ width:76, fontSize:10, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          {/* Assigné nom */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Assigné</span>
+            <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…"
+              style={{ width:66, fontSize:10, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('assigned') && <button onClick={()=>clearFilter('assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {/* Durée prévue min–max */}
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Durée prévu</span>
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <input value={filterDurMin} onChange={ev => setFilterDurMin(ev.target.value)} placeholder="min"
+              style={{ width:38, fontSize:10, border:`1px solid ${filterDurMin ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
+            <span style={{ fontSize:9, color:'#C0C4CC' }}>—</span>
+            <input value={filterDurMax} onChange={ev => setFilterDurMax(ev.target.value)} placeholder="max"
+              style={{ width:38, fontSize:10, border:`1px solid ${filterDurMax ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
+            {(filterDurMin||filterDurMax) && <button onClick={() => { setFilterDurMin(''); setFilterDurMax(''); }} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {/* Avec dépendance chip */}
+          <button onClick={() => { setFilterHasDep(v=>!v); if (filterHasDep) { setFilterDepPred(''); setFilterDepSucc(''); } }}
+            style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
+              background: filterHasDep ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${filterHasDep ? BRAND_BORDER : '#E5E7EB'}`,
+              fontSize:10, fontWeight:600, color: filterHasDep ? BRAND_DARK : '#6B7280', cursor:'pointer',
+              boxShadow: filterHasDep ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
+            <GitBranch size={8}/>Avec dépendance
+          </button>
+          {/* Dep selectors — visible quand le filtre est actif */}
+          {filterHasDep && (
+            <>
+              <select value={filterDepPred} onChange={e => setFilterDepPred(e.target.value)}
+                style={{ fontSize:10, border:`1px solid ${filterDepPred ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color: filterDepPred ? BRAND_DARK : '#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:130 }}>
+                <option value="">Suivi de…</option>
+                {phases.map(ph => <option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
+              </select>
+              <select value={filterDepSucc} onChange={e => setFilterDepSucc(e.target.value)}
+                style={{ fontSize:10, border:`1px solid ${filterDepSucc ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color: filterDepSucc ? BRAND_DARK : '#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:130 }}>
+                <option value="">Précède…</option>
+                {phases.map(ph => <option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
+              </select>
+              {(filterDepPred || filterDepSucc) && (
+                <button onClick={() => { setFilterDepPred(''); setFilterDepSucc(''); }}
+                  style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>
+              )}
+            </>
+          )}
+          {/* Récurrent */}
+          <button onClick={() => setFilterRecurrence(v=>!v)}
+            style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
+              background: filterRecurrence ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${filterRecurrence ? BRAND_BORDER : '#E5E7EB'}`,
+              fontSize:10, fontWeight:600, color: filterRecurrence ? BRAND_DARK : '#6B7280', cursor:'pointer',
+              boxShadow: filterRecurrence ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
+            Récurrent
+          </button>
         </div>
         {/* Ligne 2 — Statuts Phase + Réel Punch */}
         <div style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
@@ -1135,31 +1222,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             </div>
           )}
         </div>
-        {/* Ligne 3 — Durée, Dépendance, Récurrence */}
-        <div style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Durée prévue</span>
-          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-            <input value={filterDurMin} onChange={ev => setFilterDurMin(ev.target.value)} placeholder="min h"
-              style={{ width:46, fontSize:10, border:`1px solid ${filterDurMin ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
-            <span style={{ fontSize:9, color:'#C0C4CC' }}>—</span>
-            <input value={filterDurMax} onChange={ev => setFilterDurMax(ev.target.value)} placeholder="max h"
-              style={{ width:46, fontSize:10, border:`1px solid ${filterDurMax ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
-            {(filterDurMin||filterDurMax) && <button onClick={() => { setFilterDurMin(''); setFilterDurMax(''); }} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10 }}>✕</button>}
-          </div>
-          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
-          {[
-            [filterHasDep,    () => setFilterHasDep(v=>!v),      <GitBranch size={8}/>, 'Avec dépendance'],
-            [filterRecurrence,() => setFilterRecurrence(v=>!v),  null,                  'Récurrent'],
-          ].map(([active, fn, icon, lbl], ki) => (
-            <button key={ki} onClick={fn}
-              style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-                background: active ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
-                fontSize:10, fontWeight:600, color: active ? BRAND_DARK : '#6B7280', cursor:'pointer',
-                boxShadow: active ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
-              {icon}{lbl}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ── Gantt scrollable ── */}
@@ -1174,24 +1236,33 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 onChange={ev => ev.target.checked ? selectAll() : clearSelection()}
                 style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
             </div>
-            {/* Phase — toujours visible */}
-            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'7px 8px', display:'flex', alignItems:'center', justifyContent:'space-between', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
-              <span>Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}</span>
+            {/* Phase — pin pour basculer sticky global */}
+            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'5px 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
+              <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}</span>
+              <button onClick={() => setStickyAll(v=>!v)} title={stickyAll ? 'Désépingler colonnes' : 'Épingler colonnes'}
+                style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color: stickyAll ? BRAND : '#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, opacity: stickyAll ? 1 : 0.6 }}>
+                <Pin size={8}/>
+              </button>
             </div>
-            {/* Colonnes optionnelles avec pin individuel */}
+            {/* Colonnes optionnelles — pin (masquer) + poignée de redimensionnement */}
             {visibleOptCols.map(cd => {
               const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
               const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
               return (
-                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && stickyAll ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(colLeftMap[cd.key]) }}>
+                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && stickyAll ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key]) }}>
                   <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
-                    {cd.key === 'dur_real' ? 'Durée réelle' : cd.label}
+                    {cd.label}
                     {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
                   </span>
                   <button onClick={() => toggleColPin(cd.key)} title={`Masquer ${cd.label}`}
                     style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, opacity:.6 }}>
                     <Pin size={8}/>
                   </button>
+                  {/* Poignée de redimensionnement sur le bord droit */}
+                  <div onMouseDown={e => startColResize(cd.key, cd.w, e)}
+                    style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', background:'transparent', zIndex:10 }}
+                    title="Redimensionner"
+                  />
                 </div>
               );
             })}
@@ -1771,7 +1842,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           })()}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -2935,7 +3006,17 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       setAiNotice('Florence a ajusté le planning selon les journées ouvrables.');
     } catch (err) {
       console.error('adjustPhasesWithAI', err);
-      setAiNotice('Impossible d\'ajuster les phases pour l\'instant.');
+      const code   = err.response?.data?.code;
+      const status = err.response?.status;
+      if (code === 'ai_not_configured') {
+        setAiNotice(err.response.data.hint || 'IA non configurée — configure une clé API Anthropic.');
+      } else if (code === 'ai_quota_exceeded' || status === 429) {
+        setAiNotice('Limite IA atteinte pour ce mois. Ajoute des crédits ou réessaie le mois prochain.');
+      } else if (status === 400) {
+        setAiNotice(err.response?.data?.error || 'Données de phases invalides.');
+      } else {
+        setAiNotice('Impossible d\'ajuster les phases pour l\'instant.');
+      }
     } finally { setGeneratingPhases(false); }
   };
 
