@@ -2873,6 +2873,8 @@ export default function ProjectDetail() {
   const [tradeConformite, setTradeConformite] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-conformite-${id}`) || '{}'); } catch { return {}; } });
   const [tradeResInput, setTradeResInput] = useState({});
   const [loadingFloPersonCheck, setLoadingFloPersonCheck] = useState({});
+  const [tradePersonPanels, setTradePersonPanels] = useState({});
+  const [tradePersonMsgs, setTradePersonMsgs] = useState({});
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -3658,6 +3660,40 @@ Réponds en JSON UNIQUEMENT dans ce format :
       }
     } catch {} finally {
       setLoadingFloPersonCheck(m => ({ ...m, [pKey]: false }));
+    }
+  };
+
+  const generateContactMessage = async (tradeName, person, type, pKey) => {
+    setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], loading: true } }));
+    const isExt = type === 'external';
+    const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un message de contact professionnel et direct en français québécois.
+Destinataire : ${person.name}${person.email ? ` (${person.email})` : ''}
+Corps de métier : ${tradeName}
+Projet : ${project.name || project.description || 'Projet en cours'}
+Adresse : ${project.address || 'À confirmer'}
+Dates approximatives : ${project.start_date ? `Début ${project.start_date}` : 'À confirmer'}
+Type : ${isExt ? 'Sous-traitant externe — demander disponibilité ET soumission de prix' : 'Ressource interne — confirmer disponibilité'}
+
+Génère un message court (3-5 phrases), professionnel mais chaleureux. Commence par "Bonjour [prénom]," uniquement. Sans formule de politesse finale excessive. Réponds avec le message seul.`;
+    try {
+      const token = localStorage.getItem('token');
+      const CHAT_BASE2 = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const res = await fetch(`${CHAT_BASE2}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) return;
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') txt += evt.text; } catch {}
+        }
+      }
+      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: txt.trim(), loading: false } }));
+    } catch {
+      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], loading: false } }));
     }
   };
 
@@ -6036,26 +6072,45 @@ Règles :
               { key: 'termine',     label: 'Terminé',     color: '#6B7280', bg: '#F9FAFB' },
             ];
 
-            const parsePersons = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p, status: 'a_contacter' } : p);
+            const parsePersons = (arr) => (arr || []).map(p =>
+              typeof p === 'string'
+                ? { name: p, status: 'a_contacter', phone: '', email: '', location: '' }
+                : { phone: '', email: '', location: '', ...p }
+            );
+
             const isDateExpired = (d) => d && new Date(d) < new Date();
-            const isCertFail = (c) => !c?.ok || isDateExpired(c?.validite);
-            const isPersonNonConforme = (cert) => isCertFail(cert?.rbq) || isCertFail(cert?.ccq) || isCertFail(cert?.insurance);
+            // Only fail if explicitly unchecked OR if a date was entered and is expired
+            const isCertFail = (c) => {
+              if (!c || (c.ok === undefined && !c.validite && !c.lastCheck)) return false;
+              if (c.ok === false) return true;
+              if (c.ok === true && c.validite && isDateExpired(c.validite)) return true;
+              return false;
+            };
+            const isPersonNonConforme = (cert, personStatus) => {
+              if (personStatus === 'a_contacter') return false;
+              return isCertFail(cert?.rbq) || isCertFail(cert?.ccq) || isCertFail(cert?.insurance);
+            };
             const personKey = (tn, type, pi) => `${tn}||${type}||${pi}`;
 
             const hS = { fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' };
-            const subH = { fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE' };
 
-            const renderCertCell = (certObj, certLabel, color, onChange) => {
+            const renderCertCell = (certObj, certLabel, color, onChange, disabled) => {
+              if (disabled) return (
+                <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 10.5, color: '#D4D6DA', fontStyle: 'italic' }}>—</span>
+                </div>
+              );
               const c = certObj || {};
-              const expired = isDateExpired(c.validite);
+              const expired = c.ok === true && isDateExpired(c.validite);
+              const isFail  = isCertFail(c);
               return (
                 <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', flexDirection: 'column', gap: 5 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <input type="checkbox" checked={!!c.ok} onChange={e => onChange('ok', e.target.checked)}
-                      style={{ accentColor: c.ok ? color : '#DC2626', width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: c.ok ? color : '#DC2626' }}>{certLabel}</span>
+                      style={{ accentColor: c.ok && !expired ? color : isFail ? '#DC2626' : '#C4C8CE', width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: c.ok && !expired ? color : isFail ? '#DC2626' : '#A8AEB6' }}>{certLabel}</span>
                     {expired && <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 4, padding: '1px 5px' }}>EXPIRÉ</span>}
-                    {c.ok && !expired && c.validite && <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}15`, borderRadius: 4, padding: '1px 5px' }}>✓</span>}
+                    {c.ok && !expired && <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}15`, borderRadius: 4, padding: '1px 5px' }}>✓</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 9.5, color: '#B0B4BB', fontWeight: 600, width: 32, flexShrink: 0 }}>Exp.</span>
@@ -6084,19 +6139,18 @@ Règles :
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 900 }}>
+                  <div style={{ minWidth: 960 }}>
 
                     {/* ── En-têtes ── */}
                     <div style={{ display: 'flex', borderBottom: '1px solid #F1F3F5', background: '#FAFAFA' }}>
                       <div style={{ width: 200, flexShrink: 0, padding: '7px 14px 7px 20px', borderRight: '1px solid #E8EAED' }}>
                         <span style={hS}>Corps de métier</span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 1fr 110px', flex: 1 }}>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>Personne</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr 1fr', flex: 1 }}>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>Personne & contact</span></div>
                         <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>🔧 RBQ</span></div>
                         <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>👷 CCQ</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>🛡️ Assurance</span></div>
-                        <div style={{ padding: '7px 12px' }}><span style={hS}>Flo</span></div>
+                        <div style={{ padding: '7px 12px' }}><span style={hS}>🛡️ Assurance</span></div>
                       </div>
                     </div>
 
@@ -6111,6 +6165,10 @@ Règles :
                         const updated = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [type]: newList } };
                         setTradeResourcesMap(updated);
                         localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+                      };
+
+                      const updatePersonField = (type, pi, field, value) => {
+                        updateResources(type, resources[type].map((p, i) => i === pi ? { ...p, [field]: value } : p));
                       };
 
                       const cycleStatus = (type, pi) => {
@@ -6128,12 +6186,15 @@ Règles :
                         localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
                       };
 
+                      const togglePanel = (pKey) => setTradePersonPanels(m => ({ ...m, [pKey]: !m[pKey] }));
+
                       const renderPersonSection = (type) => {
                         const list = resources[type];
                         const typeColor = type === 'internal' ? '#7C3AED' : '#2563EB';
                         const typeIcon  = type === 'internal' ? '🏠' : '🏗️';
                         const typeLabel = type === 'internal' ? 'Interne' : 'Externe';
                         const inputKey  = `${tradeName}_add_${type}`;
+
                         return (
                           <div>
                             {/* section label */}
@@ -6143,70 +6204,156 @@ Règles :
 
                             {/* person rows */}
                             {list.map((person, pi) => {
-                              const cert = tradeConformite[personKey(tradeName, type, pi)] || { rbq: {}, ccq: {}, insurance: {} };
-                              const nonConforme = isPersonNonConforme(cert);
-                              const pStat = personStatuses.find(s => s.key === (person.status || 'a_contacter')) || personStatuses[0];
-                              const pKey = personKey(tradeName, type, pi);
+                              const pKey      = personKey(tradeName, type, pi);
+                              const cert      = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
+                              const pStatus   = person.status || 'a_contacter';
+                              const isAC      = pStatus === 'a_contacter';
+                              const nonConf   = isPersonNonConforme(cert, pStatus);
+                              const pStat     = personStatuses.find(s => s.key === pStatus) || personStatuses[0];
+                              const panelOpen = !!tradePersonPanels[pKey];
+                              const msgData   = tradePersonMsgs[pKey] || {};
                               const isLoadingFlo = !!loadingFloPersonCheck[pKey];
 
-                              return (
-                                <div key={pi} style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConforme ? '#FFF5F5' : 'transparent' }}>
-                                  {/* person info */}
-                                  <div style={{ width: 200, flexShrink: 0, padding: '10px 14px 10px 20px', borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                                      <p style={{ fontSize: 13, fontWeight: 700, color: nonConforme ? '#DC2626' : '#15171C', margin: 0, flex: 1 }}>{person.name}</p>
-                                      <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
-                                    </div>
-                                    <button onClick={() => cycleStatus(type, pi)}
-                                      style={{ alignSelf: 'flex-start', fontSize: 10.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 9px', cursor: 'pointer' }}>
-                                      {pStat.label}
-                                    </button>
-                                    {nonConforme && (
-                                      <span style={{ fontSize: 9.5, fontWeight: 800, color: '#DC2626', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                        ⚠ NON CONFORME
-                                      </span>
-                                    )}
-                                  </div>
-                                  {/* cert cells */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 110px', flex: 1 }}>
-                                    {renderCertCell(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
-                                    {renderCertCell(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
-                                    {renderCertCell(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
-                                    {/* Flo verify */}
-                                    <div style={{ padding: '10px 10px', borderLeft: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                      <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
-                                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px', borderRadius: 10, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}07`, cursor: isLoadingFlo ? 'wait' : 'pointer', width: '100%' }}>
-                                        {isLoadingFlo ? <Loader2 size={14} className="animate-spin" color={BRAND}/> : <Sparkles size={14} color={BRAND}/>}
-                                        <span style={{ fontSize: 9.5, fontWeight: 700, color: BRAND }}>{isLoadingFlo ? 'Vérif…' : 'Vérifier'}</span>
-                                      </button>
-                                    </div>
-                                  </div>
+                              const infoInput = (field, placeholder, icon) => (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 10, color: '#C4C8CE', flexShrink: 0 }}>{icon}</span>
+                                  <input value={person[field] || ''} onChange={e => updatePersonField(type, pi, field, e.target.value)}
+                                    placeholder={placeholder}
+                                    style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#5A5E6A', width: '100%', padding: 0 }}/>
                                 </div>
                               );
-                            })}
 
-                            {/* Flo notes if any — show below last person of each type */}
-                            {list.map((_, pi) => {
-                              const cert = tradeConformite[personKey(tradeName, type, pi)] || {};
-                              if (!cert.floNotes) return null;
                               return (
-                                <div key={`flo-${pi}`} style={{ padding: '6px 20px 7px', background: `${BRAND}06`, borderTop: '1px solid #F4F5F6', fontSize: 11, color: '#6B7280', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                                  <Sparkles size={10} color={BRAND} style={{ flexShrink: 0, marginTop: 2 }}/>
-                                  <span><strong style={{ color: BRAND }}>{resources[type][pi]?.name} : </strong>{cert.floNotes}</span>
+                                <div key={pi}>
+                                  {/* person row */}
+                                  <div style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent' }}>
+
+                                    {/* person info */}
+                                    <div style={{ width: 200, flexShrink: 0, padding: '10px 12px 10px 20px', borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, flex: 1, lineHeight: 1.3 }}>{person.name}</p>
+                                        <button onClick={() => togglePanel(pKey)}
+                                          style={{ background: panelOpen ? BRAND : 'none', border: panelOpen ? 'none' : `1.5px solid ${BRAND}40`, borderRadius: 6, cursor: 'pointer', padding: '2px 5px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                          <Sparkles size={10} color={panelOpen ? '#fff' : BRAND}/>
+                                          <span style={{ fontSize: 9.5, fontWeight: 700, color: panelOpen ? '#fff' : BRAND }}>Flo</span>
+                                        </button>
+                                        <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 1px', flexShrink: 0 }}>×</button>
+                                      </div>
+                                      {infoInput('phone', 'Téléphone', '📞')}
+                                      {infoInput('email', 'Courriel', '✉')}
+                                      {infoInput('location', 'Localisation', '📍')}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                        <button onClick={() => cycleStatus(type, pi)}
+                                          style={{ fontSize: 10.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 9px', cursor: 'pointer' }}>
+                                          {pStat.label}
+                                        </button>
+                                        {nonConf && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
+                                      </div>
+                                    </div>
+
+                                    {/* cert cells — grisées si statut À contacter */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', flex: 1 }}>
+                                      {renderCertCell(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v), isAC)}
+                                      {renderCertCell(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v), isAC)}
+                                      {renderCertCell(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v), isAC)}
+                                    </div>
+
+                                  </div>
+
+                                  {/* ── Panneau Flo — workflow contact + conformité ── */}
+                                  {panelOpen && (
+                                    <div style={{ background: '#F9F8FF', borderTop: '1px solid #EDE9FF', borderBottom: '1px solid #EDE9FF', padding: '14px 20px', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+
+                                      {/* Étape 1 — Contact */}
+                                      <div style={{ flex: 2, minWidth: 280 }}>
+                                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#7C3AED', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                          <span style={{ fontSize: 14 }}>📬</span> Étape 1 — Contacter & confirmer disponibilité{type === 'external' ? ' + prix' : ''}
+                                        </p>
+                                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #EDE9FF', padding: '10px 12px', marginBottom: 8 }}>
+                                          <textarea
+                                            value={msgData.msg || ''}
+                                            onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
+                                            rows={5}
+                                            placeholder="Message à envoyer — génère-le avec Flo ou écris-le manuellement."
+                                            style={{ width: '100%', fontSize: 12, lineHeight: 1.6, color: '#3A3D44', border: 'none', outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: 'transparent' }}
+                                          />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                          <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={msgData.loading}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: msgData.loading ? 'wait' : 'pointer' }}>
+                                            {msgData.loading ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                                            {msgData.loading ? 'Génération…' : 'Générer avec Flo'}
+                                          </button>
+                                          {msgData.msg && (
+                                            <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 11.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
+                                              📋 Copier
+                                            </button>
+                                          )}
+                                          {person.email && msgData.msg && (
+                                            <a href={`mailto:${person.email}?subject=Projet ${encodeURIComponent(project.name || '')}&body=${encodeURIComponent(msgData.msg)}`}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 11.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
+                                              ✉ Envoyer par courriel
+                                            </a>
+                                          )}
+                                        </div>
+                                        {/* Disponible + prix */}
+                                        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                          <span style={{ fontSize: 11, fontWeight: 700, color: '#5A5E6A' }}>Disponible :</span>
+                                          {[{ label: 'Oui ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' }, { label: 'Non ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' }].map(opt => (
+                                            <button key={opt.val}
+                                              onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
+                                              style={{ padding: '4px 10px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 11, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer' }}>
+                                              {opt.label}
+                                            </button>
+                                          ))}
+                                          {type === 'external' && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                              <span style={{ fontSize: 11, fontWeight: 700, color: '#5A5E6A' }}>Prix :</span>
+                                              <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
+                                                placeholder="ex. 4 500 $"
+                                                style={{ fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '4px 8px', width: 100, outline: 'none', color: '#3A3D44' }}/>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Étape 2 — Conformité */}
+                                      <div style={{ flex: 1, minWidth: 180, borderLeft: '1px solid #EDE9FF', paddingLeft: 20 }}>
+                                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#059669', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                          <span style={{ fontSize: 14 }}>🔍</span> Étape 2 — Conformité
+                                        </p>
+                                        <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 10px', lineHeight: 1.5 }}>
+                                          Flo évalue les exigences RBQ, CCQ et assurance pour ce corps de métier.
+                                        </p>
+                                        <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
+                                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: isLoadingFlo ? '#F0F0F0' : BRAND, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer', width: '100%', justifyContent: 'center' }}>
+                                          {isLoadingFlo ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                                          {isLoadingFlo ? 'Vérification…' : 'Vérifier avec Flo'}
+                                        </button>
+                                        {cert.floNotes && (
+                                          <div style={{ marginTop: 8, fontSize: 11, color: '#5A5E6A', lineHeight: 1.5, background: '#fff', borderRadius: 8, padding: '8px 10px', border: '1px solid #EDE9FF' }}>
+                                            <span style={{ fontWeight: 700, color: BRAND }}>Flo : </span>{cert.floNotes}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
 
                             {/* Add person input */}
-                            <div style={{ padding: '8px 14px 8px 20px', borderTop: '1px solid #F4F5F6' }}>
+                            <div style={{ padding: '8px 14px 8px 20px', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
                               <input
                                 value={tradeResInput[inputKey] || ''}
                                 onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
                                 onKeyDown={e => {
                                   if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
                                     e.preventDefault();
-                                    updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter' }]);
+                                    updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' }]);
                                     setTradeResInput(m => ({ ...m, [inputKey]: '' }));
                                   }
                                 }}
