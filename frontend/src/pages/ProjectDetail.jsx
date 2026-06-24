@@ -1835,7 +1835,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   <div style={{ fontSize:10, color:'#9CA3AF', marginTop:2 }}>{tph.progress_pct}% réel (punch)</div>
                 </div>
               )}
-              {tooltip.trade?.subcontractor_name && (
+              {tph.assigned_to_name && (
+                <div style={{ marginTop:6, fontSize:11, color:'#E2E8F0', display:'flex', alignItems:'center', gap:5 }}>
+                  <span style={{ width:16, height:16, borderRadius:'50%', background:'#374151', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, flexShrink:0 }}>
+                    {tph.assigned_to_name[0]?.toUpperCase()}
+                  </span>
+                  {tph.assigned_to_name}
+                </div>
+              )}
+              {tooltip.trade?.subcontractor_name && !tph.assigned_to_name && (
                 <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
               )}
               {/* Info chemin critique */}
@@ -3025,8 +3033,11 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
         setAiNotice('Limite IA atteinte pour ce mois. Ajoute des crédits ou réessaie le mois prochain.');
       } else if (status === 400) {
         setAiNotice(err.response?.data?.error || 'Données de phases invalides.');
+      } else if (status === 503) {
+        setAiNotice('IA non configurée sur le serveur — vérifie la clé ANTHROPIC_API_KEY.');
       } else {
-        setAiNotice('Impossible d\'ajuster les phases pour l\'instant.');
+        const msg = err.response?.data?.error || err.message || 'erreur inconnue';
+        setAiNotice(`Erreur ${status || 'réseau'} : ${msg}`);
       }
     } finally { setGeneratingPhases(false); }
   };
