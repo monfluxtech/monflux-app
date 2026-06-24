@@ -2869,6 +2869,9 @@ export default function ProjectDetail() {
   const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
   const [autoAddingTrades, setAutoAddingTrades] = useState(false);
   const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
+  const [tradeResourcesMap, setTradeResourcesMap] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-resources-${id}`) || '{}'); } catch { return {}; } });
+  const [tradeConformite, setTradeConformite] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-conformite-${id}`) || '{}'); } catch { return {}; } });
+  const [tradeResInput, setTradeResInput] = useState({});
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -5987,60 +5990,112 @@ Règles :
                   </div>
                 </div>
 
-                <div>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <div style={{ minWidth: 960 }}>
                   {/* En-têtes de colonnes */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1.5fr) minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '8px 20px', borderBottom: '1px solid #F1F3F5' }}>
-                    {['Corps de métier', 'Sous-traitant', 'Action', 'Statut'].map((h, hi) => (
-                      <span key={hi} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', textAlign: hi === 3 ? 'right' : 'left' }}>{h}</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '220px 320px 160px 120px 150px', alignItems: 'end', borderBottom: '1px solid #F1F3F5' }}>
+                    <div style={{ padding: '8px 16px 8px 20px', borderRight: '1px solid #E8EAED' }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' }}>Corps de métier</span>
+                    </div>
+                    <div style={{ padding: '6px 16px 0' }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', display: 'block', marginBottom: 4 }}>Personne ressource</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid #F1F3F5' }}>
+                        <span style={{ fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE', padding: '4px 0' }}>Interne</span>
+                        <span style={{ fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#C4C8CE', padding: '4px 0', borderLeft: '1px solid #F1F3F5', paddingLeft: 10 }}>Externe</span>
+                      </div>
+                    </div>
+                    {['Action', 'Statut', 'Conformité'].map((h, hi) => (
+                      <div key={hi} style={{ padding: '8px 16px' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' }}>{h}</span>
+                      </div>
                     ))}
                   </div>
+
                   {rowNames.map((tradeName, idx) => {
                     const tradeRow = tradesFromProject.find((trade) => trade.trade?.toLowerCase() === tradeName.toLowerCase()) || null;
                     const tradePhases = phases.filter((ph) => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
-                    // Heures requises = somme des durées prévues des phases de ce métier (dynamique depuis le Gantt)
                     const tradeHours = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
-                    const tradeDays  = tradeHours / 8;
                     const assignedSub = tradeRow ? subs.find((sub) => sub.id === tradeRow.chosen_subcontractor_id) : null;
                     const status = statusMeta[tradeRow?.status || 'to_find'] || statusMeta.to_find;
                     const suggestedSubs = subs.filter((sub) => {
-                      const haystack = [
-                        sub.name,
-                        sub.company_name,
-                        sub.specialty,
-                        ...(sub.trades || []),
-                      ].filter(Boolean).join(' ').toLowerCase();
-                      const needle = tradeName.toLowerCase();
-                      return haystack.includes(needle);
+                      const haystack = [sub.name, sub.company_name, sub.specialty, ...(sub.trades || [])].filter(Boolean).join(' ').toLowerCase();
+                      return haystack.includes(tradeName.toLowerCase());
                     });
+                    const resources = tradeResourcesMap[tradeName] || { internal: [], external: [] };
+                    const conformite = tradeConformite[tradeName] || { rbq: false, ccq: false, insurance: false };
 
                     const ensureTradeRow = async () => {
                       if (tradeRow) return tradeRow;
-                      const { data } = await projectsApi.addTrade(id, {
-                        trade: tradeName,
-                        status: 'to_find',
-                        chosen_subcontractor_id: null,
-                        estimated_cost: null,
-                      });
+                      const { data } = await projectsApi.addTrade(id, { trade: tradeName, status: 'to_find', chosen_subcontractor_id: null, estimated_cost: null });
                       setProject((p) => ({ ...p, trades: [...(p.trades || []), data] }));
                       return data;
                     };
 
+                    const updateResources = (type, newList) => {
+                      const updated = { ...tradeResourcesMap, [tradeName]: { ...resources, [type]: newList } };
+                      setTradeResourcesMap(updated);
+                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+                    };
+
+                    const updateConformite = (key, val) => {
+                      const updated = { ...tradeConformite, [tradeName]: { ...conformite, [key]: val } };
+                      setTradeConformite(updated);
+                      localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
+                    };
+
+                    const addResource = (type, inputKey) => {
+                      const val = (tradeResInput[inputKey] || '').trim();
+                      if (!val) return;
+                      updateResources(type, [...resources[type], val]);
+                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
+                    };
+
+                    const chipStyle = (color) => ({ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color, background: `${color}15`, borderRadius: 999, padding: '2px 8px', border: `1px solid ${color}30`, flexShrink: 0 });
+
+                    const renderResourceZone = (type, label, icon, color, borderSide) => {
+                      const inputKey = `${tradeName}_${type}`;
+                      return (
+                        <div style={{ flex: 1, padding: '10px 12px', ...(borderSide ? { borderLeft: '1px solid #F4F5F6' } : {}) }}>
+                          <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#B0B4BB', marginBottom: 6 }}>{icon} {label}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                            {resources[type].map((r, i) => (
+                              <span key={i} style={chipStyle(color)}>
+                                {r}
+                                <span onClick={() => updateResources(type, resources[type].filter((_, j) => j !== i))}
+                                  style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, color, opacity: .6, marginLeft: 1 }}>×</span>
+                              </span>
+                            ))}
+                            <input
+                              value={tradeResInput[inputKey] || ''}
+                              onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addResource(type, inputKey); } }}
+                              onBlur={() => addResource(type, inputKey)}
+                              placeholder="+ Ajouter"
+                              style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#9CA3AF', width: 70, minWidth: 0, padding: 0, cursor: 'text' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    };
+
                     return (
-                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1.5fr) minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: '220px 320px 160px 120px 150px', alignItems: 'stretch', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
+
+                        {/* Corps de métier */}
+                        <div style={{ padding: '16px 16px 16px 20px', borderRight: '1px solid #E8EAED', minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
-                            <p style={{ fontSize: 14, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                            <p style={{ fontSize: 13.5, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
                             {tradeHours > 0 && (
-                              <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '2px 8px', flexShrink: 0 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>
                                 {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
                               </span>
                             )}
                           </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
                             {tradePhases.length ? tradePhases.map((phase) => (
                               <span key={phase.id} onClick={() => setEditPhase(phase)}
-                                style={{ fontSize: 10.5, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '3px 8px', cursor: 'pointer' }}>
+                                style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
                                 {phase.name}
                               </span>
                             )) : (
@@ -6049,64 +6104,65 @@ Règles :
                           </div>
                         </div>
 
-                        <div style={{ minWidth: 0 }}>
-                          {assignedSub ? (
-                            <div>
-                              <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{assignedSub.name}</p>
-                              <p style={{ fontSize: 11.5, color: '#8F95A0', margin: '2px 0 0' }}>{assignedSub.company_name || 'Sous-traitant assigné'}</p>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                                {assignedSub.phone && <a href={`tel:${assignedSub.phone}`} style={{ fontSize: 11.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.phone}</a>}
-                                {assignedSub.email && <a href={`mailto:${assignedSub.email}`} style={{ fontSize: 11.5, color: '#2563EB', textDecoration: 'none' }}>{assignedSub.email}</a>}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Aucun sous-traitant assigné</p>
-                              <p style={{ fontSize: 11.5, color: '#A0A6AF', margin: '2px 0 0' }}>Choisis un contact existant ou laisse Flo te suggérer des pistes.</p>
-                            </div>
-                          )}
+                        {/* Personne ressource — split interne / externe */}
+                        <div style={{ display: 'flex', minWidth: 0 }}>
+                          {renderResourceZone('internal', 'Interne', '🏠', '#7C3AED', false)}
+                          {renderResourceZone('external', 'Externe', '🏗️', '#2563EB', true)}
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {/* Action */}
+                        <div style={{ padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
                           <select
                             value={tradeRow?.chosen_subcontractor_id || ''}
                             onChange={async (e) => {
                               const row = await ensureTradeRow();
                               await patchTrade(row.id, { chosen_subcontractor_id: e.target.value || null, status: e.target.value ? 'contacted' : row.status });
                             }}
-                            style={{ width: '100%', fontSize: 12, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '7px 10px', background: '#fff', color: '#3A3D44' }}>
-                            <option value="">Assigner un sous-traitant</option>
+                            style={{ width: '100%', fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '6px 8px', background: '#fff', color: '#3A3D44' }}>
+                            <option value="">Assigner</option>
                             {suggestedSubs.map((sub) => (
                               <option key={sub.id} value={sub.id}>{sub.name}{sub.company_name ? ` — ${sub.company_name}` : ''}</option>
                             ))}
                           </select>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => scrollToSection('s-media')}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #E0E4E8', background: '#fff', fontSize: 11.5, fontWeight: 700, color: '#7C8089', cursor: 'pointer' }}>
-                              Médias
-                            </button>
-                            <button onClick={fetchTradeRecos}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #F3D3C2', background: '#FFF7F3', fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: 'pointer' }}>
-                              Suggestions Flo
-                            </button>
-                          </div>
+                          <button onClick={fetchTradeRecos}
+                            style={{ padding: '5px 8px', borderRadius: 8, border: `1px solid ${BRAND}33`, background: `${BRAND}08`, fontSize: 11, fontWeight: 700, color: BRAND, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <Sparkles size={10}/> Suggestions Flo
+                          </button>
                         </div>
 
-                        <div style={{ justifySelf: 'end' }}>
+                        {/* Statut */}
+                        <div style={{ padding: '14px 12px', display: 'flex', alignItems: 'center' }}>
                           <select
                             value={tradeRow?.status || 'to_find'}
                             onChange={async (e) => {
                               const row = await ensureTradeRow();
                               await patchTrade(row.id, { status: e.target.value });
                             }}
-                            style={{ fontSize: 11.5, fontWeight: 700, padding: '7px 10px', borderRadius: 999, border: `1px solid ${status.color}33`, background: status.bg, color: status.color, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer' }}>
+                            style={{ fontSize: 11, fontWeight: 700, padding: '6px 8px', borderRadius: 999, border: `1px solid ${status.color}33`, background: status.bg, color: status.color, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', width: '100%' }}>
                             {Object.entries(statusMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
                           </select>
                         </div>
+
+                        {/* Conformité */}
+                        <div style={{ padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
+                          {[
+                            { key: 'rbq', label: 'RBQ', color: '#7C3AED' },
+                            { key: 'ccq', label: 'CCQ', color: '#2563EB' },
+                            { key: 'insurance', label: 'Assurance', color: '#059669' },
+                          ].map(({ key, label, color }) => (
+                            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!conformite[key]} onChange={e => updateConformite(key, e.target.checked)}
+                                style={{ accentColor: color, width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
+                              <span style={{ fontSize: 11.5, fontWeight: 700, color: conformite[key] ? color : '#B0B4BB', userSelect: 'none' }}>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+
                       </div>
                     );
                   })}
-                </div>
+                  </div>{/* fin minWidth inner */}
+                </div>{/* fin overflow-x wrapper */}
               </div>
             );
           })()}
