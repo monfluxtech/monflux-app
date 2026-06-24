@@ -639,6 +639,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const firstGanttCellRef = useRef(null);
   const [arrowBox, setArrowBox] = useState({ left: 0, top: 0 }); // measured gantt-area offset within contentRef
   const [predEditId, setPredEditId] = useState(null); // phase id whose predecessor cell is being edited inline
+  const [succEditId, setSuccEditId] = useState(null); // phase id whose successor cell is adding a link inline
 
   // Persist pin/hide column state
   useEffect(() => { try { localStorage.setItem('mf_gantt_pinned', JSON.stringify([...pinnedCols])); } catch {} }, [pinnedCols]);
@@ -1093,6 +1094,47 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     );
   };
 
+  // Inline successor editor — successors are phases whose predecessor IS ph.
+  // Editing a successor = setting/clearing deps[successorId].pred.
+  const renderSuccCell = (ph, wrapStyle) => {
+    const succEntries = Object.entries(deps).filter(([sid, dv]) => String(typeof dv==='object'?dv.pred:dv) === String(ph.id));
+    const succIds = succEntries.map(([sid]) => sid);
+    // candidates = phases that are not ph, not already a successor, and won't create a self-loop
+    const candidates = phases.filter(p => String(p.id)!==String(ph.id) && !succIds.includes(String(p.id)));
+    const selStyle = { fontSize:10.5, border:`1.5px solid ${BRAND}`, borderRadius:5, padding:'2px 3px', outline:'none', background:'#fff', fontFamily:'inherit', cursor:'pointer' };
+
+    return (
+      <div style={{ ...wrapStyle, gap:4, flexWrap:'wrap' }} onClick={e => e.stopPropagation()}>
+        {succEntries.map(([sid, dv]) => {
+          const sph = phases.find(p => String(p.id) === sid); if (!sph) return null;
+          const t = typeof dv==='object' ? (dv.type||'FS') : 'FS';
+          return (
+            <span key={sid} style={{ display:'inline-flex', alignItems:'center', gap:3, background:'#F8F9FA', borderRadius:4, padding:'1px 2px 1px 4px', maxWidth:'100%', overflow:'hidden' }}>
+              <span style={{ fontSize:9, fontWeight:800, padding:'1px 4px', borderRadius:4, background: DEP_TYPE_COLOR[t]+'22', color: DEP_TYPE_COLOR[t], flexShrink:0 }}>{t}</span>
+              <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sph.name}</span>
+              <button onClick={() => deleteDep(sid)} title="Retirer ce lien"
+                style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color:'#C0563D', fontSize:11, lineHeight:1, padding:'0 1px' }}>✕</button>
+            </span>
+          );
+        })}
+        {succEditId === ph.id ? (
+          <select autoFocus value=""
+            onChange={e => { const v=e.target.value; if (v) saveDep(v, { pred:String(ph.id), type:'FS', ...ptsForType('FS') }); setSuccEditId(null); }}
+            onBlur={() => setTimeout(()=>setSuccEditId(null), 150)}
+            style={{ ...selStyle, maxWidth:'100%' }}>
+            <option value="">— Choisir —</option>
+            {candidates.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+          </select>
+        ) : (
+          <button onClick={() => setSuccEditId(ph.id)} title="Ajouter un successeur"
+            style={{ display:'inline-flex', alignItems:'center', gap:2, background:'transparent', border:'none', cursor:'pointer', padding:0, color:'#C9CDD3', fontSize:10.5, fontWeight:600 }}>
+            <span style={{ fontSize:13, lineHeight:1, color:BRAND, opacity:.5 }}>+</span>{succEntries.length===0 && ' Ajouter'}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (!depDrag) return;
     const move = (e) => {
@@ -1386,8 +1428,23 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       } : undefined}>
       {/* ── Toolbar — 2 rangées fixes ── */}
       <div data-gantt-no-print style={{ borderBottom:'1px solid #F4F5F6' }}>
-        {/* Rangée 1 : pin | séparateur — — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
-        <div style={{ display:'flex', alignItems:'center', padding:'8px 16px', gap:5 }}>
+        {/* Rangée 1 : vues temporelles (Mois / Sem. / Jour / AM-PM / Heure) + PDF — alignée à droite */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'8px 16px 0 16px', gap:5 }}>
+          <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
+            {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
+              <button key={s} onClick={() => setScale(s)}
+                style={{ padding:'4px 9px', borderRadius:3, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
+                  background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
+                  boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
+            ))}
+          </div>
+          <button onClick={exportPdf} title="Exporter PDF"
+            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
+            <Download size={10}/> PDF
+          </button>
+        </div>
+        {/* Rangée 2 : pin | séparateur — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
+        <div style={{ display:'flex', alignItems:'center', padding:'6px 16px 8px 16px', gap:5 }}>
           <button
             onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned','dep_pred','dep_succ']))}
             title={hiddenCols.size > 0 ? 'Ramener les colonnes à gauche' : 'Déplacer les colonnes optionnelles à droite'}
@@ -1416,21 +1473,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           <button onClick={scrollToToday}
             style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
             Aujourd'hui
-          </button>
-        </div>
-        {/* Rangée 2 : vues temporelles + PDF — alignée avec la zone Gantt (pas avec les cols droites) */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:`0 ${16 + rightColsW}px 8px 16px`, gap:5 }}>
-          <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
-            {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
-              <button key={s} onClick={() => setScale(s)}
-                style={{ padding:'4px 9px', borderRadius:3, border:'none', fontSize:11, fontWeight:700, cursor:'pointer',
-                  background: scale===s ? '#fff' : 'transparent', color: scale===s ? '#15171C' : '#9CA3AF',
-                  boxShadow: scale===s ? '0 1px 2px rgba(0,0,0,.08)' : 'none', transition:'all .12s' }}>{lbl}</button>
-            ))}
-          </div>
-          <button onClick={exportPdf} title="Exporter PDF"
-            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
-            <Download size={10}/> PDF
           </button>
         </div>
       </div>
@@ -1674,17 +1716,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
             // coords are relative to the timeline start (NOT the full content div)
             // dot radius and offsets match the actual connection point positions
-            const _R = 7; // DOT/2
+            // Anchor on the actual bar EDGES (not dot centers) so arrows touch the bar cleanly
             const getAnchor = (bar, pt, idx) => {
-              const lx = bar.left - _R - 2;                           // left dot center
-              const rx = bar.left + Math.max(bar.width, 14 + 8) + 2; // right dot center
-              const mx = bar.left + bar.width / 2;                    // mid dots center
+              const mx = bar.left + bar.width / 2;
               switch(pt) {
-                case 'left':       return { x: lx, y: idx * rowH + barCY };
-                case 'right':      return { x: rx, y: idx * rowH + barCY };
+                case 'left':       return { x: bar.left,             y: idx * rowH + barCY };
+                case 'right':      return { x: bar.left + bar.width, y: idx * rowH + barCY };
                 case 'mid-top':    return { x: mx, y: idx * rowH + barTY };
                 case 'mid-bottom': return { x: mx, y: idx * rowH + barBY };
-                default:           return { x: rx, y: idx * rowH + barCY };
+                default:           return { x: bar.left + bar.width, y: idx * rowH + barCY };
               }
             };
 
@@ -1898,18 +1938,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     );
                   }
                   if (cd.key === 'dep_succ') {
-                    const DC={FS:'#E8794E',SS:'#10B981',FF:'#F59E0B',SF:'#8B5CF6',PAR:'#6366F1'};
-                    const succs=Object.entries(deps).filter(([sid,dv])=>String((typeof dv==='object'?dv.pred:dv))===String(ph.id));
                     return (
                       <div key="dep_succ" data-opt-col="dep_succ" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_succ'],'dep_succ') }}>
-                        {succs.length>0 ? succs.map(([sid,dv])=>{
-                          const sph=phases.find(p=>String(p.id)===sid); if(!sph)return null;
-                          const t=typeof dv==='object'?(dv.type||'FS'):'FS';
-                          return <button key={sid} onClick={()=>setShowArrows(true)} style={{display:'flex',alignItems:'center',gap:3,background:'transparent',border:'none',cursor:'pointer',padding:0,maxWidth:'100%',overflow:'hidden'}}>
-                            <span style={{fontSize:9,fontWeight:800,padding:'2px 4px',borderRadius:4,background:DC[t]+'22',color:DC[t],flexShrink:0}}>{t}</span>
-                            <span style={{fontSize:10.5,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sph.name}</span>
-                          </button>;
-                        }) : <span style={{color:'#D1D5DB',fontSize:10}}>—</span>}
+                        {renderSuccCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
                   }
@@ -1975,22 +2006,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   }
                   // Colonne Successeur — phases qui dépendent de cette phase
                   if (cd.key === 'dep_succ') {
-                    const DEP_TYPE_COLOR = { FS:'#E8794E', SS:'#10B981', FF:'#F59E0B', SF:'#8B5CF6', PAR:'#6366F1' };
-                    const succs = Object.entries(deps).filter(([sid, dv]) => String((typeof dv==='object'?dv.pred:dv)) === String(ph.id));
                     return (
-                      <div key={`rc-dep_succ-${ph.id}`} style={{ ...rcBase, padding:'0 6px', gap:3, flexWrap:'wrap' }}>
-                        {succs.length > 0 ? succs.map(([sid, dv]) => {
-                          const succPh = phases.find(p => String(p.id) === sid);
-                          if (!succPh) return null;
-                          const t = typeof dv==='object' ? (dv.type||'FS') : 'FS';
-                          return (
-                            <button key={sid} onClick={() => setShowArrows(true)}
-                              style={{ display:'flex', alignItems:'center', gap:3, background:'transparent', border:'none', cursor:'pointer', padding:0, maxWidth:'100%', overflow:'hidden' }}>
-                              <span style={{ fontSize:9, fontWeight:800, padding:'2px 4px', borderRadius:4, background: DEP_TYPE_COLOR[t]+'22', color: DEP_TYPE_COLOR[t], flexShrink:0 }}>{t}</span>
-                              <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{succPh.name}</span>
-                            </button>
-                          );
-                        }) : <span style={{ color:'#D1D5DB', fontSize:10 }}>—</span>}
+                      <div key={`rc-dep_succ-${ph.id}`} style={{ ...rcBase, padding:'0 6px', gap:3 }}>
+                        {renderSuccCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
                   }
