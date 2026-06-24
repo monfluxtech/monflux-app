@@ -511,10 +511,10 @@ function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
   );
 }
 
-const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
-const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
+const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF', waiting_supplier:'#A78BFA' };
+const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF', waiting_supplier:'#8B5CF6' };
 const PUNCH_COLOR    = '#60A5FA'; // bleu — distingue le réel (punch) du prévu (statut)
-const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
+const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente client', waiting_supplier:'En attente fournisseur' };
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
 
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
@@ -975,15 +975,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     {label}
                   </div>
                 ))}
-              </div>
-              {/* Réel punch */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#6B7280' }}>
-                <span style={{ fontSize:9, color:'#9CA3AF', fontWeight:700, fontStyle:'italic' }}>Réel&nbsp;→</span>
-                <div style={{ width:28, height:8, borderRadius:3, flexShrink:0, overflow:'hidden', display:'flex' }}>
-                  <div style={{ flex:'0 0 60%', background:BRAND, opacity:.85 }}/>
-                  <div style={{ flex:'0 0 40%', background:PUNCH_COLOR, opacity:.85 }}/>
-                </div>
-                Overlay punch (% complété)
               </div>
             </div>
           </div>
