@@ -404,6 +404,18 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_count INTEGER DEFAULT 1`);
   await run('projects: flo_recommendations',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS flo_recommendations JSONB DEFAULT '[]'::jsonb`);
+
+  // ── Phase dependencies — persist Gantt dep links (2026-06-24) ─────────────
+  await run('project_phases: depends_on_phase_id',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS depends_on_phase_id UUID REFERENCES project_phases(id) ON DELETE SET NULL`);
+  await run('project_phases: dep_type',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS dep_type VARCHAR(10) DEFAULT 'FS'`);
+  await run('project_phases: dep_from_pt',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS dep_from_pt VARCHAR(15) DEFAULT 'right'`);
+  await run('project_phases: dep_to_pt',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS dep_to_pt VARCHAR(15) DEFAULT 'left'`);
+  await run('project_phases: dep_idx dep',
+    `CREATE INDEX IF NOT EXISTS project_phases_depends_on_idx ON project_phases(depends_on_phase_id) WHERE depends_on_phase_id IS NOT NULL`);
 }
 
 export async function initializeDatabase() {

@@ -535,8 +535,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
-  const [pinnedCols, setPinnedCols]         = useState(new Set(['phase','start','dur_prev','dur_real','assigned']));
-  const [hiddenCols, setHiddenCols]         = useState(new Set()); // keys: 'start','dur_prev','dur_real','assigned'
+  const [pinnedCols, setPinnedCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_pinned'); return s ? new Set(JSON.parse(s)) : new Set(['phase','start','dur_prev','dur_real','assigned']); } catch { return new Set(['phase','start','dur_prev','dur_real','assigned']); } });
+  const [hiddenCols, setHiddenCols]         = useState(() => { try { const s=localStorage.getItem('mf_gantt_hidden'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); } });
   const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
   const [filters, setFilters]               = useState({ name:'', start_date:'', assigned:'', phaseStatus: new Set(), assigneeStatus: new Set() });
@@ -552,16 +552,38 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [bulkPanel, setBulkPanel]           = useState(null); // null | 'status' | 'start' | 'duration' | 'assign' | 'dep'
   const [bulkForm, setBulkForm]             = useState({});
   const [statusPicker, setStatusPicker]     = useState(null); // { phId, x, y }
-  const [deps, setDeps]                     = useState({}); // { succPhId: predPhId }
+  const [deps, setDeps]                     = useState({}); // { succPhId: { pred, type, fromPt, toPt } }
   const [depFirst, setDepFirst]             = useState(null);
   const [depConnectMode, setDepConnectMode] = useState(false);
   const [depDrag, setDepDrag]               = useState(null); // { fromPhId, fromIdx, fromPt, curX, curY, startX, startY }
+  const [hoveredDepKey, setHoveredDepKey]   = useState(null); // 'predId-succId'
+  const [ptTooltip, setPtTooltip]           = useState(null); // { pt, x, y }
   const depDragRef                          = useRef(null);
   const dateDragRef = useRef(null);
   const scrollRef   = useRef(null);
   const ganttElRef  = useRef(null);
   const todayPxRef  = useRef(0);
   const longPressRef = useRef(null);
+
+  // Persist pin/hide column state
+  useEffect(() => { try { localStorage.setItem('mf_gantt_pinned', JSON.stringify([...pinnedCols])); } catch {} }, [pinnedCols]);
+  useEffect(() => { try { localStorage.setItem('mf_gantt_hidden', JSON.stringify([...hiddenCols])); } catch {} }, [hiddenCols]);
+
+  // Sync deps from phases (DB → local state on each phases reload)
+  useEffect(() => {
+    const loaded = {};
+    for (const ph of phases) {
+      if (ph.depends_on_phase_id) {
+        loaded[String(ph.id)] = {
+          pred: String(ph.depends_on_phase_id),
+          type: ph.dep_type || 'FS',
+          fromPt: ph.dep_from_pt || 'right',
+          toPt: ph.dep_to_pt || 'left',
+        };
+      }
+    }
+    setDeps(loaded);
+  }, [phases]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Centrer sur aujourd'hui au chargement et à chaque changement de vue
   // (fixedColW hardcodé car LABEL_W/DATE_W etc. sont définis après le return null)
@@ -898,6 +920,34 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     return 'FS';
   };
 
+  const saveDep = (toId, depVal) => {
+    setDeps(d => ({ ...d, [toId]: depVal }));
+    onUpdatePhase?.(toId, {
+      depends_on_phase_id: depVal.pred || null,
+      dep_type: depVal.type || 'FS',
+      dep_from_pt: depVal.fromPt || 'right',
+      dep_to_pt: depVal.toPt || 'left',
+    });
+    // Cascade FS: move succ start to pred end if succ starts before pred ends
+    if ((depVal.type === 'FS' || !depVal.type) && cascade) {
+      const pred = phases.find(p => String(p.id) === String(depVal.pred));
+      const succ = phases.find(p => String(p.id) === String(toId));
+      if (pred?.start_date && pred.duration_hours && succ) {
+        const predEndMs = new Date(pred.start_date.slice(0,10)+'T'+(pred.start_time||'08:00')).getTime() + pred.duration_hours * 3600000;
+        const succStartMs = succ.start_date ? new Date(succ.start_date.slice(0,10)+'T'+(succ.start_time||'08:00')).getTime() : 0;
+        if (succStartMs < predEndMs) {
+          const newDate = new Date(predEndMs).toISOString().slice(0,10);
+          onUpdatePhase?.(toId, { start_date: newDate });
+        }
+      }
+    }
+  };
+
+  const deleteDep = (toId) => {
+    setDeps(d => { const n = {...d}; delete n[toId]; return n; });
+    onUpdatePhase?.(toId, { depends_on_phase_id: null, dep_type: null, dep_from_pt: null, dep_to_pt: null });
+  };
+
   useEffect(() => {
     if (!depDrag) return;
     const move = (e) => {
@@ -911,22 +961,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const fromId = String(depDragRef.current.fromPhId);
         const fromPt = depDragRef.current.fromPt || 'right';
-        // Check if dropped directly on a connection point
         const ptEl = el?.closest('[data-dep-pt]');
         if (ptEl) {
           const toId = ptEl.getAttribute('data-phase-id');
           const toPt = ptEl.getAttribute('data-dep-pt');
           if (toId && toId !== fromId) {
             const type = getDepType(fromPt, toPt);
-            setDeps(d => ({ ...d, [toId]: { pred: fromId, type, fromPt, toPt } }));
+            saveDep(toId, { pred: fromId, type, fromPt, toPt });
           }
         } else {
-          // fallback: dropped on a phase row → default FS
-          const rowEl = el?.closest('[data-phase-id]');
-          const toId = rowEl?.getAttribute('data-phase-id');
-          if (toId && toId !== fromId) {
-            setDeps(d => ({ ...d, [toId]: { pred: fromId, type: 'FS', fromPt: 'right', toPt: 'left' } }));
-          }
+          // Dropped somewhere other than a connection point → exit dep mode
+          const ptContainer = el?.closest('[data-dep-pt]');
+          if (!ptContainer) setShowArrows(false);
         }
       }
       setDepDrag(null);
@@ -1163,7 +1209,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const criticalIds = showCritical ? computeCriticalPath() : new Set();
 
   return (
-    <div data-gantt-print style={{ background:'#fff' }}>
+    <div data-gantt-print style={{ background:'#fff' }}
+      onClick={showArrows && !depDrag ? (e) => {
+        // Exit dep mode if clicking anywhere that's not a connection point or the dep SVG
+        if (!e.target.closest('[data-dep-pt]') && !e.target.closest('[data-gantt-no-print]')) {
+          setShowArrows(false); setPtTooltip(null);
+        }
+      } : undefined}>
       {/* ── Toolbar — 2 rangées fixes ── */}
       <div data-gantt-no-print style={{ borderBottom:'1px solid #F4F5F6' }}>
         {/* Rangée 1 : pin | séparateur — — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
@@ -1507,11 +1559,26 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   const midX  = (a1.x + a2.x) / 2;
                   const midY  = (a1.y + a2.y) / 2;
 
+                  const depKey = `${predId}-${succId}`;
+                  const isHov = hoveredDepKey === depKey;
                   return (
-                    <g key={`dep-${predId}-${succId}`}>
-                      <path d={pathD} fill="none" stroke={col} strokeWidth={1.5} strokeDasharray={dash} opacity={0.7}/>
-                      <polygon points={makeArrow(a2.x, a2.y, toPt)} fill={col} opacity={0.8}/>
+                    <g key={`dep-${depKey}`}
+                      onMouseEnter={() => setHoveredDepKey(depKey)}
+                      onMouseLeave={() => setHoveredDepKey(null)}
+                      style={{ cursor:'pointer', pointerEvents:'visiblePainted' }}>
+                      {/* Invisible fat hit area */}
+                      <path d={pathD} fill="none" stroke="transparent" strokeWidth={12}/>
+                      <path d={pathD} fill="none" stroke={col} strokeWidth={isHov ? 2.5 : 1.5} strokeDasharray={dash} opacity={isHov ? 1 : 0.7}/>
+                      <polygon points={makeArrow(a2.x, a2.y, toPt)} fill={col} opacity={isHov ? 1 : 0.8}/>
                       <text x={midX} y={midY-4} textAnchor="middle" fill={col} fontSize={8} fontWeight={800} opacity={0.85}>{depType}</text>
+                      {/* Scissors delete button on hover */}
+                      {isHov && (
+                        <g onClick={() => deleteDep(succId)} style={{ cursor:'pointer' }}
+                          transform={`translate(${midX - 10}, ${midY - 16})`}>
+                          <rect x={0} y={0} width={20} height={14} rx={4} fill={col} opacity={0.95}/>
+                          <text x={10} y={11} textAnchor="middle" fontSize={11} fill="#fff">✂</text>
+                        </g>
+                      )}
                     </g>
                   );
                 })}
@@ -1707,8 +1774,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     onPointerMove={ev => { cancelLongPress(); if (isBarDrag_) handleBarMove(ev); }}
                     onPointerUp={ev => { cancelLongPress(); handleBarUp(ev, ph); }}
                     onPointerCancel={() => { cancelLongPress(); setBarDrag(null); }}
-                    onMouseEnter={ev => { if (!barDrag && !resize) setTooltip({ ph, trade: matchedTrade, x: ev.clientX, y: ev.clientY }); }}
-                    onMouseMove={ev => { if (tooltip && !barDrag && !resize) setTooltip(t => t ? { ...t, x: ev.clientX, y: ev.clientY } : null); }}
+                    onMouseEnter={ev => { if (!barDrag && !resize && !showArrows) setTooltip({ ph, trade: matchedTrade, x: ev.clientX, y: ev.clientY }); }}
+                    onMouseMove={ev => { if (tooltip && !barDrag && !resize && !showArrows) setTooltip(t => t ? { ...t, x: ev.clientX, y: ev.clientY } : null); }}
                     onMouseLeave={() => setTooltip(null)}
                     style={{
                       position:'absolute', top:5, bottom:5,
@@ -1769,11 +1836,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   </div>
                   {/* ── Points de connexion dépendance (mode Dépendance uniquement) ── */}
                   {showArrows && width > 0 && (() => {
-                    const ptStyle = (extraStyle) => ({
-                      position:'absolute', width:12, height:12, borderRadius:'50%',
-                      border:'2px solid #fff', cursor:'crosshair', zIndex:10,
-                      boxShadow:'0 1px 5px rgba(0,0,0,.3)', pointerEvents:'all',
-                      ...extraStyle,
+                    const DOT = 12; // diameter
+                    const ptStyle = (bg, l, t) => ({
+                      position:'absolute', width:DOT, height:DOT, borderRadius:'50%',
+                      border:'2.5px solid #fff', cursor:'crosshair', zIndex:12,
+                      boxShadow:'0 1px 6px rgba(0,0,0,.35)', pointerEvents:'all',
+                      background: bg, left: l, top: t,
+                      transition:'transform .1s',
                     });
                     const startDrag = (e, pt) => {
                       e.stopPropagation(); e.preventDefault();
@@ -1782,28 +1851,40 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       const state = { fromPhId: ph.id, fromIdx: i, fromPt: pt, curX: cx, curY: cy, startX: cx, startY: cy };
                       depDragRef.current = state; setDepDrag(state);
                     };
+                    const PT_LABELS = {
+                      left:       'Début\nFin→Début (FS) si relié à la droite\nDébut→Début (SS) si relié à gauche',
+                      right:      'Fin\nFin→Début (FS) si relié à gauche\nFin→Fin (FF) si relié à droite',
+                      'mid-top':  'Parallèle (haut)\nLes deux tâches s\'exécutent simultanément',
+                      'mid-bottom':'Parallèle (bas)\nLes deux tâches s\'exécutent simultanément',
+                    };
+                    // Positions: left/right dots at bar edge midpoints (slightly outside), mid dots centered on bar top/bottom
+                    const barCy = 13; // top of 12px dot centered at y=19 (bar center)
                     return (
                       <>
                         {/* Début — gauche (bleu) */}
                         <div data-dep-pt="left" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'left')}
-                          title="Début — relier depuis le début de cette phase"
-                          style={ptStyle({ left: Math.max(0, left - 6), top: 13, background:'#3B82F6' })}/>
+                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.left, x: ev.clientX, y: ev.clientY })}
+                          onMouseLeave={() => setPtTooltip(null)}
+                          style={ptStyle('#3B82F6', Math.max(-6, left - DOT/2), barCy)}/>
                         {/* Fin — droite (orange) */}
                         <div data-dep-pt="right" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'right')}
-                          title="Fin — relier depuis la fin de cette phase"
-                          style={ptStyle({ left: left + width - 6, top: 13, background:'#E8794E' })}/>
+                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS.right, x: ev.clientX, y: ev.clientY })}
+                          onMouseLeave={() => setPtTooltip(null)}
+                          style={ptStyle('#E8794E', left + width - DOT/2, barCy)}/>
                         {/* Parallèle haut (vert) */}
                         <div data-dep-pt="mid-top" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-top')}
-                          title="Parallèle — tâches simultanées"
-                          style={ptStyle({ left: left + width / 2 - 6, top: -1, background:'#10B981' })}/>
+                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-top'], x: ev.clientX, y: ev.clientY })}
+                          onMouseLeave={() => setPtTooltip(null)}
+                          style={ptStyle('#10B981', left + width/2 - DOT/2, -DOT/2)}/>
                         {/* Parallèle bas (vert) */}
                         <div data-dep-pt="mid-bottom" data-phase-id={ph.id}
                           onPointerDown={e => startDrag(e, 'mid-bottom')}
-                          title="Parallèle — tâches simultanées"
-                          style={ptStyle({ left: left + width / 2 - 6, top: 27, background:'#10B981' })}/>
+                          onMouseEnter={ev => setPtTooltip({ pt: PT_LABELS['mid-bottom'], x: ev.clientX, y: ev.clientY })}
+                          onMouseLeave={() => setPtTooltip(null)}
+                          style={ptStyle('#10B981', left + width/2 - DOT/2, 38 - DOT/2)}/>
                       </>
                     );
                   })()}
@@ -2175,11 +2256,27 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       {depDrag && (
         <div style={{ position:'fixed', inset:0, zIndex:9999, pointerEvents:'none' }}>
           <svg width="100%" height="100%">
+            <defs>
+              <marker id="dep-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#3B82F6"/>
+              </marker>
+            </defs>
             <line x1={depDrag.startX} y1={depDrag.startY} x2={depDrag.curX} y2={depDrag.curY}
-              stroke="#3B82F6" strokeWidth={2} strokeDasharray="6 4" strokeLinecap="round"/>
-            <circle cx={depDrag.startX} cy={depDrag.startY} r={4} fill="#3B82F6" opacity={0.7}/>
-            <circle cx={depDrag.curX} cy={depDrag.curY} r={5} fill="#3B82F6" opacity={0.9}/>
+              stroke="#3B82F6" strokeWidth={2} strokeDasharray="6 4" strokeLinecap="round"
+              markerEnd="url(#dep-arrow)"/>
+            <circle cx={depDrag.startX} cy={depDrag.startY} r={5} fill="#3B82F6" opacity={0.8}/>
           </svg>
+        </div>
+      )}
+
+      {/* ── Tooltip point de connexion ── */}
+      {ptTooltip && (
+        <div style={{ position:'fixed', zIndex:10000, pointerEvents:'none',
+          left: ptTooltip.x + 12, top: ptTooltip.y - 10,
+          background:'#15171C', color:'#fff', borderRadius:8, padding:'8px 10px',
+          fontSize:11, fontWeight:600, lineHeight:1.6, maxWidth:220,
+          boxShadow:'0 4px 16px rgba(0,0,0,.3)', whiteSpace:'pre-line' }}>
+          {ptTooltip.pt}
         </div>
       )}
     </div>

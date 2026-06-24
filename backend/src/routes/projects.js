@@ -62,7 +62,8 @@ router.get('/:id', async (req, res) => {
 
     const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }, { rows: cfgRows }] = await Promise.all([
       query(`SELECT pp.*,
-        COALESCE((SELECT SUM(ts.hours_total) FROM timesheets ts WHERE ts.project_id = $1 AND ts.phase_name = pp.name), 0) AS logged_hours
+        COALESCE((SELECT SUM(ts.hours_total) FROM timesheets ts WHERE ts.project_id = $1 AND ts.phase_name = pp.name), 0) AS logged_hours,
+        pp.depends_on_phase_id, pp.dep_type, pp.dep_from_pt, pp.dep_to_pt
         FROM project_phases pp WHERE pp.project_id = $1 ORDER BY pp.display_order`, [req.params.id]),
       query(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
       query(
@@ -290,7 +291,7 @@ router.post('/:id/phases', async (req, res) => {
 
 // PATCH /api/projects/:id/phases/:phaseId
 router.patch('/:id/phases/:phaseId', async (req, res) => {
-  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order','trade_name','start_time','duration_hours','assigned_to_name','recurrence_type','recurrence_count'];
+  const allowed = ['name','status','color','start_date','end_date','actual_start','actual_end','progress_pct','display_order','trade_name','start_time','duration_hours','assigned_to_name','recurrence_type','recurrence_count','depends_on_phase_id','dep_type','dep_from_pt','dep_to_pt'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
