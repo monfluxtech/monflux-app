@@ -889,7 +889,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   // ── Dep drag-to-connect ──
   // Écouter pointermove/pointerup sur document pendant un drag dep
-  React.useEffect(() => {
+  useEffect(() => {
     if (!depDrag) return;
     const move = (e) => {
       depDragRef.current = depDragRef.current
