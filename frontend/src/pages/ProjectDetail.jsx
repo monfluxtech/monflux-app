@@ -1063,21 +1063,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     <div data-gantt-print style={{ background:'#fff' }}>
       {/* ── Toolbar ── */}
       <div data-gantt-no-print style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        {/* Pin tout / dépin tout */}
-        <button onClick={() => setPinnedCols(prev => prev.size === 0 ? new Set(['phase','start','dur_prev','dur_real','assigned']) : new Set())}
-          title={pinnedCols.size > 0 ? 'Désépingler toutes les colonnes' : 'Épingler toutes les colonnes'}
+        {/* Restaurer colonnes masquées / pin global */}
+        <button
+          onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned']))}
+          title={hiddenCols.size > 0 ? 'Afficher toutes les colonnes' : 'Masquer les colonnes optionnelles'}
           style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
-            border:`1.5px solid ${pinnedCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
-            background: pinnedCols.size > 0 ? BRAND_SOFT : '#fff',
-            color: pinnedCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
+            border:`1.5px solid ${hiddenCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
+            background: hiddenCols.size > 0 ? BRAND_SOFT : '#fff',
+            color: hiddenCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
           <Pin size={13}/>
         </button>
-        {hiddenCols.size > 0 && (
-          <button onClick={() => setHiddenCols(new Set())} title="Restaurer les colonnes masquées"
-            style={{ fontSize:10, fontWeight:700, color:BRAND, background:BRAND_SOFT, border:`1px solid ${BRAND_BORDER}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>
-            +{hiddenCols.size} col.
-          </button>
-        )}
         <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
         <span style={{ flex:1 }}/>
         {[
@@ -1239,7 +1234,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       </div>
 
       {/* ── Gantt scrollable ── */}
-      <div ref={scrollRef} style={{ overflowX:'auto' }}>
+      <div ref={scrollRef} style={{ overflowX:'auto', width:'100%', maxWidth:'100%' }}>
         <div style={{ minWidth: totalMinW, position:'relative' }}>
 
           {/* Header */}
@@ -1262,25 +1257,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             {visibleOptCols.map(cd => {
               const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
               const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
-              const isPinned = pinned(cd.key);
               return (
-                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && isPinned ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
+                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
                   <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
                     {cd.label}
                     {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
                   </span>
-                  <div style={{ display:'flex', alignItems:'center', gap:2, flexShrink:0 }}>
-                    {/* Pin = toggle sticky */}
-                    <button onClick={() => togglePin(cd.key)} title={isPinned ? `Désépingler ${cd.label}` : `Épingler ${cd.label}`}
-                      style={{ background:'transparent', border:'none', cursor:'pointer', color: isPinned ? BRAND : '#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1 }}>
-                      <Pin size={8}/>
-                    </button>
-                    {/* × = masquer la colonne */}
-                    <button onClick={() => setHiddenCols(prev => new Set([...prev, cd.key]))} title={`Masquer ${cd.label}`}
-                      style={{ background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, fontSize:9 }}>
-                      ×
-                    </button>
-                  </div>
+                  <button onClick={() => toggleColPin(cd.key)} title={`Masquer ${cd.label}`}
+                    style={{ background:'transparent', border:'none', cursor:'pointer', color: BRAND, padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, flexShrink:0 }}>
+                    <Pin size={8}/>
+                  </button>
                   {/* Poignée de redimensionnement */}
                   <div onMouseDown={e => startColResize(cd.key, cd.w, e)}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', background:'transparent', zIndex:10 }}/>

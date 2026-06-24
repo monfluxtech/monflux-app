@@ -431,13 +431,23 @@ JOURS FÉRIÉS QUÉBEC 2026 À ÉVITER (ne jamais débuter ni terminer un chanti
 - 12 octobre (Action de Grâce), 25 décembre (Noël), 26 décembre (Lendemain de Noël)
 - Aussi: congé de construction 3e semaine de juillet (20–26 juil. 2026 typiquement)
 
-RÈGLES:
+CODE DU BÂTIMENT ET RÉGLEMENTATION QUÉBEC (à respecter dans la planification):
+- Code de construction du Québec (CCQ), basé sur le Code national du bâtiment Canada 2015 (CNB 2015) avec amendements QC
+- Code de sécurité (bâtiments existants) — applicable pour rénovations
+- Permis de construction obligatoire pour travaux structuraux, agrandissements, modification d'usage (délai d'approbation municipal : prévoir 10–30 jours ouvrables AVANT début chantier)
+- RBQ (Régie du bâtiment du Québec) : licence entrepreneur obligatoire avant tout début de travaux
+- CCQ (Commission de la construction du Québec) : compétences certifiées obligatoires selon les métiers (électricien, plombier, ferblantier, etc.)
+- Inspection obligatoire pour : fondations, charpente, isolation/pare-air (avant fermeture des murs), électricité (avant gypse), plomberie rough-in
+- IMPORTANT : ne donne pas de conseil juridique précis — signale les exigences réglementaires comme points d'attention dans les recommendations.
+
+RÈGLES DE PLANIFICATION:
 1. Journée ouvrée = 8h, semaine = 5 jours ouvrés (lun–ven). Jamais le week-end ni les jours fériés.
 2. duration_hours = durée RÉALISTE pour le type de travaux (pas juste copier l'existant).
-3. L'ordre logique est crucial : démolition → structure → plomberie rough-in → électricité rough-in → isolation → gypse → peinture → finition. Respecter les dépendances métier.
+3. L'ordre logique est crucial : démolition → structure → plomberie rough-in → électricité rough-in → isolation → inspection → gypse → peinture → finition. Respecter les dépendances métier.
 4. Si l'ordre actuel n'est pas logique, propose un better_order (1-based, nouvelle position).
-5. Laisse 1–2 jours de tampon entre phases critiques pour imprévus.
+5. Laisse 1–2 jours de tampon entre phases critiques pour imprévus et inspections.
 6. depends_on_index = indice (1-based) de la phase précédente directe (null si première).
+7. Si des travaux réglementés semblent absents du planning (ex: inspection manquante, permis non planifié), note-le dans les recommendations.
 
 Réponds UNIQUEMENT en JSON valide (pas de texte autour):
 {
