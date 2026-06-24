@@ -1839,7 +1839,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
               )}
               {/* Info chemin critique */}
-              {isCritical && !tph._recLabel && (
+              {criticalIds.has(tph.id) && !tph._recLabel && (
                 <div style={{ marginTop:6, fontSize:10, color:'#EF4444', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
                   <span style={{ width:6, height:6, borderRadius:'50%', background:'#EF4444', flexShrink:0 }}/>
                   Chemin critique — aucune marge possible
@@ -2319,6 +2319,7 @@ export default function ProjectDetail() {
       setProjectContracts(contractList || []);
       setMaterialOrders(orderList || []);
       setMedia(mediaList || []);
+      if (proj.flo_recommendations?.length) setAiRecommendations(proj.flo_recommendations);
       // pré-charge les impacts d'avenants déjà calculés
       const impacts = {};
       (cos || []).forEach(co => { if (co.ai_impact) impacts[co.id] = co.ai_impact; });
@@ -2984,7 +2985,10 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
       });
       const adj = data?.adjustments || [];
       const recs = data?.recommendations || [];
-      if (recs.length) setAiRecommendations(recs);
+      if (recs.length) {
+        setAiRecommendations(recs);
+        projectsApi.update(id, { flo_recommendations: recs }).catch(() => {});
+      }
       if (!adj.length) { setAiNotice('Flo n\'a pas pu ajuster les phases — réessaie.'); return; }
       // Appliquer en respectant le better_order si fourni
       const orderedPhases = [...currentPhases].sort((a,b) => (a.display_order||0)-(b.display_order||0));

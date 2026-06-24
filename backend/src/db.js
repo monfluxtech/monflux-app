@@ -402,6 +402,8 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_type VARCHAR(20)`);
   await run('project_phases: recurrence_count',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_count INTEGER DEFAULT 1`);
+  await run('projects: flo_recommendations',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS flo_recommendations JSONB DEFAULT '[]'::jsonb`);
 }
 
 export async function initializeDatabase() {

@@ -177,9 +177,10 @@ router.patch('/:id', async (req, res) => {
     'start_date','end_date','contract_value','budget_materials','budget_labor','progress_pct','notes',
     // Batch 3 — en-tête riche + estimation terrain
     'payment_terms','project_manager','approvers','materials_buyer','permits_responsible',
-    'permits_required','machines','field_assessment','estimated_price'];
+    'permits_required','machines','field_assessment','estimated_price',
+    'flo_recommendations'];
   // JSONB arrays/objects : stringifier (node-pg encoderait un Array en array PG).
-  const JSONB_FIELDS = ['approvers','machines','field_assessment'];
+  const JSONB_FIELDS = ['approvers','machines','field_assessment','flo_recommendations'];
   const updates = Object.fromEntries(
     Object.entries(req.body)
       .filter(([k]) => allowed.includes(k))
