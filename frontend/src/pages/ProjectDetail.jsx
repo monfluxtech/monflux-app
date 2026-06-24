@@ -1194,7 +1194,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     const raf = requestAnimationFrame(measure);
     window.addEventListener('resize', measure);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
-  }, [showArrows, scale, pinnedCols, hiddenCols, colWidths, filteredPhases.length, deps]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showArrows, scale, pinnedCols, hiddenCols, colWidths, phases.length, deps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Inline name edit
   const startEdit = (ph) => { setEditingId(ph.id); setEditingName(ph.name); };
