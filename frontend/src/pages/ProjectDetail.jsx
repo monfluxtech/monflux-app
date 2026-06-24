@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
@@ -635,6 +635,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const ganttElRef  = useRef(null);
   const todayPxRef  = useRef(0);
   const longPressRef = useRef(null);
+  const contentRef  = useRef(null);  // minWidth/relative container — anchor for dep-arrow SVG
+  const firstGanttCellRef = useRef(null);
+  const [arrowBox, setArrowBox] = useState({ left: 0, top: 0 }); // measured gantt-area offset within contentRef
+  const [predEditId, setPredEditId] = useState(null); // phase id whose predecessor cell is being edited inline
 
   // Persist pin/hide column state
   useEffect(() => { try { localStorage.setItem('mf_gantt_pinned', JSON.stringify([...pinnedCols])); } catch {} }, [pinnedCols]);
@@ -1024,6 +1028,71 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     onUpdatePhase?.(toId, { depends_on_phase_id: null, dep_type: null, dep_from_pt: null, dep_to_pt: null });
   };
 
+  // Map a dependency type to its anchor points (used when editing deps from the table)
+  const DEP_TYPES = ['FS','SS','FF','SF','PAR'];
+  const DEP_TYPE_LABEL = { FS:'Fin → Début', SS:'Début → Début', FF:'Fin → Fin', SF:'Début → Fin', PAR:'Parallèle' };
+  const DEP_TYPE_COLOR = { FS:'#E8794E', SS:'#10B981', FF:'#F59E0B', SF:'#8B5CF6', PAR:'#6366F1' };
+  const ptsForType = (type) => ({
+    FS: { fromPt:'right', toPt:'left' },
+    SS: { fromPt:'left',  toPt:'left' },
+    FF: { fromPt:'right', toPt:'right' },
+    SF: { fromPt:'left',  toPt:'right' },
+    PAR:{ fromPt:'mid-top', toPt:'mid-bottom' },
+  }[type] || { fromPt:'right', toPt:'left' });
+
+  // Inline predecessor editor — used in the dep_pred table column (add / change / remove from table)
+  const renderPredCell = (ph, wrapStyle) => {
+    const myDep   = deps[String(ph.id)];
+    const predId  = myDep ? String(myDep.pred) : '';
+    const predPh  = predId ? phases.find(p => String(p.id) === predId) : null;
+    const t       = myDep?.type || 'FS';
+    const others  = phases.filter(p => String(p.id) !== String(ph.id));
+    const selStyle = { fontSize:10.5, border:`1.5px solid ${BRAND}`, borderRadius:5, padding:'2px 3px', outline:'none', background:'#fff', fontFamily:'inherit', cursor:'pointer' };
+
+    if (predEditId === ph.id) {
+      return (
+        <div style={{ ...wrapStyle, gap:3, padding:'0 4px' }} onClick={e => e.stopPropagation()}>
+          <select autoFocus value={predId}
+            onChange={e => {
+              const v = e.target.value;
+              if (!v) { deleteDep(String(ph.id)); setPredEditId(null); }
+              else    { saveDep(String(ph.id), { pred:v, type:t, ...ptsForType(t) }); }
+            }}
+            style={{ ...selStyle, flex:1, minWidth:0 }}>
+            <option value="">— Aucun —</option>
+            {others.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+          </select>
+          {predId && (
+            <select value={t}
+              onChange={e => saveDep(String(ph.id), { pred:predId, type:e.target.value, ...ptsForType(e.target.value) })}
+              title="Type de dépendance"
+              style={{ ...selStyle, width:48, flexShrink:0, color: DEP_TYPE_COLOR[t], fontWeight:800 }}>
+              {DEP_TYPES.map(tt => <option key={tt} value={tt}>{tt}</option>)}
+            </select>
+          )}
+          <button onClick={() => setPredEditId(null)} title="Terminer"
+            style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color:'#6B7280', fontSize:13, lineHeight:1, padding:'0 2px' }}>✓</button>
+        </div>
+      );
+    }
+    return (
+      <div style={wrapStyle}>
+        {predPh ? (
+          <button onClick={() => setPredEditId(ph.id)} title="Modifier le prédécesseur"
+            style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', padding:0, maxWidth:'100%', overflow:'hidden' }}>
+            <span style={{ fontSize:9, fontWeight:800, padding:'2px 4px', borderRadius:4, background: DEP_TYPE_COLOR[t]+'22', color: DEP_TYPE_COLOR[t], flexShrink:0 }}>{t}</span>
+            <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{predPh.name}</span>
+          </button>
+        ) : (
+          <button onClick={() => setPredEditId(ph.id)} title="Ajouter un prédécesseur"
+            style={{ display:'flex', alignItems:'center', gap:3, background:'transparent', border:'none', cursor:'pointer', padding:0, color:'#C9CDD3', fontSize:10.5, fontWeight:600 }}>
+            <span style={{ fontSize:13, lineHeight:1, color:BRAND, opacity:.5 }}>+</span> Ajouter
+          </button>
+        )}
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (!depDrag) return;
     const move = (e) => {
@@ -1064,6 +1133,26 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       document.removeEventListener('pointerup', up);
     };
   }, [depDrag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Measure the gantt-area offset (left+top) within the content container so the dep-arrow
+  // SVG aligns exactly with the bars, regardless of column widths, pins, or header height.
+  useLayoutEffect(() => {
+    if (!showArrows) return;
+    const measure = () => {
+      const cell = firstGanttCellRef.current;
+      const cont = contentRef.current;
+      if (!cell || !cont) return;
+      const cr = cont.getBoundingClientRect();
+      const gr = cell.getBoundingClientRect();
+      // rects are viewport coords; both scroll together so the difference is the true offset
+      setArrowBox({ left: gr.left - cr.left, top: gr.top - cr.top });
+    };
+    measure();
+    // re-measure on next frame (after layout settles) and on resize
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
+  }, [showArrows, scale, pinnedCols, hiddenCols, colWidths, filteredPhases.length, deps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Inline name edit
   const startEdit = (ph) => { setEditingId(ph.id); setEditingName(ph.name); };
@@ -1494,7 +1583,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
       {/* ── Gantt scrollable ── */}
       <div ref={scrollRef} data-gantt-scroll style={{ overflowX:'auto', width:'100%', maxWidth:'100%' }}>
-        <div style={{ minWidth: totalMinW, position:'relative' }}>
+        <div ref={contentRef} style={{ minWidth: totalMinW, position:'relative' }}>
 
           {/* Header */}
           <div style={{ display:'flex', borderBottom:'2px solid #EEF0F2', background:'#fff', position:'sticky', top:0, zIndex:5 }}>
@@ -1579,9 +1668,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {/* Dependency arrows SVG — positioned at start of timeline, coords relative to timeline */}
           {showArrows && Object.keys(deps).length > 0 && (() => {
             const rowH = 44;
-            const barCY = 21;
-            const barTY = 7;
-            const barBY = 35;
+            const barCY = 19;  // matches dot barMidY (left/right dots vertical center)
+            const barTY = 2;   // matches mid-top green dot center
+            const barBY = 36;  // matches mid-bottom green dot center
 
             // coords are relative to the timeline start (NOT the full content div)
             // dot radius and offsets match the actual connection point positions
@@ -1611,8 +1700,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const TYPE_DASH  = { FS: '4 3', SS: '3 3', FF: '6 2 2 2', SF: '2 4', PAR: '1 0' };
 
             return (
-              // SVG left = fixedColsW + rightColsW — both pinned AND unpinned opt cols appear before the Gantt
-              <svg style={{ position:'absolute', top:0, left: fixedColsW + rightColsW, width: ganttW, height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
+              // SVG position is MEASURED (arrowBox) from the real gantt cell — robust to columns/pins/scroll/header
+              <svg style={{ position:'absolute', top: arrowBox.top, left: arrowBox.left, width: ganttW, height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
                 {Object.entries(deps).map(([succId, depVal]) => {
                   const predId  = typeof depVal === 'object' ? depVal.pred : String(depVal);
                   const depType = typeof depVal === 'object' ? (depVal.type || 'FS') : 'FS';
@@ -1802,18 +1891,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dep_pred') {
-                    const myDep = deps[String(ph.id)];
-                    const predPh = myDep ? phases.find(p=>String(p.id)===String(myDep.pred)) : null;
-                    const DC={FS:'#E8794E',SS:'#10B981',FF:'#F59E0B',SF:'#8B5CF6',PAR:'#6366F1'};
-                    const t = myDep?.type||'FS';
                     return (
                       <div key="dep_pred" data-opt-col="dep_pred" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_pred'],'dep_pred') }}>
-                        {predPh ? (
-                          <button onClick={() => setShowArrows(true)} style={{ display:'flex',alignItems:'center',gap:4,background:'transparent',border:'none',cursor:'pointer',padding:0,maxWidth:'100%',overflow:'hidden' }}>
-                            <span style={{fontSize:9,fontWeight:800,padding:'2px 4px',borderRadius:4,background:DC[t]+'22',color:DC[t],flexShrink:0}}>{t}</span>
-                            <span style={{fontSize:10.5,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{predPh.name}</span>
-                          </button>
-                        ) : <span style={{color:'#D1D5DB',fontSize:10}}>—</span>}
+                        {renderPredCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
                   }
@@ -1887,18 +1967,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   );
                   // Colonne Prédécesseur — phase dont cette phase dépend
                   if (cd.key === 'dep_pred') {
-                    const myDep = deps[String(ph.id)];
-                    const predPhase = myDep ? phases.find(p => String(p.id) === String(myDep.pred)) : null;
-                    const DEP_TYPE_COLOR = { FS:'#E8794E', SS:'#10B981', FF:'#F59E0B', SF:'#8B5CF6', PAR:'#6366F1' };
                     return (
                       <div key={`rc-dep_pred-${ph.id}`} style={{ ...rcBase, padding:'0 6px', gap:4 }}>
-                        {predPhase ? (
-                          <button onClick={() => setShowArrows(true)}
-                            style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', padding:0, maxWidth:'100%', overflow:'hidden' }}>
-                            <span style={{ fontSize:9, fontWeight:800, padding:'2px 5px', borderRadius:4, background: DEP_TYPE_COLOR[myDep.type||'FS']+'22', color: DEP_TYPE_COLOR[myDep.type||'FS'], flexShrink:0 }}>{myDep.type||'FS'}</span>
-                            <span style={{ fontSize:10.5, color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{predPhase.name}</span>
-                          </button>
-                        ) : <span style={{ color:'#D1D5DB', fontSize:10 }}>—</span>}
+                        {renderPredCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
                   }
@@ -1926,7 +1997,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   return null;
                 })}
                 {/* Gantt bar area — fixed pixel width, matches header */}
-                <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
+                <div ref={i === 0 ? firstGanttCellRef : null} style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
                   {/* Grid lines + weekend overlays + today column */}
                   {columns.map((col, ci) => (
                     <div key={ci}>
@@ -2027,10 +2098,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       depDragRef.current = state; setDepDrag(state);
                     };
                     const PT_LABELS = {
-                      left:       '🔵 Début\nFin→Début (FS) si relié à droite\nDébut→Début (SS) si relié à gauche',
-                      right:      '🟠 Fin\nFin→Début (FS) si relié à gauche\nFin→Fin (FF) si relié à droite',
-                      'mid-top':  '🟢 Parallèle\nLes deux tâches s\'exécutent simultanément',
-                      'mid-bottom':'🟢 Parallèle\nLes deux tâches s\'exécutent simultanément',
+                      left:       'DÉBUT de « '+(ph.trade_name||ph.name)+' »\n\nGlissez vers une autre barre :\n→ son DÉBUT = elles démarrent ensemble (SS)\n→ sa FIN = elle finit quand celle-ci démarre (SF)',
+                      right:      'FIN de « '+(ph.trade_name||ph.name)+' »\n\nGlissez vers une autre barre :\n→ son DÉBUT = l\'autre démarre à cette fin (FS)\n→ sa FIN = elles finissent ensemble (FF)',
+                      'mid-top':  'PARALLÈLE — « '+(ph.trade_name||ph.name)+' »\n\nGlissez vers une autre barre pour\nles exécuter en même temps',
+                      'mid-bottom':'PARALLÈLE — « '+(ph.trade_name||ph.name)+' »\n\nGlissez vers une autre barre pour\nles exécuter en même temps',
                     };
                     return (
                       <>
