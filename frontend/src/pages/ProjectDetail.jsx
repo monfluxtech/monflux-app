@@ -17,12 +17,12 @@ const BRAND_BORDER = '#F9D5C0';
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
+  { id: 's-rfqs', icon: '📨', label: 'Demandes de prix' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
   { id: 's-orders', icon: '📦', label: 'Commandes' },
   { id: 's-soumission', icon: '📄', label: 'Devis précis' },
-  { id: 's-rfqs', icon: '📨', label: 'RFQ' },
   { id: 's-contracts', icon: '✍️', label: 'Contrats' },
   { id: 's-invoices', icon: '🧾', label: 'Factures' },
   { id: 's-quotes', icon: '📋', label: 'Soumissions' },
@@ -5974,9 +5974,18 @@ Règles :
                 </div>
 
                 <div>
+                  {/* En-têtes de colonnes */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.2fr) 96px minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '8px 20px', borderBottom: '1px solid #F1F3F5' }}>
+                    {['Corps de métier', 'Heures req.', 'Sous-traitant', 'Action', 'Statut'].map((h, hi) => (
+                      <span key={hi} style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6', textAlign: hi === 1 ? 'center' : hi === 4 ? 'right' : 'left' }}>{h}</span>
+                    ))}
+                  </div>
                   {rowNames.map((tradeName, idx) => {
                     const tradeRow = tradesFromProject.find((trade) => trade.trade?.toLowerCase() === tradeName.toLowerCase()) || null;
                     const tradePhases = phases.filter((ph) => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
+                    // Heures requises = somme des durées prévues des phases de ce métier (dynamique depuis le Gantt)
+                    const tradeHours = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
+                    const tradeDays  = tradeHours / 8;
                     const assignedSub = tradeRow ? subs.find((sub) => sub.id === tradeRow.chosen_subcontractor_id) : null;
                     const status = statusMeta[tradeRow?.status || 'to_find'] || statusMeta.to_find;
                     const suggestedSubs = subs.filter((sub) => {
@@ -6003,7 +6012,7 @@ Règles :
                     };
 
                     return (
-                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(180px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
+                      <div key={tradeName} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.2fr) 96px minmax(200px, 1fr) minmax(170px, .9fr) 140px', gap: 16, alignItems: 'center', padding: '16px 20px', borderTop: idx > 0 ? '1px solid #F4F5F6' : 'none' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
@@ -6019,6 +6028,18 @@ Règles :
                               <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>
                             )}
                           </div>
+                        </div>
+
+                        {/* Heures requises — calculées dynamiquement depuis les durées du Gantt */}
+                        <div style={{ minWidth: 0, textAlign: 'center' }}>
+                          {tradeHours > 0 ? (
+                            <>
+                              <p style={{ fontSize: 17, fontWeight: 800, color: '#15171C', margin: 0, lineHeight: 1.1 }}>{tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)}<span style={{ fontSize: 11, fontWeight: 700, color: '#8B919A' }}> h</span></p>
+                              <p style={{ fontSize: 10.5, color: '#9CA3AF', margin: '2px 0 0' }}>≈ {tradeDays % 1 === 0 ? tradeDays : tradeDays.toFixed(1)} j</p>
+                            </>
+                          ) : (
+                            <p style={{ fontSize: 12, color: '#C4C8CE', margin: 0 }}>—</p>
+                          )}
                         </div>
 
                         <div style={{ minWidth: 0 }}>
@@ -6151,6 +6172,67 @@ Règles :
               </div>
             );
           })()}
+
+          {/* ── Demandes de prix — remontée sous les phases, avec les corps de métier ── */}
+          <div id="s-rfqs" style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 14 }}>
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 11, background: '#F0EBFD', display: 'grid', placeItems: 'center', fontSize: 18 }}>🤝</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Demandes de prix</p>
+                <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>RFQ aux sous-traitants{projectRfqs.length > 0 ? ` · ${projectRfqs.length} demande(s)` : ''}</p>
+              </div>
+              <button className="btn-secondary text-xs" onClick={() => setShowRfqForm(v => !v)}>
+                <Plus size={13}/> {t('create_rfq')}
+              </button>
+            </div>
+
+            <div style={{ padding: '14px 20px' }}>
+              {showRfqForm && (
+                <form onSubmit={createRfq} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="label">Titre *</label><input className="input" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f,title:e.target.value}))} placeholder="Ex: Demande de prix — Électricité" required /></div>
+                    <div><label className="label">Spécialité</label><input className="input" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f,specialty:e.target.value}))} placeholder="Électricité, Plomberie…" /></div>
+                  </div>
+                  <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={rfqForm.description} onChange={e => setRfqForm(f => ({...f,description:e.target.value}))} placeholder="Portée des travaux…"/></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="label">Date limite</label><input className="input" type="date" value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f,deadline:e.target.value}))}/></div>
+                    <div className="flex items-end gap-2">
+                      <button type="button" className="btn-secondary flex-1 text-xs" onClick={() => setShowRfqForm(false)}>Annuler</button>
+                      <button type="submit" className="btn-primary flex-1 text-xs">Créer</button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {projectRfqs.length === 0 && !showRfqForm ? (
+                <div className="text-center py-5">
+                  <Users size={26} className="text-gray-200 mx-auto mb-2"/>
+                  <p className="text-sm text-gray-400">Créez des demandes de prix aux sous-traitants directement depuis ce projet.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {projectRfqs.map(rfq => (
+                    <div key={rfq.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{rfq.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {rfq.specialty && <span className="badge badge-gray text-xs">{rfq.specialty}</span>}
+                          {rfq.deadline && <span className="text-xs text-gray-400">Échéance: {new Date(rfq.deadline).toLocaleDateString('fr-CA')}</span>}
+                          <span className="text-xs text-gray-400">{rfq.responses_count || 0} invité(s)</span>
+                        </div>
+                      </div>
+                      <button
+                        className="btn-secondary text-xs py-1"
+                        onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
+                      >
+                        <UserPlus size={12}/> Inviter
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* ── Médias chantier ── (cream) */}
@@ -6686,65 +6768,6 @@ Règles :
               <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
             )}
           </div>
-        </div>
-
-        {/* ── RFQs / Sous-traitants ── (violet) */}
-        <div id="s-rfqs" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de prix</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>RFQ aux sous-traitants{projectRfqs.length > 0 ? ` · ${projectRfqs.length} demande(s)` : ''}</div>
-            </div>
-            <button className="btn-secondary text-xs" onClick={() => setShowRfqForm(v => !v)}>
-              <Plus size={13}/> {t('create_rfq')}
-            </button>
-          </div>
-
-          {showRfqForm && (
-            <form onSubmit={createRfq} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div><label className="label">Titre *</label><input className="input" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f,title:e.target.value}))} placeholder="Ex: Demande de prix — Électricité" required /></div>
-                <div><label className="label">Spécialité</label><input className="input" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f,specialty:e.target.value}))} placeholder="Électricité, Plomberie…" /></div>
-              </div>
-              <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={rfqForm.description} onChange={e => setRfqForm(f => ({...f,description:e.target.value}))} placeholder="Portée des travaux…"/></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div><label className="label">Date limite</label><input className="input" type="date" value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f,deadline:e.target.value}))}/></div>
-                <div className="flex items-end gap-2">
-                  <button type="button" className="btn-secondary flex-1 text-xs" onClick={() => setShowRfqForm(false)}>Annuler</button>
-                  <button type="submit" className="btn-primary flex-1 text-xs">Créer</button>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {projectRfqs.length === 0 && !showRfqForm ? (
-            <div className="text-center py-5">
-              <Users size={26} className="text-gray-200 mx-auto mb-2"/>
-              <p className="text-sm text-gray-400">Créez des demandes de prix aux sous-traitants directement depuis ce projet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {projectRfqs.map(rfq => (
-                <div key={rfq.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{rfq.title}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {rfq.specialty && <span className="badge badge-gray text-xs">{rfq.specialty}</span>}
-                      {rfq.deadline && <span className="text-xs text-gray-400">Échéance: {new Date(rfq.deadline).toLocaleDateString('fr-CA')}</span>}
-                      <span className="text-xs text-gray-400">{rfq.responses_count || 0} invité(s)</span>
-                    </div>
-                  </div>
-                  <button
-                    className="btn-secondary text-xs py-1"
-                    onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
-                  >
-                    <UserPlus size={12}/> Inviter
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Invite modal */}
