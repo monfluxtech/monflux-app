@@ -553,8 +553,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [bulkForm, setBulkForm]             = useState({});
   const [statusPicker, setStatusPicker]     = useState(null); // { phId, x, y }
   const [deps, setDeps]                     = useState({}); // { succPhId: predPhId }
-  const [depFirst, setDepFirst]             = useState(null); // phase ID of first clicked in dep-connect mode
-  const [depConnectMode, setDepConnectMode] = useState(false); // click-to-link dep mode
+  const [depFirst, setDepFirst]             = useState(null);
+  const [depConnectMode, setDepConnectMode] = useState(false);
+  const [depDrag, setDepDrag]               = useState(null); // { fromPhId, fromIdx, curX, curY, targetPhId }
+  const depDragRef                          = useRef(null);
   const dateDragRef = useRef(null);
   const scrollRef   = useRef(null);
   const ganttElRef  = useRef(null);
@@ -885,6 +887,41 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   };
   const handleDateLabelUp = () => { dateDragRef.current = null; };
 
+  // ── Dep drag-to-connect ──
+  // Écouter pointermove/pointerup sur document pendant un drag dep
+  React.useEffect(() => {
+    if (!depDrag) return;
+    const move = (e) => {
+      depDragRef.current = depDragRef.current
+        ? { ...depDragRef.current, curX: e.clientX, curY: e.clientY }
+        : null;
+      setDepDrag(d => d ? { ...d, curX: e.clientX, curY: e.clientY } : null);
+    };
+    const up = (e) => {
+      if (depDragRef.current) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const rowEl = el?.closest('[data-phase-id]');
+        const fromId = String(depDragRef.current.fromPhId);
+        const toId = rowEl?.getAttribute('data-phase-id');
+        if (toId && toId !== fromId) {
+          const rowRect = rowEl.getBoundingClientRect();
+          const relX = (e.clientX - rowRect.left) / rowRect.width;
+          // gauche = FS (Finish→Start), milieu = SS (travail parallèle), droite = FF (Finish→Finish)
+          const type = relX < 0.33 ? 'FS' : relX > 0.67 ? 'FF' : 'SS';
+          setDeps(d => ({ ...d, [toId]: { pred: fromId, type } }));
+        }
+      }
+      setDepDrag(null);
+      depDragRef.current = null;
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    return () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+    };
+  }, [depDrag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Inline name edit
   const startEdit = (ph) => { setEditingId(ph.id); setEditingName(ph.name); };
   const commitEdit = (ph) => {
@@ -992,38 +1029,63 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     const ganttEl = document.querySelector('[data-gantt-print]');
     if (!ganttEl) { window.print(); return; }
 
-    // A4 paysage imprimable à 96 dpi : 297×210mm − 8mm marges = ~1058×748px
+    // A4 paysage imprimable à 96 dpi : 297×210mm − 8mm marges ≈ 1058×748px
     const printW = 1058;
     const printH = 748;
 
-    // Forcer les colonnes optionnelles à gauche temporairement (pour l'impression)
-    setHiddenCols(new Set());
+    // Remettre scroll à 0 pour que les barres Gantt soient visibles dans le clone
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
 
-    // Laisser le render se mettre à jour avant de mesurer
     setTimeout(() => {
       const ganttEl2 = document.querySelector('[data-gantt-print]');
-      // Mesurer toutes les lignes (pas juste la zone visible)
-      const allRows = ganttEl2.querySelectorAll('[data-gantt-row]');
-      const naturalW = ganttEl2.scrollWidth;
-      const naturalH = Math.max(ganttEl2.scrollHeight, ganttEl2.offsetHeight, printH * 0.7);
-      const scale    = Math.min(printW / naturalW, printH / naturalH, 1).toFixed(4);
 
-      // Créer un wrapper d'impression avec dimensions fixes (= 1 seule page)
+      // Cloner l'arbre DOM complet
+      const clone = ganttEl2.cloneNode(true);
+
+      // Supprimer toolbar / filtres / bannière
+      clone.querySelectorAll('[data-gantt-no-print]').forEach(n => n.remove());
+
+      // Supprimer TOUTES les colonnes optionnelles (gauche ET droite) — garder seulement Phase + Gantt
+      clone.querySelectorAll('[data-opt-col]').forEach(n => n.remove());
+      clone.querySelectorAll('[data-right-col]').forEach(n => n.remove());
+
+      // Corriger le conteneur scroll : supprimer overflow pour que les barres soient visibles
+      const scrollEl = clone.querySelector('[data-gantt-scroll]');
+      if (scrollEl) {
+        scrollEl.style.overflow = 'visible';
+        scrollEl.style.width = 'auto';
+        scrollEl.style.maxWidth = 'none';
+        // Fixer les position:sticky des colonnes (elles ne fonctionnent pas hors scroll)
+        scrollEl.querySelectorAll('[style*="sticky"]').forEach(el => {
+          el.style.position = 'relative';
+        });
+      }
+
+      // Mesurer le contenu du clone pour calculer l'échelle
+      const tmpWrap = document.createElement('div');
+      Object.assign(tmpWrap.style, { position:'fixed', top:'-9999px', left:'-9999px', visibility:'hidden', width:'auto' });
+      tmpWrap.appendChild(clone);
+      document.body.appendChild(tmpWrap);
+      const naturalW = clone.scrollWidth || clone.offsetWidth || printW;
+      const naturalH = Math.max(clone.scrollHeight, clone.offsetHeight, printH * 0.6);
+      document.body.removeChild(tmpWrap);
+
+      const scale = Math.min(printW / naturalW, printH / naturalH, 1).toFixed(4);
+
+      Object.assign(clone.style, {
+        transformOrigin: 'top left',
+        transform: `scale(${scale})`,
+        width: `${naturalW}px`,
+        position: 'absolute', top: '0', left: '0',
+      });
+
+      // Wrapper d'impression avec dimensions A4 fixes (= 1 seule page)
       const wrapper = document.createElement('div');
       wrapper.id = '__gantt_print_wrapper';
       Object.assign(wrapper.style, {
         position: 'fixed', top: '0', left: '0', zIndex: '99999',
         width: `${printW}px`, height: `${printH}px`,
         overflow: 'hidden', background: '#fff',
-      });
-      const clone = ganttEl2.cloneNode(true);
-      // Supprimer toolbar / filtres du clone
-      clone.querySelectorAll('[data-gantt-no-print]').forEach(n => n.remove());
-      Object.assign(clone.style, {
-        transformOrigin: 'top left',
-        transform: `scale(${scale})`,
-        width: `${naturalW}px`,
-        position: 'absolute', top: '0', left: '0',
       });
       wrapper.appendChild(clone);
       document.body.appendChild(wrapper);
@@ -1100,10 +1162,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
           <span style={{ flex:1 }}/>
           {[
-            [showDates,       ()=>setShowDates(v=>!v),                                          <Calendar size={10}/>,  'Dates'],
-            [showArrows||depConnectMode, ()=>{ const next=!(showArrows||depConnectMode); setShowArrows(next); if(!next){setDepConnectMode(false);setDepFirst(null);} }, <GitBranch size={10}/>, 'Dépend.'],
-            [cascade,         ()=>setCascade(v=>!v),                                            <GitBranch size={10}/>, 'Cascade'],
-            [showCritical,    ()=>setShowCritical(v=>!v),                                       null,                   'Critique'],
+            [showDates,    ()=>setShowDates(v=>!v),    <Calendar size={10}/>,  'Dates'],
+            [showArrows,   ()=>{ const next=!showArrows; setShowArrows(next); if(!next){setDepConnectMode(false);setDepFirst(null);setDepDrag(null);} }, <GitBranch size={10}/>, 'Dépendance'],
+            [cascade,      ()=>setCascade(v=>!v),      <GitBranch size={10}/>, 'Cascade'],
+            [showCritical, ()=>setShowCritical(v=>!v), null,                   'Critique'],
           ].map(([active, fn, icon, lbl], ki) => (
             <button key={ki} onClick={fn}
               style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
@@ -1113,24 +1175,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               {icon}{lbl}
             </button>
           ))}
-          {/* Bouton Lier — visible si arrows actifs */}
-          {showArrows && (
-            <button onClick={() => { setDepConnectMode(v=>{ const next=!v; if(!next) setDepFirst(null); return next; }); }}
-              title="Mode liaison de dépendances (cliquer 2 phases)"
-              style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5,
-                border:`1px solid ${depConnectMode ? '#3B82F6' : '#E5E7EB'}`,
-                background: depConnectMode ? '#EFF6FF' : '#fff', fontSize:11, fontWeight:600,
-                color: depConnectMode ? '#1D4ED8' : '#9CA3AF', cursor:'pointer' }}>
-              🔗 Lier
-            </button>
-          )}
           <button onClick={scrollToToday}
             style={{ padding:'4px 8px', borderRadius:7, border:'1px solid #E5E7EB', background:'#fff', fontSize:11, fontWeight:600, color:'#6B7280', cursor:'pointer' }}>
             Aujourd'hui
           </button>
         </div>
-        {/* Rangée 2 : vues temporelles + PDF — alignée à droite */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'0 16px 8px 16px', gap:5 }}>
+        {/* Rangée 2 : vues temporelles + PDF — alignée avec la zone Gantt (pas avec les cols droites) */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:`0 ${16 + rightColsW}px 8px 16px`, gap:5 }}>
           <div style={{ display:'flex', background:'#F3F4F6', borderRadius:5, padding:2 }}>
             {[['month','Mois'],['week','Sem.'],['day','Jour'],['halfday','AM/PM'],['hour','Heure']].map(([s,lbl]) => (
               <button key={s} onClick={() => setScale(s)}
@@ -1147,17 +1198,17 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       </div>
 
       {/* ── Bannière mode liaison de dépendances ── */}
-      {depConnectMode && (
+      {showArrows && (
         <div data-gantt-no-print style={{ background:'#EFF6FF', borderBottom:'1px solid #BFDBFE', padding:'7px 16px', display:'flex', alignItems:'center', gap:10, fontSize:11, color:'#1D4ED8' }}>
-          <span style={{ fontSize:16 }}>🔗</span>
+          <span style={{ fontSize:14 }}>🔗</span>
           <span style={{ fontWeight:700 }}>
-            {depFirst
-              ? `Prédécesseur : « ${phases.find(p=>p.id===depFirst)?.name||'?'} » — Cliquer maintenant sur le successeur`
-              : 'Cliquer sur le prédécesseur (la phase qui doit finir en premier)'}
+            {depDrag
+              ? `Glisser vers le successeur — relâcher à gauche (Fin→Début), au milieu (Parallèle), ou à droite (Fin→Fin)`
+              : 'Glisser depuis la poignée ≡ d\'une phase vers une autre pour créer une dépendance'}
           </span>
-          <button onClick={() => { setDepConnectMode(false); setDepFirst(null); }}
+          <button onClick={() => { setShowArrows(false); setDepDrag(null); depDragRef.current = null; }}
             style={{ marginLeft:'auto', background:'transparent', border:'1px solid #BFDBFE', borderRadius:5, padding:'2px 8px', color:'#1D4ED8', fontSize:10, fontWeight:700, cursor:'pointer' }}>
-            Annuler
+            Fermer
           </button>
         </div>
       )}
@@ -1288,7 +1339,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       </div>
 
       {/* ── Gantt scrollable ── */}
-      <div ref={scrollRef} style={{ overflowX:'auto', width:'100%', maxWidth:'100%' }}>
+      <div ref={scrollRef} data-gantt-scroll style={{ overflowX:'auto', width:'100%', maxWidth:'100%' }}>
         <div style={{ minWidth: totalMinW, position:'relative' }}>
 
           {/* Header */}
@@ -1312,7 +1363,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
               const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
               return (
-                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
+                <div key={cd.key} data-opt-col={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
                   <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
                     {cd.label}
                     {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
@@ -1327,16 +1378,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
               );
             })}
-            {/* ── Colonnes optionnelles DROITE (dépinées) ── */}
-            {rightOptCols.map(cd => (
-              <div key={`rh-${cd.key}`} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#FAFBFC', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, position:'relative' }}>
-                <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{cd.label}</span>
-                <button onClick={() => toggleColPin(cd.key)} title={`Ramener ${cd.label} à gauche`}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, flexShrink:0 }}>
-                  <Pin size={8}/>
-                </button>
-              </div>
-            ))}
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => {
                 const isToday = isTodayCol(col);
@@ -1368,6 +1409,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 );
               })}
             </div>
+            {/* ── Colonnes optionnelles DROITE (dépinées) — en-têtes ── */}
+            {rightOptCols.map(cd => (
+              <div key={`rh-${cd.key}`} data-right-col={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #E9EAEC', background:'#F5F6F7', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#BBBFC8', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, position:'relative' }}>
+                <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{cd.label}</span>
+                <button onClick={() => toggleColPin(cd.key)} title={`Ramener ${cd.label} à gauche`}
+                  style={{ background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, flexShrink:0 }}>
+                  <Pin size={8}/>
+                </button>
+              </div>
+            ))}
           </div>
 
           {/* Phase rows */}
@@ -1376,23 +1427,31 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const rowH = 44; // minHeight:42 + marginBottom:2
             return (
               <svg style={{ position:'absolute', top:0, left:0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
-                {Object.entries(deps).map(([succId, predId]) => {
+                {Object.entries(deps).map(([succId, depVal]) => {
+                  const predId = typeof depVal === 'object' ? depVal.pred : String(depVal);
+                  const depType = typeof depVal === 'object' ? depVal.type : 'FS';
                   const predIdx = filteredPhases.findIndex(p => String(p.id) === String(predId));
                   const succIdx = filteredPhases.findIndex(p => String(p.id) === String(succId));
                   if (predIdx < 0 || succIdx < 0) return null;
                   const pb = getBarBounds(filteredPhases[predIdx]);
                   const sb = getBarBounds(filteredPhases[succIdx]);
                   const fixedW = fixedColsW;
-                  const x1 = fixedW + pb.left + pb.width;
+                  // FS: pred end → succ start | SS: pred start → succ start | FF: pred end → succ end
+                  const x1 = depType === 'SS' ? fixedW + pb.left : fixedW + pb.left + pb.width;
                   const y1 = predIdx * rowH + 21;
-                  const x2 = fixedW + sb.left;
+                  const x2 = depType === 'FF' ? fixedW + sb.left + sb.width : fixedW + sb.left;
                   const y2 = succIdx * rowH + 21;
                   const cx = Math.max(x1 + 20, Math.min(x2 - 20, (x1+x2)/2));
+                  const dash = depType === 'SS' ? '3 3' : depType === 'FF' ? '6 2 2 2' : '4 3';
+                  const col = depType === 'SS' ? '#10B981' : depType === 'FF' ? '#F59E0B' : BRAND;
+                  const label = depType === 'SS' ? 'SS' : depType === 'FF' ? 'FF' : 'FS';
+                  const midX = (x1 + x2) / 2; const midY = (y1 + y2) / 2;
                   return (
                     <g key={`dep-${predId}-${succId}`}>
                       <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                        fill="none" stroke={BRAND} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.55}/>
-                      <polygon points={`${x2},${y2} ${x2-6},${y2-3} ${x2-6},${y2+3}`} fill={BRAND} opacity={0.6}/>
+                        fill="none" stroke={col} strokeWidth={1.5} strokeDasharray={dash} opacity={0.65}/>
+                      <polygon points={`${x2},${y2} ${x2-6},${y2-3} ${x2-6},${y2+3}`} fill={col} opacity={0.7}/>
+                      <text x={midX} y={midY-4} textAnchor="middle" fill={col} fontSize={8} fontWeight={800} opacity={0.8}>{label}</text>
                     </g>
                   );
                 })}
@@ -1412,32 +1471,21 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             const borderColor = STATUS_BORDER[ph.status] || STATUS_BORDER.not_started;
             const isSelected = selectedIds.has(ph.id);
             const isCritical = criticalIds.has(ph.id);
-            const isDepHighlight = depConnectMode && ph.id === depFirst;
-
-            const rowBg = isDepHighlight ? '#EFF6FF' : isSelected ? '#FFF8F5' : isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
-
-            const handleRowClick = () => {
-              if (!depConnectMode) return;
-              if (!depFirst) { setDepFirst(ph.id); return; }
-              if (ph.id === depFirst) { setDepFirst(null); return; } // désélectionner
-              // Créer la dépendance : depFirst → ph (prédécesseur → successeur)
-              setDeps(d => ({ ...d, [ph.id]: depFirst }));
-              setDepFirst(null);
-              // Ne pas quitter le mode pour pouvoir en créer plusieurs
-            };
+            const isDepTarget = depDrag && depDrag.fromPhId !== ph.id;
+            const rowBg = isSelected ? '#FFF8F5' : isDragOver ? '#FFF3EE' : isEven ? '#FBFCFD' : '#fff';
 
             return (
-              <div key={ph.id} draggable={!hasSel && !depConnectMode}
+              <div key={ph.id} data-phase-id={ph.id}
+                draggable={!hasSel && !showArrows}
                 onDragStart={ev => { if (!barDrag && !resize && !hasSel) onRowDragStart(ev, i); }}
                 onDragOver={ev => onRowDragOver(ev, i)} onDrop={ev => onRowDrop(ev, i)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-                onClick={handleRowClick}
                 style={{
                   display:'flex', alignItems:'center', minHeight:42,
                   background: rowBg,
-                  borderTop: isDepHighlight ? `2px solid #3B82F6` : isDragOver ? `2px solid ${BRAND}` : isSelected ? `2px solid ${BRAND_BORDER}` : '2px solid transparent',
+                  borderTop: isDragOver ? `2px solid ${BRAND}` : isSelected ? `2px solid ${BRAND_BORDER}` : '2px solid transparent',
                   marginBottom:2, opacity: dragIdx===i ? 0.35 : 1, transition:'opacity .15s',
-                  cursor: depConnectMode ? 'pointer' : 'default',
+                  cursor: 'default',
                 }}>
                 {/* Checkbox column */}
                 <div style={{ width:CHECK_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:rowBg, alignSelf:'stretch', ...stickyC(0) }}>
@@ -1446,9 +1494,20 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
                 {/* Phase section — conditionally sticky (drag handle + name) */}
                 <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch', ...stickyC(CHECK_W) }}>
-                  {/* Drag handle */}
-                  <div style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center', cursor: hasSel ? 'default' : 'grab', opacity: hasSel ? 0.05 : .2, padding:'0 2px' }}>
-                    {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
+                  {/* Drag handle — double usage : réordonnement normal, ou liaison dep en mode Dépendance */}
+                  <div
+                    onPointerDown={showArrows ? (e) => {
+                      e.stopPropagation(); e.preventDefault();
+                      const state = { fromPhId: ph.id, fromIdx: i, curX: e.clientX, curY: e.clientY, startX: e.clientX, startY: e.clientY };
+                      depDragRef.current = state;
+                      setDepDrag(state);
+                    } : undefined}
+                    style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center',
+                      cursor: showArrows ? 'crosshair' : hasSel ? 'default' : 'grab',
+                      opacity: hasSel ? 0.05 : showArrows ? 0.6 : .2,
+                      padding:'0 2px',
+                    }}>
+                    {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background: showArrows ? '#3B82F6' : '#6B7280',borderRadius:2,display:'block'}}/>)}
                   </div>
                   {/* Name */}
                   <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
@@ -1473,7 +1532,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   const isLastOptCol = cd === visibleOptCols[visibleOptCols.length - 1];
                   const cellBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, boxShadow: isLastOptCol && pinned(cd.key) ? '3px 0 6px rgba(0,0,0,.04)' : 'none' };
                   if (cd.key === 'start') return (
-                    <div key="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start'], 'start') }}>
+                    <div key="start" data-opt-col="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start'], 'start') }}>
                       {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                         <input type="datetime-local" autoFocus
                           defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
@@ -1495,7 +1554,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_prev') return (
-                    <div key="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev'], 'dur_prev') }}>
+                    <div key="dur_prev" data-opt-col="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev'], 'dur_prev') }}>
                       {editCell?.id===ph.id && editCell?.field==='duration' ? (
                         <input type="number" autoFocus min="0" step="0.5" defaultValue={ph.duration_hours??''}
                           onBlur={ev => { const val=ev.target.value===''?null:parseFloat(ev.target.value); onUpdatePhase?.(ph.id,{duration_hours:val}); setEditCell(null); }}
@@ -1510,14 +1569,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_real') return (
-                    <div key="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real'], 'dur_real'), justifyContent:'flex-end' }}>
+                    <div key="dur_real" data-opt-col="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real'], 'dur_real'), justifyContent:'flex-end' }}>
                       <span style={{ fontSize:11, color: ph.logged_hours > 0 ? PUNCH_COLOR : '#D1D5DB', fontWeight:700, padding:'3px 6px', fontVariantNumeric:'tabular-nums' }}>
                         {ph.logged_hours > 0 ? fmtDur(Number(ph.logged_hours)) : '—'}
                       </span>
                     </div>
                   );
                   if (cd.key === 'assigned') return (
-                    <div key="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned'], 'assigned') }}>
+                    <div key="assigned" data-opt-col="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned'], 'assigned') }}>
                       <AssigneeChip trade={matchedTrade}
                         assignedToName={ph.assigned_to_name||null}
                         onSelfAssign={currentUserName?()=>onSelfAssign?.(ph.id,currentUserName):undefined}
@@ -1678,11 +1737,12 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </>
                   )}
                 </div>
-                {/* ── Colonnes optionnelles DROITE (dépinées) ── */}
+                {/* ── Colonnes optionnelles DROITE (dépinées) — grisées ── */}
                 {rightOptCols.map(cd => {
-                  const rcBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg };
+                  const rcBg = '#F5F6F7';
+                  const rcBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #E9EAEC', alignSelf:'stretch', display:'flex', alignItems:'center', background:rcBg };
                   if (cd.key === 'start') return (
-                    <div key={`rc-start-${ph.id}`} style={{ ...rcBase, position:'relative' }}>
+                    <div key={`rc-start-${ph.id}`} data-opt-col="start" style={{ ...rcBase, position:'relative' }}>
                       {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                         <input type="datetime-local" autoFocus
                           defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
@@ -1968,19 +2028,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 const tName = tph.assigned_to_name || tTrade?.subcontractor_name || tTrade?.chosen_subcontractor_name || null;
                 const tSt = tph.assigned_to_name ? ASSIGNEE_STATUS.confirmed : (ASSIGNEE_STATUS[tTrade?.status] || ASSIGNEE_STATUS.to_find);
                 return (
-                  <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:6 }}>
-                    {tName ? (
-                      <span style={{ width:18, height:18, borderRadius:'50%', background: tSt.dot, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:800, color:'#fff', flexShrink:0 }}>
-                        {tName[0]?.toUpperCase()}
+                  <div style={{ marginTop:6, display:'flex', alignItems:'center', gap:5 }}>
+                    <span style={{
+                      display:'inline-flex', alignItems:'center', gap:4,
+                      background: tSt.bg, border:`1.5px solid ${tSt.dot}`,
+                      borderRadius:99, padding:'2px 7px 2px 5px', flexShrink:0,
+                    }}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:tSt.dot, flexShrink:0 }}/>
+                      <span style={{ fontSize:11, fontWeight:700, color: tName ? '#374151' : tSt.text }}>
+                        {tName || tSt.label}
                       </span>
-                    ) : (
-                      <span style={{ width:8, height:8, borderRadius:'50%', background: tSt.dot, flexShrink:0 }}/>
-                    )}
-                    <span style={{ fontSize:11, color: tName ? '#E2E8F0' : tSt.text, fontWeight: tName ? 600 : 500 }}>
-                      {tName || tSt.label}
-                    </span>
-                    <span style={{ fontSize:9, fontWeight:700, padding:'1px 5px', borderRadius:99, background: tSt.bg, color: tSt.text, border:`1px solid ${tSt.border}`, flexShrink:0 }}>
-                      {tSt.label}
                     </span>
                   </div>
                 );
@@ -1994,6 +2051,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               )}
             </>);
           })()}
+        </div>
+      )}
+
+      {/* ── Preview SVG ligne dep pendant drag ── */}
+      {depDrag && (
+        <div style={{ position:'fixed', inset:0, zIndex:9999, pointerEvents:'none' }}>
+          <svg width="100%" height="100%">
+            <line x1={depDrag.startX} y1={depDrag.startY} x2={depDrag.curX} y2={depDrag.curY}
+              stroke="#3B82F6" strokeWidth={2} strokeDasharray="6 4" strokeLinecap="round"/>
+            <circle cx={depDrag.startX} cy={depDrag.startY} r={4} fill="#3B82F6" opacity={0.7}/>
+            <circle cx={depDrag.curX} cy={depDrag.curY} r={5} fill="#3B82F6" opacity={0.9}/>
+          </svg>
         </div>
       )}
     </div>
