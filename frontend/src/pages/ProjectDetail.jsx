@@ -524,7 +524,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [showDates, setShowDates]     = useState(false);
   const [showArrows, setShowArrows]   = useState(false);
   const [showCritical, setShowCritical] = useState(false);
-  const [pinAddPhase, setPinAddPhase] = useState(true);
+  const [filterPunch, setFilterPunch] = useState(false);
   const [dragIdx, setDragIdx]     = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -873,6 +873,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     if (filters.start_date && !(ph.start_date||'').includes(filters.start_date)) return false;
     if (filters.assigned && !(ph.assigned_to_name||'').toLowerCase().includes(filters.assigned.toLowerCase())) return false;
     if (filters.phaseStatus?.size > 0 && !filters.phaseStatus.has(ph.status || 'not_started')) return false;
+    if (filterPunch && !(ph.progress_pct > 0)) return false;
     if (filters.assigneeStatus?.size > 0) {
       const trade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
       const effectiveStatus = ph.assigned_to_name ? 'confirmed' : (trade?.status || 'to_find');
@@ -962,13 +963,13 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     <>
       {/* ── Toolbar ── */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        {/* Col. fixes — tout à gauche, séparé */}
-        <button onClick={() => setFreezeCols(v=>!v)}
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:5, flexShrink:0,
-            border:`1px solid ${freezeCols ? BRAND_BORDER : '#E5E7EB'}`,
-            background: freezeCols ? BRAND_SOFT : '#fff', fontSize:11, fontWeight:600,
-            color: freezeCols ? BRAND_DARK : '#9CA3AF', cursor:'pointer' }}>
-          <Pin size={10}/> Col. fixes
+        {/* Pin colonnes — icône seule à gauche */}
+        <button onClick={() => setFreezeCols(v=>!v)} title={freezeCols ? 'Désépingler les colonnes' : 'Épingler les colonnes'}
+          style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
+            border:`1.5px solid ${freezeCols ? BRAND_BORDER : '#E5E7EB'}`,
+            background: freezeCols ? BRAND_SOFT : '#fff',
+            color: freezeCols ? BRAND : '#9CA3AF', cursor:'pointer' }}>
+          <Pin size={13}/>
         </button>
         <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
         <span style={{ flex:1 }}/>
@@ -1004,72 +1005,89 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         </button>
       </div>
 
-      {/* ── Légende / Filtres rapides ── toujours visible, chips = filtres actifs */}
-      <div style={{ padding:'6px 12px', background:'#FAFBFC', borderBottom:'1px solid #F0F1F2', display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
-        {/* Section Assigné */}
-        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC' }}>Assigné</span>
+      {/* ── Filtres / Légende ── 2 lignes: recherche texte (gauche) | statuts (droite) */}
+      <div style={{ background:'#FAFBFC', borderBottom:'1px solid #F0F1F2' }}>
+        {/* Ligne 1 — Champs texte + statut assigné */}
+        <div style={{ padding:'5px 12px', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
+          {/* Label gauche */}
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Filtres</span>
+          {/* Phase name */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Phase</span>
+            <input value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Chercher…"
+              style={{ width:90, fontSize:10, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          {/* Début */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Début</span>
+            <input value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil 2026…"
+              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          {/* Assigné nom */}
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Assigné</span>
+            <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…"
+              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+            {hasFilter('assigned') && <button onClick={()=>clearFilter('assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+          </div>
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {/* Chips statut Assigné */}
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Assignation</span>
           {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => {
             const active = filters.assigneeStatus.has(key);
             return (
-              <button key={key} onClick={() => toggleChipFilter('assigneeStatus', key)} title={`Filtrer: ${st.label}`}
+              <button key={key} onClick={() => toggleChipFilter('assigneeStatus', key)}
                 style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-                  background: active ? st.dot+'22' : st.bg,
-                  border: `1.5px solid ${active ? st.dot : st.border}`,
-                  fontSize:10, fontWeight:600, color: active ? st.dot : st.text,
-                  cursor:'pointer', boxShadow: active ? `0 0 0 1.5px ${st.dot}44` : 'none',
-                  transition:'all .1s' }}>
-                <span style={{ width:5, height:5, borderRadius:'50%', background:active ? st.dot : st.dot, flexShrink:0 }}/>
+                  background: active ? st.dot+'22' : st.bg, border:`1.5px solid ${active ? st.dot : st.border}`,
+                  fontSize:10, fontWeight:600, color: active ? st.dot : st.text, cursor:'pointer',
+                  boxShadow: active ? `0 0 0 1.5px ${st.dot}44` : 'none', transition:'all .1s' }}>
+                <span style={{ width:5, height:5, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
                 {st.label}
               </button>
             );
           })}
-          {filters.assigneeStatus.size > 0 && (
-            <button onClick={() => clearFilter('assigneeStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>
-          )}
+          {filters.assigneeStatus.size > 0 && <button onClick={() => clearFilter('assigneeStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>}
         </div>
-        <div style={{ width:1, height:14, background:'#E5E7EB', flexShrink:0 }}/>
-        {/* Section Phase (statut) */}
-        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC' }}>Phase</span>
-          <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', fontStyle:'italic' }}>Prévu&nbsp;→</span>
+        {/* Ligne 2 — Statuts Phase + Réel Punch */}
+        <div style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Phase</span>
+          <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', fontStyle:'italic', flexShrink:0 }}>Prévu&nbsp;→</span>
           {Object.entries(STATUS_LABELS).map(([status, label]) => {
             const active = filters.phaseStatus.has(status);
             const fill = STATUS_FILL[status];
             return (
-              <button key={status} onClick={() => toggleChipFilter('phaseStatus', status)} title={`Filtrer: ${label}`}
+              <button key={status} onClick={() => toggleChipFilter('phaseStatus', status)}
                 style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-                  background: active ? fill+'22' : '#F3F4F6',
-                  border: `1.5px solid ${active ? fill : '#E5E7EB'}`,
-                  fontSize:10, fontWeight:600, color: active ? fill : '#6B7280',
-                  cursor:'pointer', boxShadow: active ? `0 0 0 1.5px ${fill}55` : 'none',
-                  transition:'all .1s' }}>
+                  background: active ? fill+'22' : '#F3F4F6', border:`1.5px solid ${active ? fill : '#E5E7EB'}`,
+                  fontSize:10, fontWeight:600, color: active ? fill : '#6B7280', cursor:'pointer',
+                  boxShadow: active ? `0 0 0 1.5px ${fill}55` : 'none', transition:'all .1s' }}>
                 <span style={{ width:8, height:8, borderRadius:2, background:fill, display:'inline-block', flexShrink:0 }}/>
                 {label}
               </button>
             );
           })}
-          {filters.phaseStatus.size > 0 && (
-            <button onClick={() => clearFilter('phaseStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>
-          )}
-        </div>
-        <div style={{ width:1, height:14, background:'#E5E7EB', flexShrink:0 }}/>
-        {/* Réel → punch */}
-        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC' }}>Réel</span>
-          <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', fontStyle:'italic' }}>→</span>
-          <div style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 7px', borderRadius:4, background:'#EFF6FF', border:'1.5px solid #BFDBFE', fontSize:10, fontWeight:600, color:'#1D4ED8' }}>
+          {filters.phaseStatus.size > 0 && <button onClick={() => clearFilter('phaseStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>}
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {/* Punch — cliquable */}
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Réel&nbsp;→</span>
+          <button onClick={() => setFilterPunch(v => !v)}
+            style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 7px', borderRadius:4,
+              background: filterPunch ? '#DBEAFE' : '#EFF6FF', border:`1.5px solid ${filterPunch ? '#60A5FA' : '#BFDBFE'}`,
+              fontSize:10, fontWeight:600, color: filterPunch ? '#1D4ED8' : '#3B82F6', cursor:'pointer',
+              boxShadow: filterPunch ? '0 0 0 1.5px #60A5FA44' : 'none', transition:'all .1s' }}>
             <span style={{ width:8, height:8, borderRadius:2, background:'#60A5FA', display:'inline-block', flexShrink:0 }}/>
             Punch (temps réel)
-          </div>
+          </button>
+          {/* Chemin critique info */}
+          {showCritical && criticalIds.size > 0 && (
+            <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#EF4444', fontWeight:700 }}>
+              <span style={{ width:7, height:7, borderRadius:'50%', background:'#EF4444', display:'inline-block' }}/>
+              {criticalIds.size} phase{criticalIds.size>1?'s':''} critique{criticalIds.size>1?'s':''}
+            </div>
+          )}
         </div>
-        {/* Info chemin critique si activé */}
-        {showCritical && criticalIds.size > 0 && (
-          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, fontSize:10, color:'#EF4444', fontWeight:700 }}>
-            <span style={{ width:8, height:8, borderRadius:'50%', background:'#EF4444', display:'inline-block' }}/>
-            {criticalIds.size} phase{criticalIds.size>1?'s':''} sur le chemin critique
-          </div>
-        )}
       </div>
 
       {/* ── Gantt scrollable ── */}
@@ -1084,34 +1102,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 onChange={ev => ev.target.checked ? selectAll() : clearSelection()}
                 style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
             </div>
-            {/* Phase header — recherche texte inline */}
-            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', ...stickyH(CHECK_W) }}>
-              <div style={{ padding:'5px 4px', display:'flex', alignItems:'center', gap:3 }}>
-                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF' }}>Phase</span>
-                <input value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Chercher…"
-                  style={{ flex:1, fontSize:9.5, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none', minWidth:0 }}/>
-                {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, flexShrink:0 }}>✕</button>}
-              </div>
+            {/* Headers — titres simples, filtres dans la barre de filtres */}
+            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'7px 8px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
+              Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}
             </div>
-            {/* Début header — recherche texte inline */}
-            <div style={{ width:DATE_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(CHECK_W+LABEL_W+20) }}>
-              <div style={{ padding:'5px 6px', display:'flex', alignItems:'center', gap:3 }}>
-                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('start_date') ? BRAND : '#9CA3AF', flexShrink:0 }}>Début</span>
-                <input value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil…"
-                  style={{ flex:1, fontSize:9, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none', minWidth:0 }}/>
-                {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, flexShrink:0 }}>✕</button>}
-              </div>
+            <div style={{ width:DATE_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('start_date') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W+LABEL_W+20) }}>
+              Début {hasFilter('start_date') && <span style={{ fontSize:8, color:BRAND }}>●</span>}
             </div>
-            {/* Durée header */}
             <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(CHECK_W+LABEL_W+20+DATE_W) }}>Durée</div>
-            {/* Assigné header — recherche texte inline */}
-            <div style={{ width:ASSIGN_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(CHECK_W+LABEL_W+20+DATE_W+DUR_W) }}>
-              <div style={{ padding:'5px 10px', display:'flex', alignItems:'center', gap:3 }}>
-                <span style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('assigned') ? BRAND : '#9CA3AF', flexShrink:0 }}>Assigné</span>
-                <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…"
-                  style={{ flex:1, fontSize:9.5, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none', minWidth:0 }}/>
-                {hasFilter('assigned') && <button onClick={()=>clearFilter('assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, flexShrink:0 }}>✕</button>}
-              </div>
+            <div style={{ width:ASSIGN_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: (hasFilter('assigned')||filters.assigneeStatus.size>0) ? BRAND : '#9CA3AF', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(CHECK_W+LABEL_W+20+DATE_W+DUR_W) }}>
+              Assigné {(hasFilter('assigned')||filters.assigneeStatus.size>0) && <span style={{ fontSize:8, color:BRAND }}>●</span>}
             </div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => {
@@ -1485,23 +1485,11 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         </div>
       </div>
 
-      {/* ── + Ajouter une phase (sticky bas, épinglable) ── */}
-      <div style={{
-        position: pinAddPhase ? 'sticky' : 'static',
-        bottom: 0, zIndex: 12,
-        background: '#fff',
-        borderTop: '1px solid #F0F2F4',
-        padding: '7px 16px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        boxShadow: pinAddPhase ? '0 -2px 8px rgba(0,0,0,.06)' : 'none',
-      }}>
+      {/* ── + Ajouter une phase (sticky bas) ── */}
+      <div style={{ position:'sticky', bottom:0, zIndex:12, background:'#fff', borderTop:'1px solid #F0F2F4', padding:'7px 16px', boxShadow:'0 -2px 8px rgba(0,0,0,.06)' }}>
         <button onClick={() => setAddingPhase(true)}
           style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:5, border:`1.5px dashed ${BRAND_BORDER}`, background:'transparent', color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
           <Plus size={12}/> Ajouter une phase
-        </button>
-        <button onClick={() => setPinAddPhase(p => !p)} title={pinAddPhase ? 'Dépiner' : 'Épingler en bas'}
-          style={{ border:'none', background:'transparent', cursor:'pointer', color: pinAddPhase ? BRAND : '#C0C4CC', padding:'4px', borderRadius:4, display:'flex', alignItems:'center' }}>
-          <Pin size={12}/>
         </button>
       </div>
 
@@ -2118,6 +2106,7 @@ export default function ProjectDetail() {
   const [coImpact, setCoImpact] = useState({});   // { [coId]: impactObj }
   const [analyzingCoId, setAnalyzingCoId] = useState(null);
   const [aiNotice, setAiNotice] = useState('');
+  const [aiRecommendations, setAiRecommendations] = useState([]);
   const [activeSection, setActiveSection] = useState('s-ai');
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -2830,35 +2819,44 @@ Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec 
 
   // "Ajuster avec Flo" — réorganise les phases existantes sans les supprimer
   const adjustPhasesWithAI = async () => {
-    if (!phases.length) { generatePhasesFromAI(); return; }
+    const currentPhases = project.phases || [];
+    if (!currentPhases.length) { generatePhasesFromAI(); return; }
     setGeneratingPhases(true);
     setAiNotice('');
+    setAiRecommendations([]);
     try {
       const { data } = await aiApi.adjustPhases({
-        phases: phases.map(ph => ({ id: ph.id, name: ph.name, trade_name: ph.trade_name, duration_hours: ph.duration_hours, start_date: ph.start_date })),
+        phases: currentPhases.map(ph => ({ id: ph.id, name: ph.name, trade_name: ph.trade_name, duration_hours: ph.duration_hours, start_date: ph.start_date })),
         project_name: project.name || '',
         project_type: project.field_assessment?.work_type || project.type || '',
         start_date: project.start_date || null,
+        notes: project.notes || '',
       });
       const adj = data?.adjustments || [];
+      const recs = data?.recommendations || [];
+      if (recs.length) setAiRecommendations(recs);
       if (!adj.length) { setAiNotice('Flo n\'a pas pu ajuster les phases — réessaie.'); return; }
-      // Appliquer les ajustements un par un (dans l'ordre pour éviter les conflits de cascade)
-      const orderedPhases = [...phases].sort((a,b) => (a.display_order||0)-(b.display_order||0));
-      const newDeps = { ...deps };
+      // Appliquer en respectant le better_order si fourni
+      const orderedPhases = [...currentPhases].sort((a,b) => (a.display_order||0)-(b.display_order||0));
+      const newDeps = {};
+      const updates_batch = [];
       for (const a of adj) {
         const ph = orderedPhases[a.id_original - 1];
         if (!ph) continue;
         const updates = {};
         if (a.start_date) updates.start_date = a.start_date;
         if (a.duration_hours) updates.duration_hours = Number(a.duration_hours);
-        if (Object.keys(updates).length) await projectsApi.updatePhase(id, ph.id, updates);
-        // Enregistrer la dépendance dans le state local
+        if (a.better_order != null) updates.display_order = Number(a.better_order);
+        if (Object.keys(updates).length) updates_batch.push({ id: ph.id, updates });
         if (a.depends_on_index != null) {
           const pred = orderedPhases[a.depends_on_index - 1];
           if (pred) newDeps[ph.id] = pred.id;
         }
       }
-      setDeps(newDeps);
+      for (const { id: phId, updates } of updates_batch) {
+        await projectsApi.updatePhase(id, phId, updates);
+      }
+      if (Object.keys(newDeps).length) setProject(p => ({ ...p, _flooDeps: newDeps })); // hint for GanttChart
       // Recharger les phases
       const { data: updatedProject } = await projectsApi.get(id);
       setProject(updatedProject);
@@ -4955,14 +4953,81 @@ Règles :
                 currentUserName={currentUser?.name || currentUser?.email || null}
                 onSelfAssign={handleSelfAssign}
               />
-            ) : (
-              <div style={{ padding: '22px 20px', textAlign: 'center' }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Aucune phase pour le moment.</p>
-                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>Génère les phases avec Flo ou ajoute une phase manuelle pour commencer le planning.</p>
-              </div>
-            )}
+            ) : (() => {
+              const existing = new Set((project.phases || []).map(p => p.name?.toLowerCase()));
+              const available = recommendedPhaseTemplates.map(tpl => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) })).filter(tpl => !existing.has(tpl.name.toLowerCase()));
+              const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
+              const bulkLabel = projectWorkType || 'ce projet';
+              return (
+                <div style={{ padding:'28px 24px', textAlign:'center' }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:BRAND_SOFT, display:'grid', placeItems:'center', margin:'0 auto 12px' }}>
+                    <Sparkles size={18} color={BRAND}/>
+                  </div>
+                  <p style={{ fontSize:14, fontWeight:800, color:'#15171C', margin:'0 0 4px' }}>Aucune phase pour le moment</p>
+                  <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 18px' }}>Génère un planning complet avec Flo ou ajoute les étapes recommandées.</p>
+                  <div style={{ display:'flex', justifyContent:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+                    <button onClick={adjustPhasesWithAI} disabled={generatingPhases}
+                      style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'9px 18px', borderRadius:9, border:'none', background:BRAND, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                      {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                      {generatingPhases ? 'Génération…' : 'Générer avec Flo'}
+                    </button>
+                    {hasPlaybook && (
+                      <button onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })} disabled={addingTemplatePhase === '__batch__'}
+                        style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'9px 18px', borderRadius:9, border:`1.5px solid ${BRAND_BORDER}`, background:BRAND_SOFT, color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                        {addingTemplatePhase === '__batch__' ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
+                        {`Ajouter les étapes de ${bulkLabel}`}
+                      </button>
+                    )}
+                  </div>
+                  {available.length > 0 && (
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:5, justifyContent:'center' }}>
+                      {available.slice(0, 8).map(tpl => (
+                        <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
+                          style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:7, border:'1.5px solid #E0E4E8', background:'#FAFAFA', fontSize:11, fontWeight:600, color:'#3A3D44', cursor:'pointer' }}>
+                          <Plus size={9}/>{tpl.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
-          {/* Florence — même fond blanc, séparateur */}
+          {/* ── Section "Étapes recommandées" — sous le Gantt, visible si étapes disponibles ── */}
+          {(() => {
+            const existing = new Set((project.phases || []).map(p => p.name?.toLowerCase()));
+            const available = recommendedPhaseTemplates.map(tpl => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) })).filter(tpl => !existing.has(tpl.name.toLowerCase()));
+            const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
+            const bulkLabel = projectWorkType || 'ce projet';
+            if (!available.length) return null; // Tout est déjà ajouté
+            return (
+              <div style={{ borderTop:'1px solid #F4F5F6', padding:'10px 16px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:9.5, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF' }}>
+                    {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Phases suggérées'}
+                  </span>
+                  {hasPlaybook && (
+                    <button onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })} disabled={addingTemplatePhase === '__batch__'}
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:7, border:`1px solid ${BRAND_BORDER}`, background:BRAND_SOFT, color:BRAND_DARK, fontSize:11, fontWeight:700, cursor:'pointer', marginLeft:'auto' }}>
+                      {addingTemplatePhase === '__batch__' ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9}/>}
+                      {`Ajouter toutes les étapes de ${bulkLabel}`}
+                    </button>
+                  )}
+                </div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                  {available.map(tpl => (
+                    <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
+                      style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:7, border:'1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize:11, fontWeight:600, color:'#3A3D44', cursor:'pointer' }}>
+                      {addingTemplatePhase === tpl.name ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9} color={BRAND}/>}
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Florence — Ajuster avec Flo + conseils ── */}
           <div style={{ borderTop: '1px solid #F4F5F6', padding: '14px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -4973,7 +5038,7 @@ Règles :
                   {project.phases?.length > 0 ? 'Ajuster le planning avec Flo' : 'Générer les phases avec Flo'}
                 </p>
                 <p style={{ fontSize: 11, color: '#7C8089', margin: '1px 0 0' }}>
-                  {project.phases?.length > 0 ? 'Flo recalcule les dates et durées en journées ouvrables et ajoute les dépendances logiques.' : 'Flo analyse le contexte et construit un planning adapté au chantier réel.'}
+                  {project.phases?.length > 0 ? 'Flo recalcule les dates, l\'ordre logique et les durées ouvrables, en tenant compte des jours fériés du Québec.' : 'Flo analyse le contexte et construit un planning adapté au chantier réel.'}
                 </p>
               </div>
               <button onClick={adjustPhasesWithAI} disabled={generatingPhases}
@@ -4989,47 +5054,24 @@ Règles :
                 <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
               </div>
             )}
-            {(() => {
-              const existing = new Set((project.phases || []).map((p) => p.name?.toLowerCase()));
-              const available = recommendedPhaseTemplates
-                .map((tpl) => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) }))
-                .filter((tpl) => !existing.has(tpl.name.toLowerCase()));
-              const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
-              const bulkLabel = projectWorkType || 'ce projet';
-              if (!available.length && !hasPlaybook) return null;
-              return (
-                <div style={{ borderTop: '1px solid #F4F5F6', paddingTop: 10, marginTop: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: 0 }}>
-                      {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Ajouter une phase type'}
-                    </p>
-                    {hasPlaybook && (
-                      <button
-                        onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })}
-                        disabled={addingTemplatePhase === '__batch__'}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1px solid ${BRAND_BORDER}`, background: BRAND_SOFT, color: BRAND_DARK, fontSize: 11.5, fontWeight: 800, cursor: addingTemplatePhase === '__batch__' ? 'wait' : 'pointer' }}
-                      >
-                        {addingTemplatePhase === '__batch__' ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
-                        {`Ajouter les étapes de ${bulkLabel}`}
-                      </button>
-                    )}
-                  </div>
-                  {available.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {available.map((tpl) => (
-                        <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize: 11.5, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
-                          {addingTemplatePhase === tpl.name ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9} color={BRAND}/>}
-                          {tpl.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 11.5, color: '#9CA3AF', margin: 0 }}>Toutes les étapes recommandées sont déjà ajoutées.</p>
-                  )}
-                </div>
-              );
-            })()}
+            {aiRecommendations.length > 0 && (
+              <div style={{ marginTop:12, borderTop:'1px solid #F4F5F6', paddingTop:10 }}>
+                <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 8px', display:'flex', alignItems:'center', gap:5 }}>
+                  <Sparkles size={10}/> Conseils de Flo
+                </p>
+                <ul style={{ margin:0, padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:5 }}>
+                  {aiRecommendations.map((rec, i) => (
+                    <li key={i} style={{ display:'flex', gap:6, fontSize:11.5, color:'#3A3D44', lineHeight:1.4 }}>
+                      <span style={{ color:BRAND, flexShrink:0, fontWeight:800 }}>›</span>
+                      {rec}
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={() => setAiRecommendations([])} style={{ marginTop:6, fontSize:10, color:'#C0C4CC', background:'transparent', border:'none', cursor:'pointer', padding:0 }}>
+                  Masquer les conseils
+                </button>
+              </div>
+            )}
           </div>
           </div>{/* fin carte blanche Gantt+Florence */}
 

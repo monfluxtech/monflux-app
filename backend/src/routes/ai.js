@@ -405,41 +405,55 @@ router.post('/credits', async (req, res) => {
   }
 });
 
-// POST /api/ai/adjust-phases — Florence réorganise les phases existantes (dates, durées ouvrables, dépendances)
+// POST /api/ai/adjust-phases — Florence réorganise les phases existantes (dates, durées, ordre, dépendances + conseils)
 router.post('/adjust-phases', enforceAiQuota, async (req, res) => {
   if (!aiReady()) return aiNotConfigured(res);
-  const { phases = [], project_name = '', start_date, project_type = '' } = req.body;
+  const { phases = [], project_name = '', start_date, project_type = '', notes = '' } = req.body;
   if (!phases.length) return res.status(400).json({ error: 'Aucune phase à ajuster' });
 
   const phaseList = phases.map((ph, i) =>
-    `${i+1}. "${ph.name}" (${ph.trade_name||'?'}) — durée actuelle: ${ph.duration_hours||'?'}h, début actuel: ${ph.start_date||'?'}`
+    `${i+1}. "${ph.name}" (${ph.trade_name||'?'}) — ${ph.duration_hours||'?'}h, début actuel: ${ph.start_date||'non défini'}`
   ).join('\n');
 
   const prompt = `Tu es Florence, planificatrice de chantier MONFLUX spécialisée en construction au Québec.
-Tu reçois la liste des phases d'un chantier et tu les réorganises de façon réaliste.
+Tu analyses et optimises le planning d'un chantier existant.
 
-PROJET: ${project_name} | Type: ${project_type} | Date de début cible: ${start_date || 'à déterminer'}
+PROJET: ${project_name} | Type: ${project_type} | Début cible: ${start_date || 'à déterminer'}
+${notes ? `Notes: ${notes}` : ''}
 
-PHASES ACTUELLES (à ajuster — ne pas supprimer ni ajouter):
+PHASES ACTUELLES (conserve les noms EXACTEMENT, ajuste seulement dates/durées/ordre):
 ${phaseList}
 
-RÈGLES:
-1. Journée ouvrée = 8h, semaine = 5 jours (lundi–vendredi, pas de week-end).
-2. Calcule duration_hours comme multiple de 8h (ex: 2 jours = 16h, 1 semaine = 40h).
-3. Les phases doivent se suivre de façon logique (ex: démolition avant plomberie).
-4. start_date = date de début réelle (YYYY-MM-DD, jamais un week-end).
-5. Identifie les dépendances: pour chaque phase, quel est l'indice (1-based) de la phase qui doit être terminée avant? (null si aucune).
-6. Garde tous les noms et trade_names EXACTEMENT comme fournis.
+JOURS FÉRIÉS QUÉBEC 2026 À ÉVITER (ne jamais débuter ni terminer un chantier ces jours):
+- 1er jan (Jour de l'an), 3 avril (Vendredi Saint), 6 avril (Lundi de Pâques)
+- 18 mai (Journée nationale des Patriotes), 24 juin (Fête nationale du Québec)
+- 1er juillet (Fête du Canada), 7 septembre (Fête du travail)
+- 12 octobre (Action de Grâce), 25 décembre (Noël), 26 décembre (Lendemain de Noël)
+- Aussi: congé de construction 3e semaine de juillet (20–26 juil. 2026 typiquement)
 
-Réponds UNIQUEMENT en JSON valide:
+RÈGLES:
+1. Journée ouvrée = 8h, semaine = 5 jours ouvrés (lun–ven). Jamais le week-end ni les jours fériés.
+2. duration_hours = durée RÉALISTE pour le type de travaux (pas juste copier l'existant).
+3. L'ordre logique est crucial : démolition → structure → plomberie rough-in → électricité rough-in → isolation → gypse → peinture → finition. Respecter les dépendances métier.
+4. Si l'ordre actuel n'est pas logique, propose un better_order (1-based, nouvelle position).
+5. Laisse 1–2 jours de tampon entre phases critiques pour imprévus.
+6. depends_on_index = indice (1-based) de la phase précédente directe (null si première).
+
+Réponds UNIQUEMENT en JSON valide (pas de texte autour):
 {
   "phases": [
     {
       "id_original": 1,
       "start_date": "2026-07-02",
       "duration_hours": 16,
-      "depends_on_index": null
+      "depends_on_index": null,
+      "better_order": 1
     }
+  ],
+  "recommendations": [
+    "Déplacer Peinture après Gypse & finition pour respecter le séchage (48h min).",
+    "La 3e semaine de juillet (congé construction) affecte 2 phases — décalage de 5 jours ajouté.",
+    "Prévoir un tampon de 2 jours avant la Fête nationale du 24 juin."
   ]
 }`;
 
@@ -447,12 +461,15 @@ Réponds UNIQUEMENT en JSON valide:
     const client = initAnthropicIfReady();
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 1536,
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = msg.content[0]?.text || '{}';
     const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
-    res.json({ adjustments: Array.isArray(result?.phases) ? result.phases : [] });
+    res.json({
+      adjustments: Array.isArray(result?.phases) ? result.phases : [],
+      recommendations: Array.isArray(result?.recommendations) ? result.recommendations : [],
+    });
   } catch (err) {
     console.error('adjust-phases', err);
     res.status(500).json({ error: 'Erreur serveur' });
