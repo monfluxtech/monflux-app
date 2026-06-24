@@ -535,7 +535,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
-  const [stickyAll, setStickyAll]           = useState(true);
+  const [pinnedCols, setPinnedCols]         = useState(new Set(['phase','start','dur_prev','dur_real','assigned']));
   const [hiddenCols, setHiddenCols]         = useState(new Set()); // keys: 'start','dur_prev','dur_real','assigned'
   const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
@@ -688,8 +688,11 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const hasSel = selectedIds.size > 0;
 
   // Sticky helpers — conditioned on stickyAll toggle (z-index high enough to cover Gantt overlays)
-  const stickyH = (left, extra = {}) => stickyAll ? { position:'sticky', left, zIndex:20, ...extra } : extra;
-  const stickyC = (left, extra = {}) => stickyAll ? { position:'sticky', left, zIndex:15, ...extra } : extra;
+  // Pin = sticky. colKey defaults to 'phase' so checkbox/phase rows follow the phase pin.
+  const togglePin  = (key) => setPinnedCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const pinned     = (key) => pinnedCols.has(key);
+  const stickyH    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:20, ...extra } : extra;
+  const stickyC    = (left, colKey = 'phase', extra = {}) => pinned(colKey) ? { position:'sticky', left, zIndex:15, ...extra } : extra;
 
   // Effective time span — for fixed-period scales the ganttW represents only the visible columns,
   // NOT the full project span. Using the correct effMs fixes bar width in Heure/Jour/AM-PM.
@@ -890,7 +893,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const scrollToToday = () => {
     if (!scrollRef.current) return;
     const viewW = scrollRef.current.clientWidth;
-    const FIXED = stickyAll ? fixedColsW : 0;
+    const FIXED = pinnedCols.size > 0 ? fixedColsW : 0;
     // centre today within the visible Gantt area (after sticky columns)
     scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - FIXED) * 0.4);
   };
@@ -983,22 +986,38 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   };
 
   const exportPdf = () => {
+    const ganttEl = document.querySelector('[data-gantt-print]');
+    if (!ganttEl) { window.print(); return; }
+    // Measure full content (including scrollable overflow)
+    const naturalW = Math.max(ganttEl.scrollWidth, ganttEl.offsetWidth);
+    const naturalH = Math.max(ganttEl.scrollHeight, ganttEl.offsetHeight);
+    // A4 landscape printable at 96 dpi: ~1058×748px (297×210mm minus 8mm margins)
+    const printW = 1058;
+    const printH = 748;
+    const scale  = Math.min(printW / naturalW, printH / naturalH, 1).toFixed(4);
+
     const el = document.createElement('style');
     el.id = '__gantt_print_css';
-    // visibility approach: unlike display:none, visibility:hidden on a parent
-    // can be overridden by children via visibility:visible
     el.textContent = `
       @media print {
-        @page { size: A4 landscape; margin: 4mm 6mm; }
+        @page { size: A4 landscape; margin: 8mm; }
+        /* Force couleurs exactes — sans ça les barres colorées deviennent blanches */
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        /* Masquer tout sauf le Gantt */
         body * { visibility: hidden !important; }
         [data-gantt-print], [data-gantt-print] * { visibility: visible !important; }
+        /* Masquer toolbar et filtres à l'intérieur du Gantt */
+        [data-gantt-no-print] { visibility: hidden !important; display: none !important; }
+        /* Positionner + scaler pour tenir sur 1 page */
         [data-gantt-print] {
           position: fixed !important;
           top: 0 !important; left: 0 !important;
-          width: 100vw !important;
           overflow: visible !important;
+          transform-origin: top left !important;
+          transform: scale(${scale}) !important;
         }
-        [data-gantt-no-print] { display: none !important; }
+        /* Débloquer les overflow internes pour afficher toutes les colonnes/barres */
+        [data-gantt-print] * { overflow: visible !important; }
         .animate-spin { animation: none !important; }
       }
     `;
@@ -1043,17 +1062,18 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   return (
     <div data-gantt-print style={{ background:'#fff' }}>
       {/* ── Toolbar ── */}
-      <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        {/* Sticky colonnes — toggle global */}
-        <button onClick={() => setStickyAll(v=>!v)} title={stickyAll ? 'Désépingler les colonnes' : 'Épingler les colonnes'}
+      <div data-gantt-no-print style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
+        {/* Pin tout / dépin tout */}
+        <button onClick={() => setPinnedCols(prev => prev.size === 0 ? new Set(['phase','start','dur_prev','dur_real','assigned']) : new Set())}
+          title={pinnedCols.size > 0 ? 'Désépingler toutes les colonnes' : 'Épingler toutes les colonnes'}
           style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
-            border:`1.5px solid ${stickyAll ? BRAND_BORDER : '#E5E7EB'}`,
-            background: stickyAll ? BRAND_SOFT : '#fff',
-            color: stickyAll ? BRAND : '#9CA3AF', cursor:'pointer' }}>
+            border:`1.5px solid ${pinnedCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
+            background: pinnedCols.size > 0 ? BRAND_SOFT : '#fff',
+            color: pinnedCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
           <Pin size={13}/>
         </button>
         {hiddenCols.size > 0 && (
-          <button onClick={() => setHiddenCols(new Set())} title="Afficher toutes les colonnes"
+          <button onClick={() => setHiddenCols(new Set())} title="Restaurer les colonnes masquées"
             style={{ fontSize:10, fontWeight:700, color:BRAND, background:BRAND_SOFT, border:`1px solid ${BRAND_BORDER}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>
             +{hiddenCols.size} col.
           </button>
@@ -1094,58 +1114,40 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
       {/* ── Filtres / Légende ── 2 lignes: recherche texte (gauche) | statuts (droite) */}
       <div style={{ background:'#FAFBFC', borderBottom:'1px solid #F0F1F2' }}>
-        {/* Ligne 1 — Filtres | Assignation | Phase | Début | Assigné | Durée prévue | Avec dépendance | Récurrent */}
-        <div style={{ padding:'5px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
+        {/* Ligne 1 — FILTRES | Phase | Début | Assigné | sep | Durée prév | Avec dep | Récurrent */}
+        <div data-gantt-no-print style={{ padding:'5px 12px', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
           <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Filtres</span>
-          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
-          {/* Assignation chips */}
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Assignation</span>
-          {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => {
-            const active = filters.assigneeStatus.has(key);
-            return (
-              <button key={key} onClick={() => toggleChipFilter('assigneeStatus', key)}
-                style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-                  background: active ? st.dot+'22' : st.bg, border:`1.5px solid ${active ? st.dot : st.border}`,
-                  fontSize:10, fontWeight:600, color: active ? st.dot : st.text, cursor:'pointer',
-                  boxShadow: active ? `0 0 0 1.5px ${st.dot}44` : 'none', transition:'all .1s' }}>
-                <span style={{ width:5, height:5, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
-                {st.label}
-              </button>
-            );
-          })}
-          {filters.assigneeStatus.size > 0 && <button onClick={() => clearFilter('assigneeStatus')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:11, padding:'0 2px' }}>✕</button>}
-          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
           {/* Phase name */}
           <div style={{ display:'flex', alignItems:'center', gap:3 }}>
             <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Phase</span>
             <input value={filters.name||''} onChange={ev=>setFilter('name',ev.target.value)} placeholder="Chercher…"
-              style={{ width:80, fontSize:10, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+              style={{ width:78, fontSize:10, border:`1px solid ${hasFilter('name') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
             {hasFilter('name') && <button onClick={()=>clearFilter('name')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
           </div>
           {/* Début */}
           <div style={{ display:'flex', alignItems:'center', gap:3 }}>
             <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Début</span>
             <input value={filters.start_date||''} onChange={ev=>setFilter('start_date',ev.target.value)} placeholder="juil 2026…"
-              style={{ width:76, fontSize:10, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+              style={{ width:70, fontSize:10, border:`1px solid ${hasFilter('start_date') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
             {hasFilter('start_date') && <button onClick={()=>clearFilter('start_date')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
           </div>
           {/* Assigné nom */}
           <div style={{ display:'flex', alignItems:'center', gap:3 }}>
             <span style={{ fontSize:9, fontWeight:700, color:'#9CA3AF', flexShrink:0 }}>Assigné</span>
             <input value={filters.assigned||''} onChange={ev=>setFilter('assigned',ev.target.value)} placeholder="Nom…"
-              style={{ width:66, fontSize:10, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 6px', outline:'none' }}/>
+              style={{ width:60, fontSize:10, border:`1px solid ${hasFilter('assigned') ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
             {hasFilter('assigned') && <button onClick={()=>clearFilter('assigned')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
           </div>
           <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
-          {/* Durée prévue min–max */}
-          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Durée prévu</span>
+          {/* Durée prévue */}
+          <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', flexShrink:0 }}>Durée prévu</span>
           <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-            <input value={filterDurMin} onChange={ev => setFilterDurMin(ev.target.value)} placeholder="min"
-              style={{ width:38, fontSize:10, border:`1px solid ${filterDurMin ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
+            <input value={filterDurMin} onChange={ev=>setFilterDurMin(ev.target.value)} placeholder="min"
+              style={{ width:36, fontSize:10, border:`1px solid ${filterDurMin ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
             <span style={{ fontSize:9, color:'#C0C4CC' }}>—</span>
-            <input value={filterDurMax} onChange={ev => setFilterDurMax(ev.target.value)} placeholder="max"
-              style={{ width:38, fontSize:10, border:`1px solid ${filterDurMax ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
-            {(filterDurMin||filterDurMax) && <button onClick={() => { setFilterDurMin(''); setFilterDurMax(''); }} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>}
+            <input value={filterDurMax} onChange={ev=>setFilterDurMax(ev.target.value)} placeholder="max"
+              style={{ width:36, fontSize:10, border:`1px solid ${filterDurMax ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', outline:'none' }}/>
+            {(filterDurMin||filterDurMax) && <button onClick={()=>{setFilterDurMin('');setFilterDurMax('');}} style={{ border:'none',background:'transparent',cursor:'pointer',color:'#9CA3AF',fontSize:10,padding:0 }}>✕</button>}
           </div>
           <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
           {/* Avec dépendance chip */}
@@ -1154,38 +1156,50 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               background: filterHasDep ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${filterHasDep ? BRAND_BORDER : '#E5E7EB'}`,
               fontSize:10, fontWeight:600, color: filterHasDep ? BRAND_DARK : '#6B7280', cursor:'pointer',
               boxShadow: filterHasDep ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
-            <GitBranch size={8}/>Avec dépendance
+            <GitBranch size={8}/>Avec dép.
           </button>
-          {/* Dep selectors — visible quand le filtre est actif */}
-          {filterHasDep && (
-            <>
-              <select value={filterDepPred} onChange={e => setFilterDepPred(e.target.value)}
-                style={{ fontSize:10, border:`1px solid ${filterDepPred ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color: filterDepPred ? BRAND_DARK : '#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:130 }}>
-                <option value="">Suivi de…</option>
-                {phases.map(ph => <option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
-              </select>
-              <select value={filterDepSucc} onChange={e => setFilterDepSucc(e.target.value)}
-                style={{ fontSize:10, border:`1px solid ${filterDepSucc ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color: filterDepSucc ? BRAND_DARK : '#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:130 }}>
-                <option value="">Précède…</option>
-                {phases.map(ph => <option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
-              </select>
-              {(filterDepPred || filterDepSucc) && (
-                <button onClick={() => { setFilterDepPred(''); setFilterDepSucc(''); }}
-                  style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10, padding:0 }}>✕</button>
-              )}
-            </>
-          )}
+          {filterHasDep && <>
+            <select value={filterDepPred} onChange={e=>setFilterDepPred(e.target.value)}
+              style={{ fontSize:10, border:`1px solid ${filterDepPred?BRAND:'#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color:filterDepPred?BRAND_DARK:'#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:120 }}>
+              <option value="">Suivi de…</option>
+              {(phases||[]).map(ph=><option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
+            </select>
+            <select value={filterDepSucc} onChange={e=>setFilterDepSucc(e.target.value)}
+              style={{ fontSize:10, border:`1px solid ${filterDepSucc?BRAND:'#E5E7EB'}`, borderRadius:4, padding:'2px 4px', color:filterDepSucc?BRAND_DARK:'#9CA3AF', background:'#fff', cursor:'pointer', maxWidth:120 }}>
+              <option value="">Précède…</option>
+              {(phases||[]).map(ph=><option key={ph.id} value={String(ph.id)}>{ph.name}</option>)}
+            </select>
+            {(filterDepPred||filterDepSucc) && <button onClick={()=>{setFilterDepPred('');setFilterDepSucc('');}} style={{ border:'none',background:'transparent',cursor:'pointer',color:'#9CA3AF',fontSize:10,padding:0 }}>✕</button>}
+          </>}
           {/* Récurrent */}
-          <button onClick={() => setFilterRecurrence(v=>!v)}
+          <button onClick={()=>setFilterRecurrence(v=>!v)}
             style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-              background: filterRecurrence ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${filterRecurrence ? BRAND_BORDER : '#E5E7EB'}`,
-              fontSize:10, fontWeight:600, color: filterRecurrence ? BRAND_DARK : '#6B7280', cursor:'pointer',
-              boxShadow: filterRecurrence ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
+              background:filterRecurrence?BRAND_SOFT:'#F3F4F6', border:`1.5px solid ${filterRecurrence?BRAND_BORDER:'#E5E7EB'}`,
+              fontSize:10, fontWeight:600, color:filterRecurrence?BRAND_DARK:'#6B7280', cursor:'pointer',
+              boxShadow:filterRecurrence?`0 0 0 1.5px ${BRAND_BORDER}88`:'none', transition:'all .1s' }}>
             Récurrent
           </button>
         </div>
-        {/* Ligne 2 — Statuts Phase + Réel Punch */}
-        <div style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+        {/* Ligne 2 — ASSIGNATION chips */}
+        <div data-gantt-no-print style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap', borderBottom:'1px solid #F4F5F6' }}>
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Assignation</span>
+          {Object.entries(ASSIGNEE_STATUS).map(([key, st]) => {
+            const active = filters.assigneeStatus.has(key);
+            return (
+              <button key={key} onClick={()=>toggleChipFilter('assigneeStatus', key)}
+                style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
+                  background:active?st.dot+'22':st.bg, border:`1.5px solid ${active?st.dot:st.border}`,
+                  fontSize:10, fontWeight:600, color:active?st.dot:st.text, cursor:'pointer',
+                  boxShadow:active?`0 0 0 1.5px ${st.dot}44`:'none', transition:'all .1s' }}>
+                <span style={{ width:5, height:5, borderRadius:'50%', background:st.dot, flexShrink:0 }}/>
+                {st.label}
+              </button>
+            );
+          })}
+          {filters.assigneeStatus.size>0 && <button onClick={()=>clearFilter('assigneeStatus')} style={{ border:'none',background:'transparent',cursor:'pointer',color:'#9CA3AF',fontSize:11,padding:'0 2px' }}>✕</button>}
+        </div>
+        {/* Ligne 3 — Statuts Phase + Réel Punch */}
+        <div data-gantt-no-print style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
           <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Phase</span>
           <span style={{ fontSize:8.5, fontWeight:700, color:'#C0C4CC', fontStyle:'italic', flexShrink:0 }}>Prévu&nbsp;→</span>
           {Object.entries(STATUS_LABELS).map(([status, label]) => {
@@ -1236,33 +1250,40 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 onChange={ev => ev.target.checked ? selectAll() : clearSelection()}
                 style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
             </div>
-            {/* Phase — pin pour basculer sticky global */}
-            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'5px 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
+            {/* Phase — pin individuel (sticky/non-sticky) */}
+            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'5px 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W, 'phase') }}>
               <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}</span>
-              <button onClick={() => setStickyAll(v=>!v)} title={stickyAll ? 'Désépingler colonnes' : 'Épingler colonnes'}
-                style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color: stickyAll ? BRAND : '#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, opacity: stickyAll ? 1 : 0.6 }}>
+              <button onClick={() => togglePin('phase')} title={pinned('phase') ? 'Désépingler Phase' : 'Épingler Phase'}
+                style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color: pinned('phase') ? BRAND : '#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1 }}>
                 <Pin size={8}/>
               </button>
             </div>
-            {/* Colonnes optionnelles — pin (masquer) + poignée de redimensionnement */}
+            {/* Colonnes optionnelles — pin=sticky, ×=masquer, poignée resize */}
             {visibleOptCols.map(cd => {
               const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
               const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
+              const isPinned = pinned(cd.key);
               return (
-                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && stickyAll ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key]) }}>
+                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && isPinned ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
                   <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
                     {cd.label}
                     {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
                   </span>
-                  <button onClick={() => toggleColPin(cd.key)} title={`Masquer ${cd.label}`}
-                    style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, opacity:.6 }}>
-                    <Pin size={8}/>
-                  </button>
-                  {/* Poignée de redimensionnement sur le bord droit */}
+                  <div style={{ display:'flex', alignItems:'center', gap:2, flexShrink:0 }}>
+                    {/* Pin = toggle sticky */}
+                    <button onClick={() => togglePin(cd.key)} title={isPinned ? `Désépingler ${cd.label}` : `Épingler ${cd.label}`}
+                      style={{ background:'transparent', border:'none', cursor:'pointer', color: isPinned ? BRAND : '#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1 }}>
+                      <Pin size={8}/>
+                    </button>
+                    {/* × = masquer la colonne */}
+                    <button onClick={() => setHiddenCols(prev => new Set([...prev, cd.key]))} title={`Masquer ${cd.label}`}
+                      style={{ background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, fontSize:9 }}>
+                      ×
+                    </button>
+                  </div>
+                  {/* Poignée de redimensionnement */}
                   <div onMouseDown={e => startColResize(cd.key, cd.w, e)}
-                    style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', background:'transparent', zIndex:10 }}
-                    title="Redimensionner"
-                  />
+                    style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize', background:'transparent', zIndex:10 }}/>
                 </div>
               );
             })}
@@ -1387,9 +1408,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 {/* Colonnes optionnelles — rendues dynamiquement selon visibleOptCols */}
                 {visibleOptCols.map(cd => {
                   const isLastOptCol = cd === visibleOptCols[visibleOptCols.length - 1];
-                  const cellBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, boxShadow: isLastOptCol && stickyAll ? '3px 0 6px rgba(0,0,0,.04)' : 'none' };
+                  const cellBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, boxShadow: isLastOptCol && pinned(cd.key) ? '3px 0 6px rgba(0,0,0,.04)' : 'none' };
                   if (cd.key === 'start') return (
-                    <div key="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start']) }}>
+                    <div key="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start'], 'start') }}>
                       {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                         <input type="datetime-local" autoFocus
                           defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
@@ -1411,7 +1432,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_prev') return (
-                    <div key="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev']) }}>
+                    <div key="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev'], 'dur_prev') }}>
                       {editCell?.id===ph.id && editCell?.field==='duration' ? (
                         <input type="number" autoFocus min="0" step="0.5" defaultValue={ph.duration_hours??''}
                           onBlur={ev => { const val=ev.target.value===''?null:parseFloat(ev.target.value); onUpdatePhase?.(ph.id,{duration_hours:val}); setEditCell(null); }}
@@ -1426,14 +1447,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_real') return (
-                    <div key="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real']), justifyContent:'flex-end' }}>
+                    <div key="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real'], 'dur_real'), justifyContent:'flex-end' }}>
                       <span style={{ fontSize:11, color: ph.logged_hours > 0 ? PUNCH_COLOR : '#D1D5DB', fontWeight:700, padding:'3px 6px', fontVariantNumeric:'tabular-nums' }}>
                         {ph.logged_hours > 0 ? fmtDur(Number(ph.logged_hours)) : '—'}
                       </span>
                     </div>
                   );
                   if (cd.key === 'assigned') return (
-                    <div key="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned']) }}>
+                    <div key="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned'], 'assigned') }}>
                       <AssigneeChip trade={matchedTrade}
                         assignedToName={ph.assigned_to_name||null}
                         onSelfAssign={currentUserName?()=>onSelfAssign?.(ph.id,currentUserName):undefined}
