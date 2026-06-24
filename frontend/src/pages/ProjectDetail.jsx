@@ -675,6 +675,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   todayPxRef.current = todayPx;
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
+  // Affiche une durée en heures sous forme "Xj Yh" (journée de travail = 8h)
+  const fmtDur = (h) => {
+    if (!h) return '—';
+    const days = Math.floor(h / 8);
+    const rem  = Math.round((h % 8) * 100) / 100;
+    if (days === 0) return `${rem}h`;
+    if (rem === 0)  return `${days}j`;
+    return `${days}j ${rem}h`;
+  };
   const weekNum = (d) => {
     const dt = new Date(d); dt.setHours(0,0,0,0); dt.setDate(dt.getDate() + 4 - (dt.getDay()||7));
     return Math.ceil(((dt - new Date(dt.getFullYear(),0,1)) / 86400000 + 1) / 7);
@@ -786,30 +795,30 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     if (delta !== resize.delta) setResize(p => ({ ...p, delta }));
   };
   const handleResizeUp = (e, ph) => {
+    e.stopPropagation();
     if (!resize || resize.phId !== ph.id) return;
     const d = resize.delta || 0;
+    const snapshot = { ...resize };
+    setResize(null); // annuler l'aperçu AVANT l'API pour éviter double-animation
     if (d !== 0) {
-      const dMs = d * resize.snapMs;
-      if (resize.side === 'left') {
-        const newStartMs = resize.origStartMs + dMs;
-        const newDurH = Math.max(0.25, (resize.origEndMs - newStartMs) / 3600000);
+      const dMs = d * snapshot.snapMs;
+      if (snapshot.side === 'left') {
+        const newStartMs = snapshot.origStartMs + dMs;
+        const newDurH = Math.max(0.25, (snapshot.origEndMs - newStartMs) / 3600000);
         const ns = new Date(newStartMs);
+        const hh = String(ns.getHours()).padStart(2,'0');
+        const mm = String(ns.getMinutes()).padStart(2,'0');
         onUpdatePhase?.(ph.id, {
-          start_date: ns.toISOString().slice(0,10),
-          start_time: `${String(ns.getHours()).padStart(2,'0')}:${String(ns.getMinutes()).padStart(2,'0')}`,
+          start_date: `${ns.getFullYear()}-${String(ns.getMonth()+1).padStart(2,'0')}-${String(ns.getDate()).padStart(2,'0')}`,
+          start_time: `${hh}:${mm}`,
           duration_hours: Number(newDurH.toFixed(2)),
         });
       } else {
-        const newEndMs = resize.origEndMs + dMs;
-        const newDurH = Math.max(0.25, (newEndMs - resize.origStartMs) / 3600000);
-        const ne = new Date(newEndMs);
-        onUpdatePhase?.(ph.id, {
-          end_date: ne.toISOString().slice(0,10),
-          duration_hours: Number(newDurH.toFixed(2)),
-        });
+        const newEndMs = snapshot.origEndMs + dMs;
+        const newDurH = Math.max(0.25, (newEndMs - snapshot.origStartMs) / 3600000);
+        onUpdatePhase?.(ph.id, { duration_hours: Number(newDurH.toFixed(2)) });
       }
     }
-    setResize(null);
   };
 
   // Date label drag handlers
@@ -875,26 +884,26 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const selectAll = () => setSelectedIds(new Set(filteredPhases.map(p => p.id)));
   const clearSelection = () => { setSelectedIds(new Set()); setBulkPanel(null); };
 
-  // Apply bulk action
+  // Apply bulk action — applique tous les champs remplis d'un coup
   const applyBulk = async () => {
     const ids = [...selectedIds];
     if (bulkPanel === 'delete') {
       ids.forEach(id => onDeletePhase?.(id));
-    } else if (bulkPanel === 'status' && bulkForm.status) {
-      ids.forEach(id => onUpdatePhase?.(id, { status: bulkForm.status }));
-    } else if (bulkPanel === 'start' && bulkForm.start_date) {
-      ids.forEach(id => onUpdatePhase?.(id, { start_date: bulkForm.start_date }));
-    } else if (bulkPanel === 'duration' && bulkForm.duration_hours) {
-      ids.forEach(id => onUpdatePhase?.(id, { duration_hours: parseFloat(bulkForm.duration_hours) }));
-    } else if (bulkPanel === 'assign' && bulkForm.assigned_to_name) {
-      ids.forEach(id => onUpdatePhase?.(id, { assigned_to_name: bulkForm.assigned_to_name }));
-    } else if (bulkPanel === 'self') {
-      ids.forEach(id => onSelfAssign?.(id, currentUserName));
-    } else if (bulkPanel === 'dep' && depFirst && ids.length === 1) {
-      const succId = ids[0];
-      setDeps(d => ({ ...d, [succId]: depFirst }));
-      setDepFirst(null);
+      clearSelection(); return;
     }
+    if (bulkPanel === 'dep' && depFirst && ids.length === 1) {
+      setDeps(d => ({ ...d, [ids[0]]: depFirst }));
+      setDepFirst(null);
+      clearSelection(); return;
+    }
+    // Construire l'objet update avec tous les champs non-vides
+    const updates = {};
+    if (bulkForm.status) updates.status = bulkForm.status;
+    if (bulkForm.start_date) updates.start_date = bulkForm.start_date;
+    if (bulkForm.duration_hours) updates.duration_hours = parseFloat(bulkForm.duration_hours);
+    if (bulkForm.assigned_to_name) updates.assigned_to_name = bulkForm.assigned_to_name;
+    if (Object.keys(updates).length > 0) ids.forEach(id => onUpdatePhase?.(id, updates));
+    if (bulkPanel === 'self') ids.forEach(id => onSelfAssign?.(id, currentUserName));
     clearSelection();
   };
 
@@ -1135,8 +1144,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   </div>
                   {/* Name */}
                   <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
-                    <button onClick={ev=>{ev.stopPropagation();onDeletePhase?.(ph.id);}}
-                      style={{width:15,height:15,borderRadius:4,border:'1px solid #E4E7EB',background:'transparent',color:'#C1C6CE',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><X size={8}/></button>
                     <div style={{minWidth:0,flex:1}}>
                       {editingId===ph.id ? (
                         <input autoFocus value={editingName} onChange={ev=>setEditingName(ev.target.value)}
@@ -1212,7 +1219,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       onClick={() => setEditCell({ id:ph.id, field:'duration' })}
                       style={{ width:'100%', textAlign:'right', fontSize:11, color:ph.duration_hours?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
                     >
-                      {ph.duration_hours ? `${ph.duration_hours}h` : '—'}
+                      {fmtDur(ph.duration_hours)}
                     </button>
                   )}
                 </div>
@@ -1250,7 +1257,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       cursor: isBarDrag_ ? 'grabbing' : 'grab',
                       whiteSpace:'nowrap', overflow:'hidden', zIndex:3, userSelect:'none',
                       boxShadow: isBarDrag_ ? '0 4px 16px rgba(0,0,0,.28)' : '0 1px 3px rgba(0,0,0,.12)',
-                      transition: (isBarDrag_||isResize_) ? 'none' : 'left .06s,width .06s,box-shadow .15s',
+                      transition: (isBarDrag_||isResize_) ? 'none' : 'box-shadow .15s',
                     }}>
                     {/* Punch / réel overlay — couleur distincte du prévu */}
                     {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:PUNCH_COLOR,opacity:.72,zIndex:0,pointerEvents:'none'}}/>}
@@ -1297,26 +1304,47 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
                     />
                   </div>
-                  {/* Recurrence ghost bars */}
+                  {/* Recurrence bars — même style que la barre principale + hover */}
                   {ph.recurrence_type && (ph.recurrence_count||1) > 1 && ph.start_date && (() => {
                     const REC_INTERVAL = { daily:86400000, weekly:7*86400000, biweekly:14*86400000, monthly:30*86400000 };
+                    const REC_LBL = { daily:'Quotidien', weekly:'Hebdomadaire', biweekly:'Aux 2 sem.', monthly:'Mensuel' };
                     const intervalMs = REC_INTERVAL[ph.recurrence_type] || 7*86400000;
                     const baseMs = new Date(ph.start_date.slice(0,10)+'T'+(ph.start_time||'08:00')).getTime();
                     const durMs  = ph.duration_hours ? ph.duration_hours*3600000 : 8*3600000;
                     const refMs  = effRefStart.getTime();
-                    return Array.from({ length: (ph.recurrence_count||1)-1 }, (_, ri) => {
-                      const oMs    = baseMs + (ri+1)*intervalMs;
-                      const oLeft  = Math.max(0, Math.min(ganttW, (oMs - refMs) / effMs * ganttW));
-                      const oWidth = Math.max(6, Math.min(ganttW - oLeft, durMs / effMs * ganttW));
+                    const total  = ph.recurrence_count||1;
+                    return Array.from({ length: total-1 }, (_, ri) => {
+                      const oStartMs = baseMs + (ri+1)*intervalMs;
+                      const oEndMs   = oStartMs + durMs;
+                      const oLeft  = Math.max(0, Math.min(ganttW, (oStartMs - refMs) / effMs * ganttW));
+                      const oWidth = Math.max(8, Math.min(ganttW - oLeft, durMs / effMs * ganttW));
+                      const oStart = new Date(oStartMs);
+                      const oEnd   = new Date(oEndMs);
+                      const textColor = barColor === STATUS_FILL.not_started ? '#374151' : '#fff';
                       return (
-                        <div key={`rec-${ri}`} style={{
-                          position:'absolute', top:7, bottom:7,
-                          left:oLeft, width:oWidth, minWidth:6,
-                          borderRadius:99, background:barColor,
-                          opacity: Math.max(0.18, 0.45 - ri*0.06),
-                          pointerEvents:'none', zIndex:2,
-                          border:`1.5px dashed ${barColor}`,
-                        }}/>
+                        <div key={`rec-${ri}`}
+                          onMouseEnter={ev => setTooltip({ ph: { ...ph,
+                            _recLabel: `Récurrence ${ri+2}/${total} — ${REC_LBL[ph.recurrence_type]||''}`,
+                            _recStart: oStart, _recEnd: oEnd }, trade: matchedTrade, x: ev.clientX, y: ev.clientY })}
+                          onMouseMove={ev => setTooltip(t => t ? { ...t, x: ev.clientX, y: ev.clientY } : null)}
+                          onMouseLeave={() => setTooltip(null)}
+                          style={{
+                            position:'absolute', top:5, bottom:5,
+                            left:oLeft, width:oWidth, minWidth:8,
+                            borderRadius:99, background:barColor,
+                            opacity: Math.max(0.35, 0.65 - ri*0.08),
+                            zIndex:2, cursor:'default',
+                            display:'flex', alignItems:'center', padding:'0 10px',
+                            overflow:'hidden', whiteSpace:'nowrap',
+                            boxShadow:'0 1px 3px rgba(0,0,0,.10)',
+                          }}>
+                          <span style={{ fontSize:10.5, fontWeight:700, color:textColor, overflow:'hidden', textOverflow:'ellipsis', flex:1 }}>
+                            {ph.trade_name||ph.name}
+                          </span>
+                          <span style={{ fontSize:8.5, fontWeight:900, color:textColor, opacity:.7, flexShrink:0, marginLeft:3 }}>
+                            {ri+2}/{total}
+                          </span>
+                        </div>
                       );
                     });
                   })()}
@@ -1416,71 +1444,66 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', zIndex:9990,
           background:'#15171C', borderRadius:12, padding:'8px 12px', boxShadow:'0 8px 32px rgba(0,0,0,.4)',
           display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', maxWidth:'90vw' }}>
-          <span style={{ fontSize:11, color:'#9CA3AF', fontWeight:700, marginRight:4 }}>{selectedIds.size} sélectionné{selectedIds.size>1?'s':''}</span>
-          {/* Action buttons */}
-          {[
-            ['status','Statut','#6B7280'],
-            ['start','Début','#6B7280'],
-            ['duration','Durée','#6B7280'],
-            ['assign','Assigner','#6B7280'],
-            ['self','Auto-assigner','#6B7280'],
-            ['dep','Dépendance','#6B7280'],
-            ['delete','Supprimer','#EF4444'],
-          ].map(([action, label, col]) => (
-            <button key={action} onClick={() => setBulkPanel(bulkPanel===action ? null : action)}
-              style={{ padding:'5px 10px', borderRadius:7, border:`1px solid ${bulkPanel===action?BRAND:'rgba(255,255,255,.15)'}`,
-                background: bulkPanel===action ? BRAND : 'rgba(255,255,255,.07)', color: action==='delete'?'#F87171':'#E5E7EB',
-                fontSize:11, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
-              {label}
-            </button>
-          ))}
-          {/* Inline form for selected action */}
-          {bulkPanel && bulkPanel !== 'delete' && bulkPanel !== 'self' && bulkPanel !== 'dep' && (
-            <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-              {bulkPanel === 'status' && (
-                <select value={bulkForm.status||''} onChange={ev=>setBulkForm(f=>({...f,status:ev.target.value}))}
-                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none', fontFamily:'inherit' }}>
-                  <option value="">— choisir —</option>
-                  {Object.entries(STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
-                </select>
-              )}
-              {bulkPanel === 'start' && (
-                <input type="date" value={bulkForm.start_date||''} onChange={ev=>setBulkForm(f=>({...f,start_date:ev.target.value}))}
-                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none', colorScheme:'dark' }}/>
-              )}
-              {bulkPanel === 'duration' && (
-                <input type="number" min="0.25" step="0.25" value={bulkForm.duration_hours||''} placeholder="heures"
-                  onChange={ev=>setBulkForm(f=>({...f,duration_hours:ev.target.value}))}
-                  style={{ width:80, fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none' }}/>
-              )}
-              {bulkPanel === 'assign' && (
-                <input value={bulkForm.assigned_to_name||''} placeholder="Nom ou métier"
-                  onChange={ev=>setBulkForm(f=>({...f,assigned_to_name:ev.target.value}))}
-                  style={{ fontSize:11, borderRadius:5, border:'1px solid #E5E7EB', padding:'4px 6px', outline:'none' }}/>
-              )}
+          <span style={{ fontSize:11, color:'#9CA3AF', fontWeight:700, flexShrink:0 }}>{selectedIds.size} sélectionné{selectedIds.size>1?'s':''}</span>
+          <div style={{ width:1, height:16, background:'rgba(255,255,255,.15)', flexShrink:0 }}/>
+
+          {/* Mode modifier — formulaire multi-champs simultanés */}
+          {bulkPanel === 'edit' && (
+            <div style={{ display:'flex', gap:5, alignItems:'center', flexWrap:'wrap' }}>
+              <select value={bulkForm.status||''} onChange={ev=>setBulkForm(f=>({...f,status:ev.target.value}))}
+                style={{ fontSize:11, borderRadius:5, border:'1px solid rgba(255,255,255,.2)', background:'rgba(255,255,255,.08)', color:'#E5E7EB', padding:'4px 6px', outline:'none' }}>
+                <option value="">Statut…</option>
+                {Object.entries(STATUS_LABELS).map(([k,v])=><option key={k} value={k} style={{background:'#15171C'}}>{v}</option>)}
+              </select>
+              <input type="date" value={bulkForm.start_date||''} onChange={ev=>setBulkForm(f=>({...f,start_date:ev.target.value}))}
+                title="Date de début" style={{ fontSize:11, borderRadius:5, border:'1px solid rgba(255,255,255,.2)', background:'rgba(255,255,255,.08)', color:'#E5E7EB', padding:'4px 6px', outline:'none', colorScheme:'dark' }}/>
+              <input type="number" min="0.25" step="0.25" value={bulkForm.duration_hours||''} placeholder="Durée (h)"
+                onChange={ev=>setBulkForm(f=>({...f,duration_hours:ev.target.value}))}
+                style={{ width:90, fontSize:11, borderRadius:5, border:'1px solid rgba(255,255,255,.2)', background:'rgba(255,255,255,.08)', color:'#E5E7EB', padding:'4px 6px', outline:'none' }}/>
+              <input value={bulkForm.assigned_to_name||''} placeholder="Assigné…"
+                onChange={ev=>setBulkForm(f=>({...f,assigned_to_name:ev.target.value}))}
+                style={{ width:110, fontSize:11, borderRadius:5, border:'1px solid rgba(255,255,255,.2)', background:'rgba(255,255,255,.08)', color:'#E5E7EB', padding:'4px 6px', outline:'none' }}/>
               <button onClick={applyBulk}
-                style={{ padding:'5px 10px', borderRadius:7, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
-                OK
+                style={{ padding:'5px 12px', borderRadius:7, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer', flexShrink:0 }}>
+                Appliquer
               </button>
             </div>
           )}
-          {bulkPanel === 'delete' && (
-            <button onClick={applyBulk}
-              style={{ padding:'5px 10px', borderRadius:7, border:'none', background:'#EF4444', color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
-              Confirmer suppression
-            </button>
-          )}
-          {bulkPanel === 'self' && (
-            <button onClick={applyBulk}
-              style={{ padding:'5px 10px', borderRadius:7, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
-              S'auto-assigner
-            </button>
-          )}
           {bulkPanel === 'dep' && (
             <span style={{ fontSize:10, color:'#9CA3AF' }}>
-              {depFirst ? `Lier vers ${phases.find(p=>p.id===depFirst)?.name||'?'} — cliquer OK` : 'Sélectionner 1 phase successeur puis choisir le prédécesseur :'}
+              {depFirst ? `Lier → ${phases.find(p=>p.id===depFirst)?.name||'?'}` : 'Cliquer sur le prédécesseur dans la liste…'}
             </span>
           )}
+
+          {/* Boutons d'action */}
+          <div style={{ display:'flex', gap:4, flexShrink:0, marginLeft:'auto' }}>
+            <button onClick={() => setBulkPanel(bulkPanel==='edit'?null:'edit')}
+              style={{ padding:'5px 10px', borderRadius:7, border:`1px solid ${bulkPanel==='edit'?BRAND:'rgba(255,255,255,.15)'}`,
+                background: bulkPanel==='edit' ? BRAND : 'rgba(255,255,255,.07)', color:'#E5E7EB', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              Modifier
+            </button>
+            {currentUserName && (
+              <button onClick={() => { setBulkPanel('self'); applyBulk(); }}
+                style={{ padding:'5px 10px', borderRadius:7, border:'1px solid rgba(255,255,255,.15)', background:'rgba(255,255,255,.07)', color:'#E5E7EB', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                M'assigner
+              </button>
+            )}
+            <button onClick={() => setBulkPanel(bulkPanel==='dep'?null:'dep')}
+              style={{ padding:'5px 10px', borderRadius:7, border:`1px solid ${bulkPanel==='dep'?BRAND:'rgba(255,255,255,.15)'}`,
+                background: bulkPanel==='dep' ? BRAND : 'rgba(255,255,255,.07)', color:'#E5E7EB', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              Lier
+            </button>
+            <button onClick={() => setBulkPanel(bulkPanel==='delete'?null:'delete')}
+              style={{ padding:'5px 10px', borderRadius:7, border:'1px solid rgba(239,68,68,.4)', background:'rgba(255,255,255,.07)', color:'#F87171', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              {bulkPanel==='delete' ? '✓ Confirmer' : 'Supprimer'}
+            </button>
+            {bulkPanel==='delete' && (
+              <button onClick={applyBulk}
+                style={{ padding:'5px 10px', borderRadius:7, border:'none', background:'#EF4444', color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                Oui, supprimer
+              </button>
+            )}
+          </div>
           <button onClick={clearSelection}
             style={{ padding:'5px 8px', borderRadius:7, border:'1px solid rgba(255,255,255,.15)', background:'transparent', color:'#9CA3AF', fontSize:11, cursor:'pointer', marginLeft:4 }}>
             ✕
@@ -1553,13 +1576,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         }}>
           {(() => {
             const tph = tooltip.ph;
-            const tStart = tph.start_date ? new Date(tph.start_date.slice(0,10) + 'T' + (tph.start_time||'08:00')) : null;
-            const tEnd   = tph.duration_hours && tStart
+            const tStart = tph._recStart || (tph.start_date ? new Date(tph.start_date.slice(0,10) + 'T' + (tph.start_time||'08:00')) : null);
+            const tEnd   = tph._recEnd || (tph.duration_hours && tStart
               ? new Date(tStart.getTime() + Number(tph.duration_hours)*3600000)
-              : tph.end_date ? new Date(tph.end_date.slice(0,10) + 'T17:00') : null;
+              : tph.end_date ? new Date(tph.end_date.slice(0,10) + 'T17:00') : null);
             const fmtDT  = (d) => d ? d.toLocaleDateString('fr-CA',{day:'numeric',month:'short'}) + ' ' + String(d.getHours()).padStart(2,'0') + 'h' + String(d.getMinutes()).padStart(2,'0') : '';
             const REC_LBL = { daily:'Quotidien', weekly:'Hebdomadaire', biweekly:'Aux 2 sem.', monthly:'Mensuel' };
             return (<>
+              {tph._recLabel && <div style={{ fontSize:10, color:BRAND, fontWeight:700, marginBottom:3 }}>{tph._recLabel}</div>}
               <div style={{ fontWeight:800, fontSize:13, marginBottom:4 }}>{tph.name}</div>
               {tph.trade_name && <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Corps: {tph.trade_name}</div>}
               {tStart && (
@@ -1568,7 +1592,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
               )}
               {tph.duration_hours && (
-                <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Durée : {tph.duration_hours}h</div>
+                <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Durée : {fmtDur(tph.duration_hours)}</div>
               )}
               {tph.status && (
                 <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, marginTop:4 }}>
