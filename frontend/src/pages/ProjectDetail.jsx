@@ -535,10 +535,15 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [addingPhase, setAddingPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
-  const [freezeCols, setFreezeCols]         = useState(true);
+  const [stickyAll, setStickyAll]           = useState(true);
+  const [hiddenCols, setHiddenCols]         = useState(new Set()); // keys: 'start','dur_prev','dur_real','assigned'
   const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
   const [filters, setFilters]               = useState({ name:'', start_date:'', assigned:'', phaseStatus: new Set(), assigneeStatus: new Set() });
+  const [filterDurMin, setFilterDurMin]     = useState('');
+  const [filterDurMax, setFilterDurMax]     = useState('');
+  const [filterHasDep, setFilterHasDep]     = useState(false);
+  const [filterRecurrence, setFilterRecurrence] = useState(false);
   const [activeFilter, setActiveFilter]     = useState(null);
   const [selectedIds, setSelectedIds]       = useState(new Set());
   const [bulkPanel, setBulkPanel]           = useState(null); // null | 'status' | 'start' | 'duration' | 'assign' | 'dep'
@@ -556,7 +561,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   // (fixedColW hardcodé car LABEL_W/DATE_W etc. sont définis après le return null)
   useEffect(() => {
     if (!scrollRef.current || todayPxRef.current <= 0) return;
-    const FIXED = 24 + 155 + 20 + 102 + 50 + 140; // CHECK_W+LABEL_W+20+DATE_W+DUR_W+ASSIGN_W // LABEL_W+20+DATE_W+DUR_W+ASSIGN_W
+    const FIXED = 24 + 155 + 20 + 102 + 55 + 62 + 140; // CHECK_W+LABEL_W+20+DATE_W+DUR_W+REAL_DUR_W+ASSIGN_W (approx — hiddenCols not available here)
     const viewW = scrollRef.current.clientWidth;
     scrollRef.current.scrollLeft = Math.max(0, todayPxRef.current - (viewW - FIXED) * 0.3);
   }, [scale]);
@@ -637,18 +642,35 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     return cols;
   })();
 
-  const CHECK_W  = 24;  // checkbox column
-  const LABEL_W  = 155;
-  const DATE_W   = 102;
-  const DUR_W    = 50;
-  const ASSIGN_W = 140;
-  const ganttW   = Math.max(columns.length * colW, 400);
-  const totalMinW = CHECK_W + LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W + ganttW;
+  const CHECK_W    = 24;  // checkbox column
+  const LABEL_W    = 155;
+  const DATE_W     = 102;
+  const DUR_W      = 55;
+  const REAL_DUR_W = 62;
+  const ASSIGN_W   = 140;
+  const ganttW     = Math.max(columns.length * colW, 400);
+
+  // Colonnes optionnelles (ordre gauche→droite) — cachables via hiddenCols
+  const OPTIONAL_COLS = [
+    { key: 'start',    w: DATE_W,     label: 'Début prévu' },
+    { key: 'dur_prev', w: DUR_W,      label: 'Durée prévue' },
+    { key: 'dur_real', w: REAL_DUR_W, label: 'Durée réelle' },
+    { key: 'assigned', w: ASSIGN_W,   label: 'Assigné' },
+  ];
+  const visibleOptCols = OPTIONAL_COLS.filter(c => !hiddenCols.has(c.key));
+  const toggleColPin = (key) => setHiddenCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  // Offsets sticky dynamiques (Phase toujours en premier)
+  let _cumLeft = CHECK_W + LABEL_W + 20;
+  const colLeftMap = {};
+  for (const cd of visibleOptCols) { colLeftMap[cd.key] = _cumLeft; _cumLeft += cd.w; }
+  const fixedColsW = _cumLeft;
+
+  const totalMinW = fixedColsW + ganttW;
   const hasSel = selectedIds.size > 0;
 
-  // Sticky helpers — conditioned on freezeCols toggle (z-index high enough to cover Gantt overlays)
-  const stickyH = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:20, ...extra } : extra;
-  const stickyC = (left, extra = {}) => freezeCols ? { position:'sticky', left, zIndex:15, ...extra } : extra;
+  // Sticky helpers — conditioned on stickyAll toggle (z-index high enough to cover Gantt overlays)
+  const stickyH = (left, extra = {}) => stickyAll ? { position:'sticky', left, zIndex:20, ...extra } : extra;
+  const stickyC = (left, extra = {}) => stickyAll ? { position:'sticky', left, zIndex:15, ...extra } : extra;
 
   // Effective time span — for fixed-period scales the ganttW represents only the visible columns,
   // NOT the full project span. Using the correct effMs fixes bar width in Heure/Jour/AM-PM.
@@ -849,7 +871,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const scrollToToday = () => {
     if (!scrollRef.current) return;
     const viewW = scrollRef.current.clientWidth;
-    const FIXED = freezeCols ? (24 + 155 + 20 + 102 + 50 + 140) : 0;
+    const FIXED = stickyAll ? fixedColsW : 0;
     // centre today within the visible Gantt area (after sticky columns)
     scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - FIXED) * 0.4);
   };
@@ -874,6 +896,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     if (filters.assigned && !(ph.assigned_to_name||'').toLowerCase().includes(filters.assigned.toLowerCase())) return false;
     if (filters.phaseStatus?.size > 0 && !filters.phaseStatus.has(ph.status || 'not_started')) return false;
     if (filterPunch && !(ph.progress_pct > 0)) return false;
+    if (filterDurMin !== '' && (ph.duration_hours || 0) < parseFloat(filterDurMin)) return false;
+    if (filterDurMax !== '' && (ph.duration_hours || 0) > parseFloat(filterDurMax)) return false;
+    if (filterHasDep && !deps[ph.id]) return false;
+    if (filterRecurrence && !ph.recurrence_type) return false;
     if (filters.assigneeStatus?.size > 0) {
       const trade = ph.trade_name ? tradesByName[ph.trade_name.toLowerCase()] : null;
       const effectiveStatus = ph.assigned_to_name ? 'confirmed' : (trade?.status || 'to_find');
@@ -924,7 +950,22 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     clearSelection();
   };
 
-  const exportPdf = () => window.print();
+  const exportPdf = () => {
+    const el = document.createElement('style');
+    el.id = '__gantt_print_css';
+    el.textContent = `
+      @media print {
+        @page { size: A4 landscape; margin: 6mm 8mm; }
+        body > *:not([data-gantt-print]) { display: none !important; }
+        [data-gantt-print] { display: block !important; width: 100% !important; overflow: visible !important; }
+        [data-gantt-no-print] { display: none !important; }
+        .animate-spin { animation: none !important; }
+      }
+    `;
+    document.head.appendChild(el);
+    window.print();
+    setTimeout(() => document.getElementById('__gantt_print_css')?.remove(), 1500);
+  };
 
   // Chemin critique (CPM simplifié) — calculé à chaque render quand activé
   const computeCriticalPath = () => {
@@ -963,14 +1004,20 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     <>
       {/* ── Toolbar ── */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #F4F5F6', gap:5, flexWrap:'wrap' }}>
-        {/* Pin colonnes — icône seule à gauche */}
-        <button onClick={() => setFreezeCols(v=>!v)} title={freezeCols ? 'Désépingler les colonnes' : 'Épingler les colonnes'}
+        {/* Sticky colonnes — toggle global */}
+        <button onClick={() => setStickyAll(v=>!v)} title={stickyAll ? 'Désépingler les colonnes' : 'Épingler les colonnes'}
           style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
-            border:`1.5px solid ${freezeCols ? BRAND_BORDER : '#E5E7EB'}`,
-            background: freezeCols ? BRAND_SOFT : '#fff',
-            color: freezeCols ? BRAND : '#9CA3AF', cursor:'pointer' }}>
+            border:`1.5px solid ${stickyAll ? BRAND_BORDER : '#E5E7EB'}`,
+            background: stickyAll ? BRAND_SOFT : '#fff',
+            color: stickyAll ? BRAND : '#9CA3AF', cursor:'pointer' }}>
           <Pin size={13}/>
         </button>
+        {hiddenCols.size > 0 && (
+          <button onClick={() => setHiddenCols(new Set())} title="Afficher toutes les colonnes"
+            style={{ fontSize:10, fontWeight:700, color:BRAND, background:BRAND_SOFT, border:`1px solid ${BRAND_BORDER}`, borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>
+            +{hiddenCols.size} col.
+          </button>
+        )}
         <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
         <span style={{ flex:1 }}/>
         {[
@@ -1088,6 +1135,31 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             </div>
           )}
         </div>
+        {/* Ligne 3 — Durée, Dépendance, Récurrence */}
+        <div style={{ padding:'4px 12px', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <span style={{ fontSize:8.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#C0C4CC', flexShrink:0 }}>Durée prévue</span>
+          <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <input value={filterDurMin} onChange={ev => setFilterDurMin(ev.target.value)} placeholder="min h"
+              style={{ width:46, fontSize:10, border:`1px solid ${filterDurMin ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
+            <span style={{ fontSize:9, color:'#C0C4CC' }}>—</span>
+            <input value={filterDurMax} onChange={ev => setFilterDurMax(ev.target.value)} placeholder="max h"
+              style={{ width:46, fontSize:10, border:`1px solid ${filterDurMax ? BRAND : '#E5E7EB'}`, borderRadius:4, padding:'2px 5px', outline:'none' }}/>
+            {(filterDurMin||filterDurMax) && <button onClick={() => { setFilterDurMin(''); setFilterDurMax(''); }} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#9CA3AF', fontSize:10 }}>✕</button>}
+          </div>
+          <div style={{ width:1, height:12, background:'#E5E7EB', flexShrink:0 }}/>
+          {[
+            [filterHasDep,    () => setFilterHasDep(v=>!v),      <GitBranch size={8}/>, 'Avec dépendance'],
+            [filterRecurrence,() => setFilterRecurrence(v=>!v),  null,                  'Récurrent'],
+          ].map(([active, fn, icon, lbl], ki) => (
+            <button key={ki} onClick={fn}
+              style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
+                background: active ? BRAND_SOFT : '#F3F4F6', border:`1.5px solid ${active ? BRAND_BORDER : '#E5E7EB'}`,
+                fontSize:10, fontWeight:600, color: active ? BRAND_DARK : '#6B7280', cursor:'pointer',
+                boxShadow: active ? `0 0 0 1.5px ${BRAND_BORDER}88` : 'none', transition:'all .1s' }}>
+              {icon}{lbl}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Gantt scrollable ── */}
@@ -1102,17 +1174,27 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 onChange={ev => ev.target.checked ? selectAll() : clearSelection()}
                 style={{ width:13, height:13, cursor:'pointer', accentColor:BRAND }}/>
             </div>
-            {/* Headers — titres simples, filtres dans la barre de filtres */}
-            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'7px 8px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
-              Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}
+            {/* Phase — toujours visible */}
+            <div style={{ width:LABEL_W+20, flexShrink:0, background:'#fff', padding:'7px 8px', display:'flex', alignItems:'center', justifyContent:'space-between', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('name') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W) }}>
+              <span>Phase {hasFilter('name') && <span style={{ fontSize:8, color:BRAND }}>●</span>}</span>
             </div>
-            <div style={{ width:DATE_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasFilter('start_date') ? BRAND : '#9CA3AF', ...stickyH(CHECK_W+LABEL_W+20) }}>
-              Début {hasFilter('start_date') && <span style={{ fontSize:8, color:BRAND }}>●</span>}
-            </div>
-            <div style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', ...stickyH(CHECK_W+LABEL_W+20+DATE_W) }}>Durée</div>
-            <div style={{ width:ASSIGN_W, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: (hasFilter('assigned')||filters.assigneeStatus.size>0) ? BRAND : '#9CA3AF', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(CHECK_W+LABEL_W+20+DATE_W+DUR_W) }}>
-              Assigné {(hasFilter('assigned')||filters.assigneeStatus.size>0) && <span style={{ fontSize:8, color:BRAND }}>●</span>}
-            </div>
+            {/* Colonnes optionnelles avec pin individuel */}
+            {visibleOptCols.map(cd => {
+              const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
+              const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
+              return (
+                <div key={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast && stickyAll ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(colLeftMap[cd.key]) }}>
+                  <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                    {cd.key === 'dur_real' ? 'Durée réelle' : cd.label}
+                    {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
+                  </span>
+                  <button onClick={() => toggleColPin(cd.key)} title={`Masquer ${cd.label}`}
+                    style={{ flexShrink:0, background:'transparent', border:'none', cursor:'pointer', color:'#D1D5DB', padding:'1px', borderRadius:3, display:'flex', alignItems:'center', lineHeight:1, opacity:.6 }}>
+                    <Pin size={8}/>
+                  </button>
+                </div>
+              );
+            })}
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
               {columns.map((col, ci) => {
                 const isToday = isTodayCol(col);
@@ -1158,7 +1240,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   if (predIdx < 0 || succIdx < 0) return null;
                   const pb = getBarBounds(filteredPhases[predIdx]);
                   const sb = getBarBounds(filteredPhases[succIdx]);
-                  const fixedW = CHECK_W + LABEL_W + 20 + DATE_W + DUR_W + ASSIGN_W;
+                  const fixedW = fixedColsW;
                   const x1 = fixedW + pb.left + pb.width;
                   const y1 = predIdx * rowH + 21;
                   const x2 = fixedW + sb.left;
@@ -1223,84 +1305,72 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                           style={{fontSize:12,fontWeight:700,color:'#15171C',border:`1.5px solid ${BRAND}`,borderRadius:5,padding:'2px 5px',width:'100%',outline:'none',background:'#FFF8F5'}}/>
                       ):(
                         <div onClick={()=>startEdit(ph)} title="Cliquer pour renommer"
-                          style={{fontSize:12,fontWeight:700,color:'#15171C',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',cursor:'text',padding:'1px 2px',borderRadius:3}}>
+                          style={{fontSize:12,fontWeight:700,color:'#15171C',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',cursor:'text',padding:'1px 2px',borderRadius:3, display:'flex', alignItems:'center', gap:4}}>
                           {ph.name}
+                          {isCritical && <span title="Chemin critique" style={{flexShrink:0,width:5,height:5,borderRadius:'50%',background:'#EF4444',display:'inline-block'}}/>}
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
-                {/* Date/Heure de début — conditionally sticky + récurrence icon */}
-                <div style={{ width:DATE_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, position:'relative', ...stickyC(CHECK_W+LABEL_W+20) }}>
-                  {editCell?.id===ph.id && editCell?.field==='datetime' ? (
-                    <input
-                      type="datetime-local"
-                      autoFocus
-                      defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
-                      onBlur={ev => {
-                        if (ev.target.value) {
-                          const [d,t] = ev.target.value.split('T');
-                          onUpdatePhase?.(ph.id, { start_date: d, start_time: t||'08:00' });
-                        }
-                        setEditCell(null);
-                      }}
-                      onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
-                      style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5' }}
-                    />
-                  ) : (
-                    <div style={{ display:'flex', alignItems:'center', width:'100%' }}>
-                      <button
-                        onClick={() => setEditCell({ id:ph.id, field:'datetime' })}
-                        style={{ flex:1, textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 4px 3px 6px', borderRadius:5, fontFamily:'inherit', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
-                      >
-                        {ph.start_date
-                          ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}`
-                          : '— date'}
-                      </button>
-                      {/* Icône récurrence */}
-                      <button
-                        onClick={ev => { ev.stopPropagation(); const rect = ev.currentTarget.getBoundingClientRect(); setRecurrenceEdit(recurrenceEdit?.id===ph.id ? null : { id:ph.id, rect }); setRecurrenceForm({ type: ph.recurrence_type||'weekly', count: ph.recurrence_count||2 }); }}
-                        title="Récurrence"
-                        style={{ flexShrink:0, padding:'3px 3px', border:'none', background:'transparent', cursor:'pointer', borderRadius:3, display:'flex', alignItems:'center', opacity: ph.recurrence_type ? 1 : 0.35 }}
-                      >
-                        <Repeat size={9} color={ph.recurrence_type ? BRAND : '#9CA3AF'}/>
-                      </button>
+                {/* Colonnes optionnelles — rendues dynamiquement selon visibleOptCols */}
+                {visibleOptCols.map(cd => {
+                  const isLastOptCol = cd === visibleOptCols[visibleOptCols.length - 1];
+                  const cellBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, boxShadow: isLastOptCol && stickyAll ? '3px 0 6px rgba(0,0,0,.04)' : 'none' };
+                  if (cd.key === 'start') return (
+                    <div key="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start']) }}>
+                      {editCell?.id===ph.id && editCell?.field==='datetime' ? (
+                        <input type="datetime-local" autoFocus
+                          defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
+                          onBlur={ev => { if (ev.target.value) { const [d,t]=ev.target.value.split('T'); onUpdatePhase?.(ph.id,{start_date:d,start_time:t||'08:00'}); } setEditCell(null); }}
+                          onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                          style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5' }}/>
+                      ) : (
+                        <div style={{ display:'flex', alignItems:'center', width:'100%' }}>
+                          <button onClick={() => setEditCell({id:ph.id,field:'datetime'})}
+                            style={{ flex:1, textAlign:'left', fontSize:11, color:ph.start_date?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 4px 3px 6px', borderRadius:5, fontFamily:'inherit', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {ph.start_date ? `${new Date(ph.start_date.slice(0,10)+'T00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'})} ${ph.start_time||'08:00'}` : '— date'}
+                          </button>
+                          <button onClick={ev => { ev.stopPropagation(); const rect=ev.currentTarget.getBoundingClientRect(); setRecurrenceEdit(recurrenceEdit?.id===ph.id?null:{id:ph.id,rect}); setRecurrenceForm({type:ph.recurrence_type||'weekly',count:ph.recurrence_count||2}); }}
+                            title="Récurrence" style={{ flexShrink:0, padding:'3px', border:'none', background:'transparent', cursor:'pointer', borderRadius:3, display:'flex', alignItems:'center', opacity:ph.recurrence_type?1:0.35 }}>
+                            <Repeat size={9} color={ph.recurrence_type?BRAND:'#9CA3AF'}/>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                {/* Durée (h) — conditionally sticky */}
-                <div style={{ width:DUR_W, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, ...stickyC(CHECK_W+LABEL_W+20+DATE_W) }}>
-                  {editCell?.id===ph.id && editCell?.field==='duration' ? (
-                    <input
-                      type="number"
-                      autoFocus
-                      min="0"
-                      step="0.5"
-                      defaultValue={ph.duration_hours ?? ''}
-                      onBlur={ev => {
-                        const val = ev.target.value==='' ? null : parseFloat(ev.target.value);
-                        onUpdatePhase?.(ph.id, { duration_hours: val });
-                        setEditCell(null);
-                      }}
-                      onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
-                      style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5', textAlign:'right' }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => setEditCell({ id:ph.id, field:'duration' })}
-                      style={{ width:'100%', textAlign:'right', fontSize:11, color:ph.duration_hours?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}
-                    >
-                      {fmtDur(ph.duration_hours)}
-                    </button>
-                  )}
-                </div>
-                {/* Assignee — conditionally sticky (last fixed col, has shadow) */}
-                <div style={{width:ASSIGN_W,flexShrink:0,padding:'0 10px',borderLeft:'1px solid #F0F1F3',alignSelf:'stretch',display:'flex',alignItems:'center',background:rowBg,boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.04)' : 'none', ...stickyC(CHECK_W+LABEL_W+20+DATE_W+DUR_W)}}>
-                  <AssigneeChip trade={matchedTrade}
-                    assignedToName={ph.assigned_to_name||null}
-                    onSelfAssign={currentUserName ? () => onSelfAssign?.(ph.id, currentUserName) : undefined}
-                    onUnassign={ph.assigned_to_name ? () => onSelfAssign?.(ph.id, null) : undefined}/>
-                </div>
+                  );
+                  if (cd.key === 'dur_prev') return (
+                    <div key="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev']) }}>
+                      {editCell?.id===ph.id && editCell?.field==='duration' ? (
+                        <input type="number" autoFocus min="0" step="0.5" defaultValue={ph.duration_hours??''}
+                          onBlur={ev => { const val=ev.target.value===''?null:parseFloat(ev.target.value); onUpdatePhase?.(ph.id,{duration_hours:val}); setEditCell(null); }}
+                          onKeyDown={ev => ev.key==='Escape' && setEditCell(null)}
+                          style={{ width:'100%', fontSize:11, border:`1.5px solid ${BRAND}`, borderRadius:6, padding:'3px 5px', outline:'none', background:'#FFF8F5', textAlign:'right' }}/>
+                      ) : (
+                        <button onClick={() => setEditCell({id:ph.id,field:'duration'})}
+                          style={{ width:'100%', textAlign:'right', fontSize:11, color:ph.duration_hours?'#374151':'#C1C6CE', background:'transparent', border:'none', cursor:'pointer', padding:'3px 6px', borderRadius:5, fontFamily:'inherit' }}>
+                          {fmtDur(ph.duration_hours)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                  if (cd.key === 'dur_real') return (
+                    <div key="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real']), justifyContent:'flex-end' }}>
+                      <span style={{ fontSize:11, color: ph.logged_hours > 0 ? PUNCH_COLOR : '#D1D5DB', fontWeight:700, padding:'3px 6px', fontVariantNumeric:'tabular-nums' }}>
+                        {ph.logged_hours > 0 ? fmtDur(Number(ph.logged_hours)) : '—'}
+                      </span>
+                    </div>
+                  );
+                  if (cd.key === 'assigned') return (
+                    <div key="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned']) }}>
+                      <AssigneeChip trade={matchedTrade}
+                        assignedToName={ph.assigned_to_name||null}
+                        onSelfAssign={currentUserName?()=>onSelfAssign?.(ph.id,currentUserName):undefined}
+                        onUnassign={ph.assigned_to_name?()=>onSelfAssign?.(ph.id,null):undefined}/>
+                    </div>
+                  );
+                  return null;
+                })}
                 {/* Gantt bar area — fixed pixel width, matches header */}
                 <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
                   {/* Grid lines + weekend overlays + today column */}
@@ -1327,7 +1397,9 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       display:'flex', alignItems:'center', padding:'0 12px 0 10px',
                       cursor: isBarDrag_ ? 'grabbing' : 'grab',
                       whiteSpace:'nowrap', overflow:'hidden', zIndex:3, userSelect:'none',
-                      boxShadow: isBarDrag_ ? '0 4px 16px rgba(0,0,0,.28)' : isCritical ? '0 0 0 2.5px #EF4444, 0 1px 3px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.12)',
+                      boxShadow: isBarDrag_ ? '0 4px 16px rgba(0,0,0,.28)' : '0 1px 3px rgba(0,0,0,.12)',
+                      outline: isCritical ? '1.5px solid #EF4444' : 'none',
+                      outlineOffset: 1,
                       transition: (isBarDrag_||isResize_) ? 'none' : 'box-shadow .15s',
                     }}>
                     {/* Punch / réel overlay — couleur distincte du prévu */}

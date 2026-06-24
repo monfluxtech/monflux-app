@@ -61,7 +61,9 @@ router.get('/:id', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
 
     const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }, { rows: cfgRows }] = await Promise.all([
-      query(`SELECT * FROM project_phases WHERE project_id = $1 ORDER BY display_order`, [req.params.id]),
+      query(`SELECT pp.*,
+        COALESCE((SELECT SUM(ts.hours_total) FROM timesheets ts WHERE ts.project_id = $1 AND ts.phase_name = pp.name), 0) AS logged_hours
+        FROM project_phases pp WHERE pp.project_id = $1 ORDER BY pp.display_order`, [req.params.id]),
       query(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
       query(
         `SELECT pm.*, u.name, u.email, u.avatar_url, s.name AS sub_name
