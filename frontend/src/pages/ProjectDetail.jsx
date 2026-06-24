@@ -555,7 +555,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [deps, setDeps]                     = useState({}); // { succPhId: predPhId }
   const [depFirst, setDepFirst]             = useState(null);
   const [depConnectMode, setDepConnectMode] = useState(false);
-  const [depDrag, setDepDrag]               = useState(null); // { fromPhId, fromIdx, curX, curY, targetPhId }
+  const [depDrag, setDepDrag]               = useState(null); // { fromPhId, fromIdx, fromPt, curX, curY, startX, startY }
   const depDragRef                          = useRef(null);
   const dateDragRef = useRef(null);
   const scrollRef   = useRef(null);
@@ -888,7 +888,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const handleDateLabelUp = () => { dateDragRef.current = null; };
 
   // ── Dep drag-to-connect ──
-  // Écouter pointermove/pointerup sur document pendant un drag dep
+  const getDepType = (fromPt, toPt) => {
+    if (!fromPt || !toPt) return 'FS';
+    if (fromPt === 'right' && toPt === 'left')  return 'FS';
+    if (fromPt === 'right' && toPt === 'right') return 'FF';
+    if (fromPt === 'left'  && toPt === 'left')  return 'SS';
+    if (fromPt === 'left'  && toPt === 'right') return 'SF';
+    if (fromPt.startsWith('mid') || toPt.startsWith('mid')) return 'PAR';
+    return 'FS';
+  };
+
   useEffect(() => {
     if (!depDrag) return;
     const move = (e) => {
@@ -900,15 +909,24 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
     const up = (e) => {
       if (depDragRef.current) {
         const el = document.elementFromPoint(e.clientX, e.clientY);
-        const rowEl = el?.closest('[data-phase-id]');
         const fromId = String(depDragRef.current.fromPhId);
-        const toId = rowEl?.getAttribute('data-phase-id');
-        if (toId && toId !== fromId) {
-          const rowRect = rowEl.getBoundingClientRect();
-          const relX = (e.clientX - rowRect.left) / rowRect.width;
-          // gauche = FS (Finish→Start), milieu = SS (travail parallèle), droite = FF (Finish→Finish)
-          const type = relX < 0.33 ? 'FS' : relX > 0.67 ? 'FF' : 'SS';
-          setDeps(d => ({ ...d, [toId]: { pred: fromId, type } }));
+        const fromPt = depDragRef.current.fromPt || 'right';
+        // Check if dropped directly on a connection point
+        const ptEl = el?.closest('[data-dep-pt]');
+        if (ptEl) {
+          const toId = ptEl.getAttribute('data-phase-id');
+          const toPt = ptEl.getAttribute('data-dep-pt');
+          if (toId && toId !== fromId) {
+            const type = getDepType(fromPt, toPt);
+            setDeps(d => ({ ...d, [toId]: { pred: fromId, type, fromPt, toPt } }));
+          }
+        } else {
+          // fallback: dropped on a phase row → default FS
+          const rowEl = el?.closest('[data-phase-id]');
+          const toId = rowEl?.getAttribute('data-phase-id');
+          if (toId && toId !== fromId) {
+            setDeps(d => ({ ...d, [toId]: { pred: fromId, type: 'FS', fromPt: 'right', toPt: 'left' } }));
+          }
         }
       }
       setDepDrag(null);
@@ -1203,8 +1221,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           <span style={{ fontSize:14 }}>🔗</span>
           <span style={{ fontWeight:700 }}>
             {depDrag
-              ? `Glisser vers le successeur — relâcher à gauche (Fin→Début), au milieu (Parallèle), ou à droite (Fin→Fin)`
-              : 'Glisser depuis la poignée ≡ d\'une phase vers une autre pour créer une dépendance'}
+              ? `Relâcher sur un point de connexion de la phase cible`
+              : 'Cliquer-glisser un point coloré sur une barre : ● bleu = Début, ● orange = Fin, ● vert = Parallèle'}
           </span>
           <button onClick={() => { setShowArrows(false); setDepDrag(null); depDragRef.current = null; }}
             style={{ marginLeft:'auto', background:'transparent', border:'1px solid #BFDBFE', borderRadius:5, padding:'2px 8px', color:'#1D4ED8', fontSize:10, fontWeight:700, cursor:'pointer' }}>
@@ -1424,34 +1442,76 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           {/* Phase rows */}
           {/* Dependency arrows SVG overlay */}
           {showArrows && Object.keys(deps).length > 0 && (() => {
-            const rowH = 44; // minHeight:42 + marginBottom:2
+            const rowH = 44;
+            const barCY = 21; // vertical center of bar in row (5px top + 14px half-bar + 2px row-pad)
+            const barTY = 7;  // top of bar
+            const barBY = 35; // bottom of bar
+
+            const getAnchor = (bar, pt, idx) => {
+              const bx = fixedColsW + bar.left;
+              switch(pt) {
+                case 'left':       return { x: bx, y: idx * rowH + barCY };
+                case 'right':      return { x: bx + bar.width, y: idx * rowH + barCY };
+                case 'mid-top':    return { x: bx + bar.width / 2, y: idx * rowH + barTY };
+                case 'mid-bottom': return { x: bx + bar.width / 2, y: idx * rowH + barBY };
+                default:           return { x: bx + bar.width, y: idx * rowH + barCY };
+              }
+            };
+
+            // Arrowhead polygon at (x, y) pointing INTO the target anchor
+            const makeArrow = (x, y, toPt) => {
+              const sz = 6;
+              if (toPt === 'mid-top')    return `${x},${y} ${x-sz/2},${y-sz} ${x+sz/2},${y-sz}`;  // ↓ into top
+              if (toPt === 'mid-bottom') return `${x},${y} ${x-sz/2},${y+sz} ${x+sz/2},${y+sz}`;  // ↑ into bottom
+              if (toPt === 'left')       return `${x},${y} ${x+sz},${y-sz/2} ${x+sz},${y+sz/2}`;  // → into start
+              return                            `${x},${y} ${x-sz},${y-sz/2} ${x-sz},${y+sz/2}`;  // ← into end
+            };
+
+            const TYPE_COLOR = { FS: BRAND, SS: '#10B981', FF: '#F59E0B', SF: '#8B5CF6', PAR: '#6366F1' };
+            const TYPE_DASH  = { FS: '4 3', SS: '3 3', FF: '6 2 2 2', SF: '2 4', PAR: '1 0' };
+
             return (
               <svg style={{ position:'absolute', top:0, left:0, width:'100%', height:filteredPhases.length * rowH, pointerEvents:'none', zIndex:4, overflow:'visible' }}>
                 {Object.entries(deps).map(([succId, depVal]) => {
-                  const predId = typeof depVal === 'object' ? depVal.pred : String(depVal);
-                  const depType = typeof depVal === 'object' ? depVal.type : 'FS';
+                  const predId  = typeof depVal === 'object' ? depVal.pred : String(depVal);
+                  const depType = typeof depVal === 'object' ? (depVal.type || 'FS') : 'FS';
+                  // Determine fromPt/toPt — legacy deps without these fields fall back to type-based defaults
+                  const fromPt = typeof depVal === 'object' && depVal.fromPt ? depVal.fromPt :
+                                 (depType === 'SS' ? 'left' : 'right');
+                  const toPt   = typeof depVal === 'object' && depVal.toPt   ? depVal.toPt   :
+                                 (depType === 'FF' ? 'right' : depType === 'SS' ? 'left' : 'left');
+
                   const predIdx = filteredPhases.findIndex(p => String(p.id) === String(predId));
                   const succIdx = filteredPhases.findIndex(p => String(p.id) === String(succId));
                   if (predIdx < 0 || succIdx < 0) return null;
                   const pb = getBarBounds(filteredPhases[predIdx]);
                   const sb = getBarBounds(filteredPhases[succIdx]);
-                  const fixedW = fixedColsW;
-                  // FS: pred end → succ start | SS: pred start → succ start | FF: pred end → succ end
-                  const x1 = depType === 'SS' ? fixedW + pb.left : fixedW + pb.left + pb.width;
-                  const y1 = predIdx * rowH + 21;
-                  const x2 = depType === 'FF' ? fixedW + sb.left + sb.width : fixedW + sb.left;
-                  const y2 = succIdx * rowH + 21;
-                  const cx = Math.max(x1 + 20, Math.min(x2 - 20, (x1+x2)/2));
-                  const dash = depType === 'SS' ? '3 3' : depType === 'FF' ? '6 2 2 2' : '4 3';
-                  const col = depType === 'SS' ? '#10B981' : depType === 'FF' ? '#F59E0B' : BRAND;
-                  const label = depType === 'SS' ? 'SS' : depType === 'FF' ? 'FF' : 'FS';
-                  const midX = (x1 + x2) / 2; const midY = (y1 + y2) / 2;
+
+                  const a1 = getAnchor(pb, fromPt, predIdx);
+                  const a2 = getAnchor(sb, toPt,   succIdx);
+
+                  // Bezier control points — vertical curves for mid anchors, S-curve for horizontal
+                  let pathD;
+                  if (fromPt.startsWith('mid') || toPt.startsWith('mid')) {
+                    const midX = (a1.x + a2.x) / 2;
+                    const cy1  = fromPt.startsWith('mid') ? a1.y : a1.y;
+                    const cy2  = toPt.startsWith('mid')   ? a2.y : a2.y;
+                    pathD = `M${a1.x},${a1.y} C${fromPt.startsWith('mid')?a1.x:midX},${cy1} ${toPt.startsWith('mid')?a2.x:midX},${cy2} ${a2.x},${a2.y}`;
+                  } else {
+                    const cx = Math.max(a1.x + 20, Math.min(a2.x - 20, (a1.x + a2.x) / 2));
+                    pathD = `M${a1.x},${a1.y} C${cx},${a1.y} ${cx},${a2.y} ${a2.x},${a2.y}`;
+                  }
+
+                  const col   = TYPE_COLOR[depType] || BRAND;
+                  const dash  = TYPE_DASH[depType]  || '4 3';
+                  const midX  = (a1.x + a2.x) / 2;
+                  const midY  = (a1.y + a2.y) / 2;
+
                   return (
                     <g key={`dep-${predId}-${succId}`}>
-                      <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                        fill="none" stroke={col} strokeWidth={1.5} strokeDasharray={dash} opacity={0.65}/>
-                      <polygon points={`${x2},${y2} ${x2-6},${y2-3} ${x2-6},${y2+3}`} fill={col} opacity={0.7}/>
-                      <text x={midX} y={midY-4} textAnchor="middle" fill={col} fontSize={8} fontWeight={800} opacity={0.8}>{label}</text>
+                      <path d={pathD} fill="none" stroke={col} strokeWidth={1.5} strokeDasharray={dash} opacity={0.7}/>
+                      <polygon points={makeArrow(a2.x, a2.y, toPt)} fill={col} opacity={0.8}/>
+                      <text x={midX} y={midY-4} textAnchor="middle" fill={col} fontSize={8} fontWeight={800} opacity={0.85}>{depType}</text>
                     </g>
                   );
                 })}
@@ -1494,20 +1554,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
                 {/* Phase section — conditionally sticky (drag handle + name) */}
                 <div style={{ width:LABEL_W+20, flexShrink:0, display:'flex', alignItems:'center', background:rowBg, borderLeft:`3px solid ${borderColor}`, alignSelf:'stretch', ...stickyC(CHECK_W) }}>
-                  {/* Drag handle — double usage : réordonnement normal, ou liaison dep en mode Dépendance */}
+                  {/* Drag handle — réordonnement uniquement (en mode Dépendance, les points sur les barres sont utilisés) */}
                   <div
-                    onPointerDown={showArrows ? (e) => {
-                      e.stopPropagation(); e.preventDefault();
-                      const state = { fromPhId: ph.id, fromIdx: i, curX: e.clientX, curY: e.clientY, startX: e.clientX, startY: e.clientY };
-                      depDragRef.current = state;
-                      setDepDrag(state);
-                    } : undefined}
                     style={{ width:16, flexShrink:0, display:'flex', flexDirection:'column', gap:2.5, alignItems:'center',
-                      cursor: showArrows ? 'crosshair' : hasSel ? 'default' : 'grab',
-                      opacity: hasSel ? 0.05 : showArrows ? 0.6 : .2,
+                      cursor: hasSel || showArrows ? 'default' : 'grab',
+                      opacity: hasSel || showArrows ? 0.05 : .2,
                       padding:'0 2px',
                     }}>
-                    {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background: showArrows ? '#3B82F6' : '#6B7280',borderRadius:2,display:'block'}}/>)}
+                    {[0,1,2].map(k=><span key={k} style={{width:10,height:1.5,background:'#6B7280',borderRadius:2,display:'block'}}/>)}
                   </div>
                   {/* Name */}
                   <div style={{ width:LABEL_W, flexShrink:0, padding:'5px 6px 5px 0', display:'flex', alignItems:'center', gap:5 }}>
@@ -1713,6 +1767,46 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       style={{position:'absolute',top:0,bottom:0,right:0,width:10,cursor:'ew-resize',zIndex:5,background:'rgba(0,0,0,.18)',borderRadius:'0 99px 99px 0'}}
                     />
                   </div>
+                  {/* ── Points de connexion dépendance (mode Dépendance uniquement) ── */}
+                  {showArrows && width > 0 && (() => {
+                    const ptStyle = (extraStyle) => ({
+                      position:'absolute', width:12, height:12, borderRadius:'50%',
+                      border:'2px solid #fff', cursor:'crosshair', zIndex:10,
+                      boxShadow:'0 1px 5px rgba(0,0,0,.3)', pointerEvents:'all',
+                      ...extraStyle,
+                    });
+                    const startDrag = (e, pt) => {
+                      e.stopPropagation(); e.preventDefault();
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+                      const state = { fromPhId: ph.id, fromIdx: i, fromPt: pt, curX: cx, curY: cy, startX: cx, startY: cy };
+                      depDragRef.current = state; setDepDrag(state);
+                    };
+                    return (
+                      <>
+                        {/* Début — gauche (bleu) */}
+                        <div data-dep-pt="left" data-phase-id={ph.id}
+                          onPointerDown={e => startDrag(e, 'left')}
+                          title="Début — relier depuis le début de cette phase"
+                          style={ptStyle({ left: Math.max(0, left - 6), top: 13, background:'#3B82F6' })}/>
+                        {/* Fin — droite (orange) */}
+                        <div data-dep-pt="right" data-phase-id={ph.id}
+                          onPointerDown={e => startDrag(e, 'right')}
+                          title="Fin — relier depuis la fin de cette phase"
+                          style={ptStyle({ left: left + width - 6, top: 13, background:'#E8794E' })}/>
+                        {/* Parallèle haut (vert) */}
+                        <div data-dep-pt="mid-top" data-phase-id={ph.id}
+                          onPointerDown={e => startDrag(e, 'mid-top')}
+                          title="Parallèle — tâches simultanées"
+                          style={ptStyle({ left: left + width / 2 - 6, top: -1, background:'#10B981' })}/>
+                        {/* Parallèle bas (vert) */}
+                        <div data-dep-pt="mid-bottom" data-phase-id={ph.id}
+                          onPointerDown={e => startDrag(e, 'mid-bottom')}
+                          title="Parallèle — tâches simultanées"
+                          style={ptStyle({ left: left + width / 2 - 6, top: 27, background:'#10B981' })}/>
+                      </>
+                    );
+                  })()}
                   {/* Recurrence bars — même style que la barre principale + hover */}
                   {ph.recurrence_type && (ph.recurrence_count||1) > 1 && ph.start_date && (() => {
                     const REC_INTERVAL = { daily:86400000, weekly:7*86400000, biweekly:14*86400000, monthly:30*86400000 };
@@ -2043,12 +2137,35 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 );
               })()}
               {/* Info chemin critique */}
-              {criticalIds.has(tph.id) && !tph._recLabel && (
-                <div style={{ marginTop:6, fontSize:10, color:'#EF4444', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ width:6, height:6, borderRadius:'50%', background:'#EF4444', flexShrink:0 }}/>
-                  Chemin critique — aucune marge possible
-                </div>
-              )}
+              {criticalIds.has(tph.id) && !tph._recLabel && (() => {
+                const durDays = Math.ceil((tph.duration_hours || 8) / 8);
+                const directSucc = phases.filter(p => {
+                  const pred = typeof deps[p.id] === 'object' ? deps[p.id]?.pred : deps[p.id];
+                  return String(pred) === String(tph.id) && criticalIds.has(p.id);
+                });
+                return (
+                  <div style={{ marginTop:6, background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:6, padding:'6px 8px' }}>
+                    <div style={{ fontSize:10, color:'#EF4444', fontWeight:800, display:'flex', alignItems:'center', gap:4, marginBottom:4 }}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:'#EF4444', flexShrink:0 }}/>
+                      Chemin critique
+                    </div>
+                    <div style={{ fontSize:10, color:'#991B1B', lineHeight:1.5 }}>
+                      <div>⏱ Durée : <strong>{durDays} jour{durDays>1?'s':''}</strong></div>
+                      <div style={{ marginTop:2, color:'#DC2626' }}>
+                        ⬆️ Repousser d'1 jour → <strong>+1 jour</strong> sur la livraison finale
+                      </div>
+                      <div style={{ marginTop:2, color:'#16A34A' }}>
+                        ⬇️ Devancer → gain seulement si les phases précédentes le permettent
+                      </div>
+                      {directSucc.length > 0 && (
+                        <div style={{ marginTop:2, color:'#7F1D1D' }}>
+                          🔗 Bloque : {directSucc.map(p=>p.name).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </>);
           })()}
         </div>
