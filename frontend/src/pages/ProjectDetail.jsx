@@ -6094,6 +6094,27 @@ Règles :
 
             const hS = { fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' };
 
+            // Cert compact (une ligne) pour colonne Conformité
+            const renderCertMini = (certObj, certLabel, color, onChange) => {
+              const c = certObj || {};
+              const expired = c.ok === true && isDateExpired(c.validite);
+              const isFail  = isCertFail(c);
+              const sc = c.ok && !expired ? color : isFail ? '#DC2626' : '#C4C8CE';
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <input type="checkbox" checked={!!c.ok} onChange={e => onChange('ok', e.target.checked)}
+                    style={{ accentColor: sc, width: 12, height: 12, cursor: 'pointer', flexShrink: 0 }}/>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: sc, width: 56, flexShrink: 0 }}>{certLabel}</span>
+                  {expired && <span style={{ fontSize: 8, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>EXP</span>}
+                  {c.ok && !expired && <span style={{ fontSize: 9, color, flexShrink: 0 }}>✓</span>}
+                  <input type="date" value={c.validite || ''} onChange={e => onChange('validite', e.target.value)}
+                    title="Expiration" style={{ fontSize: 9, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 5, padding: '2px 4px', color: expired ? '#DC2626' : '#6B7280', background: expired ? '#FFF5F5' : '#fff', width: 92, flexShrink: 0 }}/>
+                  <input type="date" value={c.lastCheck || ''} onChange={e => onChange('lastCheck', e.target.value)}
+                    title="Dernière vérif." style={{ fontSize: 9, border: '1px solid #E8EAED', borderRadius: 5, padding: '2px 4px', color: '#6B7280', background: '#fff', width: 92, flexShrink: 0 }}/>
+                </div>
+              );
+            };
+
             const renderCertCell = (certObj, certLabel, color, onChange, disabled) => {
               if (disabled) return (
                 <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -6139,18 +6160,18 @@ Règles :
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 960 }}>
+                  <div style={{ minWidth: 1120 }}>
 
                     {/* ── En-têtes ── */}
-                    <div style={{ display: 'flex', borderBottom: '1px solid #F1F3F5', background: '#FAFAFA' }}>
-                      <div style={{ width: 200, flexShrink: 0, padding: '7px 14px 7px 20px', borderRight: '1px solid #E8EAED' }}>
-                        <span style={hS}>Corps de métier</span>
+                    <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#FAFAFA' }}>
+                      <div style={{ width: 200, flexShrink: 0, padding: '7px 12px 7px 20px', borderRight: '1px solid #E8EAED' }}>
+                        <span style={hS}>Corps de métier & étape</span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr 1fr', flex: 1 }}>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>Personne & contact</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>🔧 RBQ</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #F1F3F5' }}><span style={hS}>👷 CCQ</span></div>
-                        <div style={{ padding: '7px 12px' }}><span style={hS}>🛡️ Assurance</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '195px 2fr 140px 1.5fr', flex: 1 }}>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>Personne & contact</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Disponible</span></div>
+                        <div style={{ padding: '7px 12px' }}><span style={hS}>🔒 Conformité</span></div>
                       </div>
                     </div>
 
@@ -6186,8 +6207,6 @@ Règles :
                         localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
                       };
 
-                      const togglePanel = (pKey) => setTradePersonPanels(m => ({ ...m, [pKey]: !m[pKey] }));
-
                       const renderPersonSection = (type) => {
                         const list = resources[type];
                         const typeColor = type === 'internal' ? '#7C3AED' : '#2563EB';
@@ -6197,21 +6216,20 @@ Règles :
 
                         return (
                           <div>
-                            {/* section label */}
-                            <div style={{ padding: '5px 12px 5px 20px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {/* sous-titre Interne / Externe */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 4px 20px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5' }}>
                               <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: typeColor }}>{typeIcon} {typeLabel}</span>
                             </div>
 
-                            {/* person rows */}
                             {list.map((person, pi) => {
-                              const pKey      = personKey(tradeName, type, pi);
-                              const cert      = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
-                              const pStatus   = person.status || 'a_contacter';
-                              const isAC      = pStatus === 'a_contacter';
-                              const nonConf   = isPersonNonConforme(cert, pStatus);
-                              const pStat     = personStatuses.find(s => s.key === pStatus) || personStatuses[0];
-                              const panelOpen = !!tradePersonPanels[pKey];
-                              const msgData   = tradePersonMsgs[pKey] || {};
+                              const pKey         = personKey(tradeName, type, pi);
+                              const cert         = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
+                              const pStatus      = person.status || 'a_contacter';
+                              const isAC         = pStatus === 'a_contacter';
+                              const nonConf      = isPersonNonConforme(cert, pStatus);
+                              const pStat        = personStatuses.find(s => s.key === pStatus) || personStatuses[0];
+                              const msgData      = tradePersonMsgs[pKey] || {};
+                              const isLoadingMsg = !!msgData.loading;
                               const isLoadingFlo = !!loadingFloPersonCheck[pKey];
 
                               const infoInput = (field, placeholder, icon) => (
@@ -6224,176 +6242,164 @@ Règles :
                               );
 
                               return (
-                                <div key={pi}>
-                                  {/* person row */}
-                                  <div style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent' }}>
+                                <div key={pi} style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent' }}>
 
-                                    {/* person info */}
-                                    <div style={{ width: 200, flexShrink: 0, padding: '10px 12px 10px 20px', borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {/* ── Col 1 : Corps de métier & étape — bouton Flo par personne ── */}
+                                  <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', padding: '12px 14px', gap: 6 }}>
+                                    <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={isLoadingMsg}
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 9, border: 'none', background: isLoadingMsg ? '#F0F0F0' : BRAND, color: '#fff', fontSize: 11, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', width: '100%' }}>
+                                      {isLoadingMsg ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                                      {isLoadingMsg ? 'Génération…' : 'Flo — Contacter'}
+                                    </button>
+                                    <span style={{ fontSize: 9.5, color: '#B0B4BB', textAlign: 'center', lineHeight: 1.4 }}>
+                                      Étape 1 : contact{type === 'external' ? ' + prix' : ''}
+                                    </span>
+                                  </div>
+
+                                  {/* ── Cols 2–5 ── */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '195px 2fr 140px 1.5fr', flex: 1 }}>
+
+                                    {/* Col 2 : Personne & contact */}
+                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 4 }}>
                                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
                                         <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, flex: 1, lineHeight: 1.3 }}>{person.name}</p>
-                                        <button onClick={() => togglePanel(pKey)}
-                                          style={{ background: panelOpen ? BRAND : 'none', border: panelOpen ? 'none' : `1.5px solid ${BRAND}40`, borderRadius: 6, cursor: 'pointer', padding: '2px 5px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                          <Sparkles size={10} color={panelOpen ? '#fff' : BRAND}/>
-                                          <span style={{ fontSize: 9.5, fontWeight: 700, color: panelOpen ? '#fff' : BRAND }}>Flo</span>
-                                        </button>
                                         <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
-                                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 1px', flexShrink: 0 }}>×</button>
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
                                       </div>
-                                      {infoInput('phone', 'Téléphone', '📞')}
-                                      {infoInput('email', 'Courriel', '✉')}
-                                      {infoInput('location', 'Localisation', '📍')}
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                      {infoInput('phone',    'Téléphone',   '📞')}
+                                      {infoInput('email',    'Courriel',    '✉')}
+                                      {infoInput('location', 'Localisation','📍')}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
                                         <button onClick={() => cycleStatus(type, pi)}
-                                          style={{ fontSize: 10.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 9px', cursor: 'pointer' }}>
+                                          style={{ fontSize: 10, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 8px', cursor: 'pointer' }}>
                                           {pStat.label}
                                         </button>
-                                        {nonConf && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
+                                        {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
                                       </div>
                                     </div>
 
-                                    {/* cert cells — grisées si statut À contacter */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', flex: 1 }}>
-                                      {renderCertCell(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v), isAC)}
-                                      {renderCertCell(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v), isAC)}
-                                      {renderCertCell(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v), isAC)}
+                                    {/* Col 3 : Message */}
+                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <textarea
+                                        value={msgData.msg || ''}
+                                        onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
+                                        rows={4}
+                                        placeholder={isLoadingMsg ? 'Génération en cours…' : 'Cliquez sur « Flo — Contacter » pour générer, ou rédigez manuellement.'}
+                                        style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: '1px solid #F1F3F5', borderRadius: 8, padding: '7px 9px', resize: 'vertical', fontFamily: 'inherit', background: '#FAFAFA', outline: 'none', boxSizing: 'border-box' }}
+                                      />
+                                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                        {msgData.msg && (
+                                          <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 11, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
+                                            📋 Copier
+                                          </button>
+                                        )}
+                                        {person.email && msgData.msg && (
+                                          <a href={`mailto:${person.email}?subject=Projet ${encodeURIComponent(project.name || '')}&body=${encodeURIComponent(msgData.msg)}`}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
+                                            ✉ Envoyer
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Col 4 : Disponible */}
+                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {[
+                                        { label: 'Oui ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
+                                        { label: 'Non ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
+                                      ].map(opt => (
+                                        <button key={opt.val}
+                                          onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
+                                          style={{ width: '100%', padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 11, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
+                                          {opt.label}
+                                        </button>
+                                      ))}
+                                      {type === 'external' && (
+                                        <div style={{ marginTop: 2 }}>
+                                          <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Prix soumis</span>
+                                          <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
+                                            placeholder="ex. 4 500 $"
+                                            style={{ width: '100%', marginTop: 4, fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '5px 8px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Col 5 : Conformité */}
+                                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      {isAC ? (
+                                        <span style={{ fontSize: 10.5, color: '#D4D6DA', fontStyle: 'italic' }}>Disponible après contact</span>
+                                      ) : (
+                                        <>
+                                          {renderCertMini(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
+                                          {renderCertMini(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
+                                          {renderCertMini(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
+                                          <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 10, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer', marginTop: 2 }}>
+                                            {isLoadingFlo ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
+                                            {isLoadingFlo ? 'Vérification…' : 'Flo — Vérifier conformité'}
+                                          </button>
+                                          {cert.floNotes && (
+                                            <p style={{ fontSize: 10, color: '#6B7280', margin: 0, lineHeight: 1.5, fontStyle: 'italic' }}>{cert.floNotes}</p>
+                                          )}
+                                        </>
+                                      )}
                                     </div>
 
                                   </div>
-
-                                  {/* ── Panneau Flo — workflow contact + conformité ── */}
-                                  {panelOpen && (
-                                    <div style={{ background: '#F9F8FF', borderTop: '1px solid #EDE9FF', borderBottom: '1px solid #EDE9FF', padding: '14px 20px', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-
-                                      {/* Étape 1 — Contact */}
-                                      <div style={{ flex: 2, minWidth: 280 }}>
-                                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#7C3AED', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                          <span style={{ fontSize: 14 }}>📬</span> Étape 1 — Contacter & confirmer disponibilité{type === 'external' ? ' + prix' : ''}
-                                        </p>
-                                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #EDE9FF', padding: '10px 12px', marginBottom: 8 }}>
-                                          <textarea
-                                            value={msgData.msg || ''}
-                                            onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
-                                            rows={5}
-                                            placeholder="Message à envoyer — génère-le avec Flo ou écris-le manuellement."
-                                            style={{ width: '100%', fontSize: 12, lineHeight: 1.6, color: '#3A3D44', border: 'none', outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: 'transparent' }}
-                                          />
-                                        </div>
-                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                          <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={msgData.loading}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: msgData.loading ? 'wait' : 'pointer' }}>
-                                            {msgData.loading ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                                            {msgData.loading ? 'Génération…' : 'Générer avec Flo'}
-                                          </button>
-                                          {msgData.msg && (
-                                            <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 11.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
-                                              📋 Copier
-                                            </button>
-                                          )}
-                                          {person.email && msgData.msg && (
-                                            <a href={`mailto:${person.email}?subject=Projet ${encodeURIComponent(project.name || '')}&body=${encodeURIComponent(msgData.msg)}`}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 11.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
-                                              ✉ Envoyer par courriel
-                                            </a>
-                                          )}
-                                        </div>
-                                        {/* Disponible + prix */}
-                                        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                          <span style={{ fontSize: 11, fontWeight: 700, color: '#5A5E6A' }}>Disponible :</span>
-                                          {[{ label: 'Oui ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' }, { label: 'Non ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' }].map(opt => (
-                                            <button key={opt.val}
-                                              onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
-                                              style={{ padding: '4px 10px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 11, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer' }}>
-                                              {opt.label}
-                                            </button>
-                                          ))}
-                                          {type === 'external' && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                              <span style={{ fontSize: 11, fontWeight: 700, color: '#5A5E6A' }}>Prix :</span>
-                                              <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
-                                                placeholder="ex. 4 500 $"
-                                                style={{ fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '4px 8px', width: 100, outline: 'none', color: '#3A3D44' }}/>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Étape 2 — Conformité */}
-                                      <div style={{ flex: 1, minWidth: 180, borderLeft: '1px solid #EDE9FF', paddingLeft: 20 }}>
-                                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: '#059669', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                          <span style={{ fontSize: 14 }}>🔍</span> Étape 2 — Conformité
-                                        </p>
-                                        <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 10px', lineHeight: 1.5 }}>
-                                          Flo évalue les exigences RBQ, CCQ et assurance pour ce corps de métier.
-                                        </p>
-                                        <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
-                                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: isLoadingFlo ? '#F0F0F0' : BRAND, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer', width: '100%', justifyContent: 'center' }}>
-                                          {isLoadingFlo ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                                          {isLoadingFlo ? 'Vérification…' : 'Vérifier avec Flo'}
-                                        </button>
-                                        {cert.floNotes && (
-                                          <div style={{ marginTop: 8, fontSize: 11, color: '#5A5E6A', lineHeight: 1.5, background: '#fff', borderRadius: 8, padding: '8px 10px', border: '1px solid #EDE9FF' }}>
-                                            <span style={{ fontWeight: 700, color: BRAND }}>Flo : </span>{cert.floNotes}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                    </div>
-                                  )}
                                 </div>
                               );
                             })}
 
-                            {/* Add person input */}
-                            <div style={{ padding: '8px 14px 8px 20px', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
-                              <input
-                                value={tradeResInput[inputKey] || ''}
-                                onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
-                                    e.preventDefault();
-                                    updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' }]);
-                                    setTradeResInput(m => ({ ...m, [inputKey]: '' }));
-                                  }
-                                }}
-                                placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
-                                style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
-                              />
+                            {/* Ajout personne */}
+                            <div style={{ display: 'flex', alignItems: 'center', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
+                              <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase' }}>{typeIcon} {typeLabel}</span>
+                              </div>
+                              <div style={{ flex: 1, padding: '8px 14px' }}>
+                                <input
+                                  value={tradeResInput[inputKey] || ''}
+                                  onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
+                                      e.preventDefault();
+                                      updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' }]);
+                                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
+                                    }
+                                  }}
+                                  placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
+                                  style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
+                                />
+                              </div>
                             </div>
                           </div>
                         );
                       };
 
                       return (
-                        <div key={tradeName} style={{ borderTop: idx > 0 ? '1px solid #EAECEF' : 'none' }}>
-                          <div style={{ display: 'flex' }}>
-                            {/* Corps de métier */}
-                            <div style={{ width: 200, flexShrink: 0, padding: '14px 14px 14px 20px', borderRight: '1px solid #E8EAED' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
-                                <p style={{ fontSize: 13.5, fontWeight: 700, color: '#15171C', margin: 0 }}>{tradeName}</p>
-                                {tradeHours > 0 && (
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
-                                    {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                                {tradePhases.length ? tradePhases.map(phase => (
-                                  <span key={phase.id} onClick={() => setEditPhase(phase)}
-                                    style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
-                                    {phase.name}
-                                  </span>
-                                )) : <span style={{ fontSize: 11, color: '#B0B4BB' }}>Aucune phase liée</span>}
-                              </div>
-                            </div>
-                            {/* Persons + Conformité */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              {renderPersonSection('internal')}
-                              {renderPersonSection('external')}
+                        <div key={tradeName} style={{ borderTop: idx > 0 ? '2px solid #EAECEF' : 'none' }}>
+                          {/* Barre d'en-tête du corps de métier (pleine largeur) */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px 9px 20px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
+                            <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                            {tradeHours > 0 && (
+                              <span style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
+                                {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
+                              </span>
+                            )}
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 4 }}>
+                              {tradePhases.map(phase => (
+                                <span key={phase.id} onClick={() => setEditPhase(phase)}
+                                  style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
+                                  {phase.name}
+                                </span>
+                              ))}
+                              {!tradePhases.length && <span style={{ fontSize: 10.5, color: '#B0B4BB' }}>Aucune phase liée</span>}
                             </div>
                           </div>
+
+                          {renderPersonSection('internal')}
+                          {renderPersonSection('external')}
                         </div>
                       );
                     })}
