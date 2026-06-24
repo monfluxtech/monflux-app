@@ -512,6 +512,8 @@ function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
 }
 
 const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
+const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#9CA3AF' };
+const PUNCH_COLOR    = '#60A5FA'; // bleu — distingue le réel (punch) du prévu (statut)
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente' };
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
 
@@ -533,7 +535,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const [newPhaseName, setNewPhaseName] = useState('');
   const [dateOffsets, setDateOffsets] = useState({}); // {`${phId}-start`|`${phId}-end`}: deltaX}
   const [freezeCols, setFreezeCols]         = useState(true);
-  const [recurrenceEdit, setRecurrenceEdit] = useState(null);
+  const [recurrenceEdit, setRecurrenceEdit] = useState(null); // { id, rect }
   const [recurrenceForm, setRecurrenceForm] = useState({ type:'weekly', count:2 });
   const [sortField, setSortField]           = useState(null); // 'name'|'start_date'|'duration_hours'|'assigned'
   const [sortDir, setSortDir]               = useState('asc');
@@ -582,12 +584,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
       return cols;
     }
     if (scale === 'hour') {
-      // Cap à 7 jours max en vue heure pour éviter trop de colonnes
+      // Partir de min(refStart, aujourd'hui) pour que today soit toujours dans la fenêtre
       const cols = [];
-      const cur = new Date(refStart); cur.setMinutes(0,0,0);
-      const cap = new Date(cur); cap.setDate(cap.getDate() + 7);
+      const startFrom = new Date(Math.min(refStart.getTime(), new Date().getTime()));
+      startFrom.setMinutes(0,0,0);
+      const cur = new Date(startFrom);
+      const cap = new Date(cur); cap.setDate(cap.getDate() + 14); // 14 jours
       const stop = refEnd < cap ? refEnd : cap;
-      while (cur <= stop && cols.length < 168) {
+      while (cur <= stop && cols.length < 336) {
         cols.push({ start: new Date(cur), end: new Date(cur.getTime() + 3599999) });
         cur.setHours(cur.getHours() + 1);
       }
@@ -650,6 +654,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const isWeekendCol = (col) =>
     (scale==='day'||scale==='halfday'||scale==='hour') &&
     (col.start.getDay()===0 || col.start.getDay()===6);
+
+  // Today column: the column whose range contains right now
+  const _now = new Date();
+  const isTodayCol = (col) => col.start <= _now && _now <= col.end;
 
   // Pixel helpers — use effective range so bar widths are correct in all views
   const px = (d) => Math.max(0, Math.min(ganttW, (new Date(d) - effRefStart) / effMs * ganttW));
@@ -918,19 +926,10 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               {/* Baseline : prévu vs réel punch */}
               <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
                 <div style={{ width:28, height:8, borderRadius:3, flexShrink:0, overflow:'hidden', display:'flex' }}>
-                  <div style={{ flex:'0 0 60%', background:BRAND, opacity:.85 }}/>
-                  <div style={{ flex:'0 0 40%', background:'#22C55E', opacity:.85 }}/>
+                  <div style={{ flex:'0 0 55%', background:BRAND, opacity:.85 }}/>
+                  <div style={{ flex:'0 0 45%', background:PUNCH_COLOR, opacity:.85 }}/>
                 </div>
                 Prévu / Réel (punch)
-              </div>
-              {/* Récurrence */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'#6B7280' }}>
-                <div style={{ display:'flex', gap:2, alignItems:'center', flexShrink:0 }}>
-                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.85 }}/>
-                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.4 }}/>
-                  <div style={{ width:10, height:8, borderRadius:2, background:BRAND, opacity:.25 }}/>
-                </div>
-                Récurrence
               </div>
             </div>
           </div>
@@ -948,43 +947,42 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             <div onClick={() => handleSort('duration')} style={{ width:DUR_W, flexShrink:0, padding:'7px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='duration' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', ...stickyH(LABEL_W+20+DATE_W) }}>Durée {sortIcon('duration')}</div>
             <div onClick={() => handleSort('assigned')} style={{ width:ASSIGN_W, flexShrink:0, padding:'7px 10px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: sortField==='assigned' ? BRAND : '#9CA3AF', borderLeft:'1px solid #F0F1F3', background:'#fff', cursor:'pointer', userSelect:'none', boxShadow: freezeCols ? '3px 0 6px rgba(0,0,0,.06)' : 'none', ...stickyH(LABEL_W+20+DATE_W+DUR_W) }}>Assigné {sortIcon('assigned')}</div>
             <div ref={ganttElRef} style={{ width:ganttW, flexShrink:0, display:'flex', position:'relative', borderLeft:'1px solid #ECEEF0' }}>
-              {columns.map((col, ci) => (
-                <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden', background: isWeekendCol(col) ? 'rgba(0,0,0,.028)' : 'transparent' }}>
-                  {scale === 'month' && <>
-                    <div style={{ fontSize:11, fontWeight:800, color:'#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
-                    <div style={{ fontSize:9.5, color:'#9CA3AF', fontWeight:600 }}>{col.start.getFullYear()}</div>
-                  </>}
-                  {scale === 'week' && <>
-                    <div style={{ fontSize:10.5, fontWeight:800, color:'#374151' }}>S{weekNum(col.start)}</div>
-                    <div style={{ fontSize:9, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>
-                  </>}
-                  {scale === 'day' && <>
-                    <div style={{ fontSize:10, fontWeight:800, color: col.start.getDay()===0||col.start.getDay()===6 ? '#D1D5DB' : '#374151' }}>{col.start.getDate()}</div>
-                    <div style={{ fontSize:8.5, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{weekday:'short'}).slice(0,1).toUpperCase()}</div>
-                  </>}
-                  {scale === 'halfday' && <>
-                    <div style={{ fontSize:10, fontWeight:800, color: col.label==='AM' ? '#374151' : '#6B7280' }}>{col.label}</div>
-                    {col.showDate && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
-                  </>}
-                  {scale === 'hour' && <>
-                    <div style={{ fontSize:9.5, fontWeight:800, color: col.start.getHours()===0 ? BRAND : '#374151' }}>{String(col.start.getHours()).padStart(2,'0')}h</div>
-                    {col.start.getHours()===0 && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
-                  </>}
-                </div>
-              ))}
-              {/* Today marker in header */}
-              {todayPx >= 0 && todayPx <= ganttW && (
-                <div style={{ position:'absolute', top:0, bottom:0, left:todayPx, width:2, background:BRAND, zIndex:6, pointerEvents:'none' }}>
-                  <span style={{ position:'absolute', top:2, left:-1, transform:'translateX(-50%)', fontSize:9, fontWeight:900, color:'#fff', background:BRAND, padding:'2px 6px', borderRadius:3, whiteSpace:'nowrap', boxShadow:'0 1px 4px rgba(242,101,34,.5)' }}>Auj.</span>
-                </div>
-              )}
+              {columns.map((col, ci) => {
+                const isToday = isTodayCol(col);
+                const isWknd  = isWeekendCol(col);
+                return (
+                  <div key={ci} style={{ width:colW, flexShrink:0, padding:'5px 0 5px 5px', borderRight:'1px solid #ECEEF0', overflow:'hidden',
+                    background: isToday ? 'rgba(232,121,78,.10)' : isWknd ? 'rgba(0,0,0,.028)' : 'transparent' }}>
+                    {scale === 'month' && <>
+                      <div style={{ fontSize:11, fontWeight:800, color: isToday ? BRAND : '#374151' }}>{col.start.toLocaleDateString('fr-CA',{month:'short'}).toUpperCase()}</div>
+                      <div style={{ fontSize:9.5, color:'#9CA3AF', fontWeight:600 }}>{col.start.getFullYear()}</div>
+                    </>}
+                    {scale === 'week' && <>
+                      <div style={{ fontSize:10.5, fontWeight:800, color: isToday ? BRAND : '#374151' }}>S{weekNum(col.start)}</div>
+                      <div style={{ fontSize:9, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>
+                    </>}
+                    {scale === 'day' && <>
+                      <div style={{ fontSize:10, fontWeight:800, color: isToday ? BRAND : (col.start.getDay()===0||col.start.getDay()===6 ? '#D1D5DB' : '#374151') }}>{col.start.getDate()}</div>
+                      <div style={{ fontSize:8.5, color: isToday ? BRAND_DARK : '#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{weekday:'short'}).slice(0,1).toUpperCase()}</div>
+                    </>}
+                    {scale === 'halfday' && <>
+                      <div style={{ fontSize:10, fontWeight:800, color: isToday ? BRAND : (col.label==='AM' ? '#374151' : '#6B7280') }}>{col.label}</div>
+                      {col.showDate && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
+                    </>}
+                    {scale === 'hour' && <>
+                      <div style={{ fontSize:9.5, fontWeight:800, color: isToday ? BRAND : (col.start.getHours()===0 ? BRAND : '#374151') }}>{String(col.start.getHours()).padStart(2,'0')}h</div>
+                      {col.start.getHours()===0 && <div style={{ fontSize:8, color:'#9CA3AF' }}>{col.start.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}</div>}
+                    </>}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Phase rows */}
           {sortedPhases.map((ph, i) => {
             const { left, width, s, e, sDate, eDate } = getBarBounds(ph);
-            const color = ph.color || PHASE_COLORS[i % PHASE_COLORS.length];
+            const barColor = STATUS_FILL[ph.status] || STATUS_FILL.not_started;
             const isEven = i % 2 === 0;
             const isDragOver = dragOverIdx === i;
             const isBarDrag_ = barDrag?.phId === ph.id;
@@ -1060,57 +1058,12 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                       </button>
                       {/* Icône récurrence */}
                       <button
-                        onClick={ev => { ev.stopPropagation(); setRecurrenceEdit(recurrenceEdit===ph.id ? null : ph.id); setRecurrenceForm({ type: ph.recurrence_type||'weekly', count: ph.recurrence_count||2 }); }}
+                        onClick={ev => { ev.stopPropagation(); const rect = ev.currentTarget.getBoundingClientRect(); setRecurrenceEdit(recurrenceEdit?.id===ph.id ? null : { id:ph.id, rect }); setRecurrenceForm({ type: ph.recurrence_type||'weekly', count: ph.recurrence_count||2 }); }}
                         title="Récurrence"
                         style={{ flexShrink:0, padding:'3px 3px', border:'none', background:'transparent', cursor:'pointer', borderRadius:3, display:'flex', alignItems:'center', opacity: ph.recurrence_type ? 1 : 0.35 }}
                       >
                         <Repeat size={9} color={ph.recurrence_type ? BRAND : '#9CA3AF'}/>
                       </button>
-                    </div>
-                  )}
-                  {/* Popover récurrence */}
-                  {recurrenceEdit===ph.id && (
-                    <div onClick={ev => ev.stopPropagation()}
-                      style={{ position:'absolute', top:'100%', left:0, zIndex:50, background:'#fff', border:'1px solid #E5E7EB', borderRadius:8, padding:'12px 14px', boxShadow:'0 6px 20px rgba(0,0,0,.13)', minWidth:200, marginTop:2 }}>
-                      <div style={{ fontSize:11, fontWeight:700, color:'#374151', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
-                        <Repeat size={11} color={BRAND}/> Récurrence
-                      </div>
-                      <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-                        <select value={recurrenceForm.type}
-                          onChange={ev => setRecurrenceForm(f=>({...f, type:ev.target.value}))}
-                          style={{ fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 7px', outline:'none', fontFamily:'inherit', background:'#fff' }}>
-                          <option value="">Aucune</option>
-                          <option value="daily">Quotidien</option>
-                          <option value="weekly">Hebdomadaire</option>
-                          <option value="biweekly">Aux 2 semaines</option>
-                          <option value="monthly">Mensuel</option>
-                        </select>
-                        {recurrenceForm.type && (
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <input type="number" min="1" max="52" value={recurrenceForm.count}
-                              onChange={ev => setRecurrenceForm(f=>({...f, count:Math.max(1,parseInt(ev.target.value)||1)}))}
-                              style={{ width:44, fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 6px', outline:'none', textAlign:'center' }}/>
-                            <span style={{ fontSize:11, color:'#6B7280' }}>occurrences</span>
-                          </div>
-                        )}
-                        <div style={{ display:'flex', gap:5, marginTop:2 }}>
-                          <button
-                            onClick={() => {
-                              const updates = recurrenceForm.type
-                                ? { recurrence_type: recurrenceForm.type, recurrence_count: recurrenceForm.count }
-                                : { recurrence_type: null, recurrence_count: null };
-                              onUpdatePhase?.(ph.id, updates);
-                              setRecurrenceEdit(null);
-                            }}
-                            style={{ flex:1, padding:'6px', borderRadius:5, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
-                            Appliquer
-                          </button>
-                          <button onClick={() => setRecurrenceEdit(null)}
-                            style={{ padding:'6px 8px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', color:'#9CA3AF', fontSize:11, cursor:'pointer' }}>
-                            <X size={11}/>
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1149,15 +1102,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 </div>
                 {/* Gantt bar area — fixed pixel width, matches header */}
                 <div style={{width:ganttW,flexShrink:0,position:'relative',height:38,background:'#F8F9FA',borderLeft:'1px solid #ECEEF0'}}>
-                  {/* Grid lines + weekend overlays */}
+                  {/* Grid lines + weekend overlays + today column */}
                   {columns.map((col, ci) => (
                     <div key={ci}>
-                      {isWeekendCol(col) && <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:colW,background:'rgba(0,0,0,.032)',zIndex:0,pointerEvents:'none'}}/>}
+                      {isTodayCol(col) && <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:colW,background:'rgba(232,121,78,.07)',zIndex:0,pointerEvents:'none'}}/>}
+                      {isWeekendCol(col) && !isTodayCol(col) && <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:colW,background:'rgba(0,0,0,.032)',zIndex:0,pointerEvents:'none'}}/>}
                       <div style={{position:'absolute',top:0,bottom:0,left:ci*colW,width:1,background:'#ECEEF0',zIndex:1,pointerEvents:'none'}}/>
                     </div>
                   ))}
-                  {/* Today line */}
-                  {todayPx>=0&&todayPx<=ganttW&&<div style={{position:'absolute',top:0,bottom:0,left:todayPx,width:2,background:BRAND,opacity:.25,zIndex:2,borderRadius:1,pointerEvents:'none'}}/>}
                   {/* Phase bar */}
                   <div
                     onPointerDown={ev => handleBarDown(ev, ph)}
@@ -1170,19 +1122,29 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     style={{
                       position:'absolute', top:5, bottom:5,
                       left: left, width: width, minWidth:8,
-                      borderRadius:99, background:color, color:'#fff',
+                      borderRadius:99, background:barColor, color:'#fff',
                       display:'flex', alignItems:'center', padding:'0 12px 0 10px',
                       cursor: isBarDrag_ ? 'grabbing' : 'grab',
                       whiteSpace:'nowrap', overflow:'hidden', zIndex:3, userSelect:'none',
                       boxShadow: isBarDrag_ ? '0 4px 16px rgba(0,0,0,.28)' : '0 1px 3px rgba(0,0,0,.12)',
                       transition: (isBarDrag_||isResize_) ? 'none' : 'left .06s,width .06s,box-shadow .15s',
                     }}>
-                    {/* Progress overlay */}
-                    {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:'rgba(0,0,0,.22)',zIndex:0,pointerEvents:'none'}}/>}
-                    <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1,flexShrink:1,minWidth:0}}>
+                    {/* Punch / réel overlay — couleur distincte du prévu */}
+                    {progress>0&&<div style={{position:'absolute',top:0,bottom:0,left:0,width:`${progress}%`,borderRadius:99,background:PUNCH_COLOR,opacity:.72,zIndex:0,pointerEvents:'none'}}/>}
+                    <span style={{fontSize:10.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',position:'relative',zIndex:1,flexShrink:1,minWidth:0,
+                      color: (ph.status==='not_started') ? '#374151' : '#fff'}}>
                       {ph.trade_name||ph.name}
                     </span>
-                    {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:4,opacity:.9,position:'relative',zIndex:1,flexShrink:0}}>{progress}%</span>}
+                    {/* Badge récurrence */}
+                    {ph.recurrence_type && (ph.recurrence_count||1) > 1 && (
+                      <span style={{fontSize:8.5,fontWeight:900,marginLeft:4,opacity:.95,position:'relative',zIndex:1,flexShrink:0,
+                        background:'rgba(0,0,0,.2)',borderRadius:3,padding:'1px 3px',
+                        color: (ph.status==='not_started') ? '#374151' : '#fff'}}>
+                        x{ph.recurrence_count}
+                      </span>
+                    )}
+                    {progress>0&&<span style={{fontSize:9,fontWeight:800,marginLeft:2,opacity:.9,position:'relative',zIndex:1,flexShrink:0,
+                      color: (ph.status==='not_started') ? '#374151' : '#fff'}}>{progress}%</span>}
                     {/* Drag delta tooltip */}
                     {isBarDrag_&&(barDrag?.delta||0)!==0&&(
                       <span style={{position:'absolute',top:-26,left:'50%',transform:'translateX(-50%)',background:'#15171C',color:'#fff',fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,whiteSpace:'nowrap',zIndex:20,pointerEvents:'none',boxShadow:'0 2px 8px rgba(0,0,0,.3)'}}>
@@ -1218,19 +1180,19 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     const intervalMs = REC_INTERVAL[ph.recurrence_type] || 7*86400000;
                     const baseMs = new Date(ph.start_date.slice(0,10)+'T'+(ph.start_time||'08:00')).getTime();
                     const durMs  = ph.duration_hours ? ph.duration_hours*3600000 : 8*3600000;
-                    const refMs  = refStart.getTime();
-                    return Array.from({ length: (ph.recurrence_count||1)-1 }, (_, i) => {
-                      const oMs    = baseMs + (i+1)*intervalMs;
-                      const oLeft  = Math.max(0, Math.min(ganttW, (oMs - refMs) / totalMs * ganttW));
-                      const oWidth = Math.max(6, Math.min(ganttW - oLeft, durMs / totalMs * ganttW));
+                    const refMs  = effRefStart.getTime();
+                    return Array.from({ length: (ph.recurrence_count||1)-1 }, (_, ri) => {
+                      const oMs    = baseMs + (ri+1)*intervalMs;
+                      const oLeft  = Math.max(0, Math.min(ganttW, (oMs - refMs) / effMs * ganttW));
+                      const oWidth = Math.max(6, Math.min(ganttW - oLeft, durMs / effMs * ganttW));
                       return (
-                        <div key={`rec-${i}`} style={{
+                        <div key={`rec-${ri}`} style={{
                           position:'absolute', top:7, bottom:7,
                           left:oLeft, width:oWidth, minWidth:6,
-                          borderRadius:99, background:color,
-                          opacity: Math.max(0.15, 0.4 - i*0.05),
+                          borderRadius:99, background:barColor,
+                          opacity: Math.max(0.18, 0.45 - ri*0.06),
                           pointerEvents:'none', zIndex:2,
-                          border:`1.5px dashed ${color}`,
+                          border:`1.5px dashed ${barColor}`,
                         }}/>
                       );
                     });
@@ -1308,6 +1270,59 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
         </div>
       </div>
 
+      {/* ── Recurrence popover (fixed, hors contexte sticky) ── */}
+      {recurrenceEdit && (() => {
+        const ph = phases.find(p => p.id === recurrenceEdit.id);
+        if (!ph) return null;
+        const r = recurrenceEdit.rect;
+        return (
+          <div onClick={ev => ev.stopPropagation()}
+            style={{ position:'fixed', top: r.bottom + 4, left: r.left, zIndex:9998,
+              background:'#fff', border:'1px solid #E5E7EB', borderRadius:8, padding:'12px 14px',
+              boxShadow:'0 6px 20px rgba(0,0,0,.13)', minWidth:210 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#374151', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+              <Repeat size={11} color={BRAND}/> Récurrence
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+              <select value={recurrenceForm.type}
+                onChange={ev => setRecurrenceForm(f=>({...f, type:ev.target.value}))}
+                style={{ fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 7px', outline:'none', fontFamily:'inherit', background:'#fff' }}>
+                <option value="">Aucune</option>
+                <option value="daily">Quotidien</option>
+                <option value="weekly">Hebdomadaire</option>
+                <option value="biweekly">Aux 2 semaines</option>
+                <option value="monthly">Mensuel</option>
+              </select>
+              {recurrenceForm.type && (
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <input type="number" min="1" max="52" value={recurrenceForm.count}
+                    onChange={ev => setRecurrenceForm(f=>({...f, count:Math.max(1,parseInt(ev.target.value)||1)}))}
+                    style={{ width:44, fontSize:11, border:'1px solid #E5E7EB', borderRadius:5, padding:'5px 6px', outline:'none', textAlign:'center' }}/>
+                  <span style={{ fontSize:11, color:'#6B7280' }}>occurrences</span>
+                </div>
+              )}
+              <div style={{ display:'flex', gap:5, marginTop:2 }}>
+                <button
+                  onClick={() => {
+                    const updates = recurrenceForm.type
+                      ? { recurrence_type: recurrenceForm.type, recurrence_count: recurrenceForm.count }
+                      : { recurrence_type: null, recurrence_count: null };
+                    onUpdatePhase?.(ph.id, updates);
+                    setRecurrenceEdit(null);
+                  }}
+                  style={{ flex:1, padding:'6px', borderRadius:5, border:'none', background:BRAND, color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                  Appliquer
+                </button>
+                <button onClick={() => setRecurrenceEdit(null)}
+                  style={{ padding:'6px 8px', borderRadius:5, border:'1px solid #E5E7EB', background:'#fff', color:'#9CA3AF', fontSize:11, cursor:'pointer' }}>
+                  <X size={11}/>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Hover tooltip (fixed position) ── */}
       {tooltip && (
         <div style={{
@@ -1318,30 +1333,49 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
           padding:'10px 14px', fontSize:12, maxWidth:240,
           boxShadow:'0 8px 28px rgba(0,0,0,.32)',
         }}>
-          <div style={{ fontWeight:800, fontSize:13, marginBottom:4 }}>{tooltip.ph.name}</div>
-          {tooltip.ph.trade_name && (
-            <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Corps: {tooltip.ph.trade_name}</div>
-          )}
-          <div style={{ color:'#D1D5DB', fontSize:11, marginBottom:2 }}>
-            {fmtDate(tooltip.ph.start_date)}{tooltip.ph.end_date ? ` → ${fmtDate(tooltip.ph.end_date)}` : ''}
-          </div>
-          {tooltip.ph.status && (
-            <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, marginTop:4 }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:STATUS_BORDER[tooltip.ph.status]||'#9CA3AF', display:'block', flexShrink:0 }}/>
-              <span style={{ color:'#9CA3AF' }}>{STATUS_LABELS[tooltip.ph.status]||tooltip.ph.status}</span>
-            </div>
-          )}
-          {(tooltip.ph.progress_pct||0) > 0 && (
-            <div style={{ marginTop:6 }}>
-              <div style={{ height:4, background:'#374151', borderRadius:4, overflow:'hidden' }}>
-                <div style={{ height:'100%', width:`${tooltip.ph.progress_pct}%`, background:BRAND, borderRadius:4 }}/>
-              </div>
-              <div style={{ fontSize:10, color:'#9CA3AF', marginTop:2 }}>{tooltip.ph.progress_pct}% complété</div>
-            </div>
-          )}
-          {tooltip.trade?.subcontractor_name && (
-            <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
-          )}
+          {(() => {
+            const tph = tooltip.ph;
+            const tStart = tph.start_date ? new Date(tph.start_date.slice(0,10) + 'T' + (tph.start_time||'08:00')) : null;
+            const tEnd   = tph.duration_hours && tStart
+              ? new Date(tStart.getTime() + Number(tph.duration_hours)*3600000)
+              : tph.end_date ? new Date(tph.end_date.slice(0,10) + 'T17:00') : null;
+            const fmtDT  = (d) => d ? d.toLocaleDateString('fr-CA',{day:'numeric',month:'short'}) + ' ' + String(d.getHours()).padStart(2,'0') + 'h' + String(d.getMinutes()).padStart(2,'0') : '';
+            const REC_LBL = { daily:'Quotidien', weekly:'Hebdomadaire', biweekly:'Aux 2 sem.', monthly:'Mensuel' };
+            return (<>
+              <div style={{ fontWeight:800, fontSize:13, marginBottom:4 }}>{tph.name}</div>
+              {tph.trade_name && <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Corps: {tph.trade_name}</div>}
+              {tStart && (
+                <div style={{ color:'#D1D5DB', fontSize:11, marginBottom:2 }}>
+                  {fmtDT(tStart)}{tEnd ? ` → ${fmtDT(tEnd)}` : ''}
+                </div>
+              )}
+              {tph.duration_hours && (
+                <div style={{ color:'#9CA3AF', fontSize:11, marginBottom:2 }}>Durée : {tph.duration_hours}h</div>
+              )}
+              {tph.status && (
+                <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, marginTop:4 }}>
+                  <span style={{ width:6, height:6, borderRadius:'50%', background:STATUS_FILL[tph.status]||'#9CA3AF', display:'block', flexShrink:0 }}/>
+                  <span style={{ color:'#9CA3AF' }}>{STATUS_LABELS[tph.status]||tph.status}</span>
+                </div>
+              )}
+              {tph.recurrence_type && (
+                <div style={{ color:'#C4B5FD', fontSize:11, marginTop:4 }}>
+                  <Repeat size={10} style={{display:'inline',verticalAlign:'middle',marginRight:4}}/>{REC_LBL[tph.recurrence_type]||tph.recurrence_type} × {tph.recurrence_count||1}
+                </div>
+              )}
+              {(tph.progress_pct||0) > 0 && (
+                <div style={{ marginTop:6 }}>
+                  <div style={{ height:4, background:'#374151', borderRadius:4, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width:`${tph.progress_pct}%`, background:PUNCH_COLOR, borderRadius:4 }}/>
+                  </div>
+                  <div style={{ fontSize:10, color:'#9CA3AF', marginTop:2 }}>{tph.progress_pct}% réel (punch)</div>
+                </div>
+              )}
+              {tooltip.trade?.subcontractor_name && (
+                <div style={{ marginTop:6, fontSize:11, color:BRAND, fontWeight:700 }}>{tooltip.trade.subcontractor_name}</div>
+              )}
+            </>);
+          })()}
         </div>
       )}
     </>
