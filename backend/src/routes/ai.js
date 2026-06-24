@@ -405,4 +405,58 @@ router.post('/credits', async (req, res) => {
   }
 });
 
+// POST /api/ai/adjust-phases — Florence réorganise les phases existantes (dates, durées ouvrables, dépendances)
+router.post('/adjust-phases', enforceAiQuota, async (req, res) => {
+  if (!aiReady()) return aiNotConfigured(res);
+  const { phases = [], project_name = '', start_date, project_type = '' } = req.body;
+  if (!phases.length) return res.status(400).json({ error: 'Aucune phase à ajuster' });
+
+  const phaseList = phases.map((ph, i) =>
+    `${i+1}. "${ph.name}" (${ph.trade_name||'?'}) — durée actuelle: ${ph.duration_hours||'?'}h, début actuel: ${ph.start_date||'?'}`
+  ).join('\n');
+
+  const prompt = `Tu es Florence, planificatrice de chantier MONFLUX spécialisée en construction au Québec.
+Tu reçois la liste des phases d'un chantier et tu les réorganises de façon réaliste.
+
+PROJET: ${project_name} | Type: ${project_type} | Date de début cible: ${start_date || 'à déterminer'}
+
+PHASES ACTUELLES (à ajuster — ne pas supprimer ni ajouter):
+${phaseList}
+
+RÈGLES:
+1. Journée ouvrée = 8h, semaine = 5 jours (lundi–vendredi, pas de week-end).
+2. Calcule duration_hours comme multiple de 8h (ex: 2 jours = 16h, 1 semaine = 40h).
+3. Les phases doivent se suivre de façon logique (ex: démolition avant plomberie).
+4. start_date = date de début réelle (YYYY-MM-DD, jamais un week-end).
+5. Identifie les dépendances: pour chaque phase, quel est l'indice (1-based) de la phase qui doit être terminée avant? (null si aucune).
+6. Garde tous les noms et trade_names EXACTEMENT comme fournis.
+
+Réponds UNIQUEMENT en JSON valide:
+{
+  "phases": [
+    {
+      "id_original": 1,
+      "start_date": "2026-07-02",
+      "duration_hours": 16,
+      "depends_on_index": null
+    }
+  ]
+}`;
+
+  try {
+    const client = initAnthropicIfReady();
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = msg.content[0]?.text || '{}';
+    const result = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    res.json({ adjustments: Array.isArray(result?.phases) ? result.phases : [] });
+  } catch (err) {
+    console.error('adjust-phases', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

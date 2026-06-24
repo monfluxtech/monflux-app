@@ -181,6 +181,7 @@ export const ai = {
   groupPurchases:    (project_id) => http.post('/ai/group-purchases', { project_id }),
   changeOrderImpact: (change_order_id) => http.post('/ai/change-order-impact', { change_order_id }),
   generatePhases:    (data) => http.post('/ai/generate-phases', data),
+  adjustPhases:      (data) => http.post('/ai/adjust-phases', data),
 };
 
 export const dashboard = {
