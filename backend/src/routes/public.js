@@ -273,4 +273,34 @@ router.post('/portal/:token/feedback', async (req, res) => {
   }
 });
 
+// GET /api/public/portal/supplier/:token — supplier project portal
+router.get('/portal/supplier/:token', async (req, res) => {
+  try {
+    const { rows: [project] } = await query(
+      `SELECT p.id, p.name, p.status, p.address, p.city, p.start_date, p.end_date,
+              p.progress_pct, p.description,
+              co.name AS company_name, co.phone AS company_phone, co.email AS company_email
+       FROM projects p
+       JOIN companies co ON co.id = p.company_id
+       WHERE p.supplier_portal_token = $1`,
+      [req.params.token]
+    );
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const { rows: phases } = await query(
+      `SELECT name, status, start_date, end_date, progress_pct, display_order
+       FROM project_phases
+       WHERE project_id = $1
+       ORDER BY display_order`,
+      [project.id]
+    );
+
+    const { id, ...safeProject } = project;
+    res.json({ ...safeProject, phases });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

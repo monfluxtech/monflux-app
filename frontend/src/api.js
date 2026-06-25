@@ -51,7 +51,8 @@ export const projects = {
   addPhase:    (id, data)       => http.post(`/projects/${id}/phases`, data),
   updatePhase: (id, pid, data)  => http.patch(`/projects/${id}/phases/${pid}`, data),
   deletePhase: (id, pid)        => http.delete(`/projects/${id}/phases/${pid}`),
-  resetPortalToken: (id)    => http.post(`/projects/${id}/reset-portal-token`),
+  resetPortalToken:         (id) => http.post(`/projects/${id}/reset-portal-token`),
+  resetSupplierPortalToken: (id) => http.post(`/projects/${id}/reset-supplier-portal-token`),
   getPortalMessages: (id)   => http.get(`/projects/${id}/portal-messages`),
   geocode:     (id)         => http.post(`/projects/${id}/geocode`),
   // Batch J — rentabilité, corps de métiers, dépenses

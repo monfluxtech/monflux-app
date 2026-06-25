@@ -241,6 +241,23 @@ router.post('/:id/reset-portal-token', async (req, res) => {
   }
 });
 
+// POST /api/projects/:id/reset-supplier-portal-token — regenerate the supplier portal link
+router.post('/:id/reset-supplier-portal-token', async (req, res) => {
+  try {
+    const { rows: [project] } = await query(
+      `UPDATE projects SET supplier_portal_token = gen_random_uuid()
+       WHERE id = $1 AND company_id = $2
+       RETURNING supplier_portal_token`,
+      [req.params.id, req.company_id]
+    );
+    if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
+    res.json({ supplier_portal_token: project.supplier_portal_token });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // POST /api/projects/:id/phases
 router.post('/:id/phases', async (req, res) => {
   const {

@@ -67,6 +67,12 @@ async function applyMigrations() {
   await run('portal_token index',
     `CREATE UNIQUE INDEX IF NOT EXISTS projects_portal_token_idx ON projects(portal_token) WHERE portal_token IS NOT NULL`);
 
+  // ── Supplier portal token (2026-06) ─────────────────────────────────────────
+  await run('supplier_portal_token column',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS supplier_portal_token UUID DEFAULT gen_random_uuid()`);
+  await run('supplier_portal_token index',
+    `CREATE UNIQUE INDEX IF NOT EXISTS projects_supplier_portal_token_idx ON projects(supplier_portal_token) WHERE supplier_portal_token IS NOT NULL`);
+
   // ── Fix quittances table (2026-06) ──────────────────────────────────────────
   // The original schema.sql quittances had invoice_id NOT NULL (incompatible).
   // Drop and recreate with the correct schema for client satisfaction certificates.

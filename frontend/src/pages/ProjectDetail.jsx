@@ -2966,7 +2966,7 @@ export default function ProjectDetail() {
   const [aiNotice, setAiNotice] = useState('');
   const [aiRecommendations, setAiRecommendations] = useState([]);
   const [activeSection, setActiveSection] = useState('s-ai');
-  const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'feed' | 'comms'
+  const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'memoire' | 'communication'
   const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -5305,8 +5305,8 @@ Règles :
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 2 }}>
           {[
             { key: 'detail', label: 'Fiche projet', icon: '📋' },
-            { key: 'feed',   label: 'Fil du chantier', icon: '📰' },
-            { key: 'comms',  label: 'Courriels', icon: '✉️' },
+            { key: 'memoire',        label: 'Mémoire', icon: '🧠' },
+            { key: 'communication',  label: 'Communications', icon: '💬' },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               fontSize: 12.5, fontWeight: activeTab === tab.key ? 700 : 500,
@@ -5352,17 +5352,41 @@ Règles :
                 </div>
               )}
             </div>
-            {/* Portail fournisseur — stub */}
+            {/* Portail fournisseur */}
             <div style={{ position: 'relative' }}>
               <button
-                title="Portail fournisseur (bientôt)"
+                title="Portail fournisseur"
                 onClick={() => setPortalCopyTarget(portalCopyTarget === 'supplier' ? null : 'supplier')}
                 style={{ width: 32, height: 32, borderRadius: 8, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}
               >🏢</button>
               {portalCopyTarget === 'supplier' && (
-                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 200, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
+                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
-                  <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0, lineHeight: 1.5 }}>Les liens fournisseurs seront disponibles prochainement.</p>
+                  {project.supplier_portal_token ? (
+                    <>
+                      <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`); setPortalCopyTarget(null); }}
+                          style={{ flex: 1, fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
+                          Copier le lien
+                        </button>
+                        <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre lien pour suivre l'avancement du projet :\n${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}`}
+                          target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                          style={{ width: 32, display: 'grid', placeItems: 'center', background: '#22c55e', color: '#fff', borderRadius: 7, textDecoration: 'none', fontSize: 14 }} title="Envoyer par WhatsApp">💬</a>
+                        <a href={`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                          style={{ width: 32, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151', borderRadius: 7, textDecoration: 'none', fontSize: 14, border: '1px solid #E5E7EB' }} title="Aperçu">↗</a>
+                      </div>
+                      <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
+                        style={{ marginTop: 8, fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                        🔄 Générer un nouveau lien
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
+                      style={{ width: '100%', fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', cursor: 'pointer', marginTop: 4 }}>
+                      Activer le portail fournisseur
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -8664,38 +8688,70 @@ Règles :
 
       </div>
 
-      {/* ════════════ VUE : FIL DU CHANTIER ════════════ */}
-      {activeTab === 'feed' && (
-        <div style={{ padding: '36px 56px 60px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+      {/* ════════════ VUE : MÉMOIRE ════════════ */}
+      {activeTab === 'memoire' && (
+        <div style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+
           {/* En-tête */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#FFF1EB', border: '1px solid #FDDCCA', display: 'grid', placeItems: 'center', fontSize: 24 }}>📰</div>
+            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#FFF1EB', border: '1px solid #FDDCCA', display: 'grid', placeItems: 'center', fontSize: 24 }}>🧠</div>
             <div>
-              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#15171C', margin: 0, letterSpacing: '-.02em' }}>Fil du chantier</h1>
-              <p style={{ fontSize: 13, color: '#7C8089', margin: 0 }}>Toutes les activités du projet · Recommandations de Flo</p>
+              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#15171C', margin: 0, letterSpacing: '-.02em' }}>Mémoire du projet</h1>
+              <p style={{ fontSize: 13, color: '#7C8089', margin: 0 }}>Insights Flo · Fil du chantier · Documents & liens</p>
             </div>
           </div>
 
-          {/* Recommandations Flo */}
-          {aiRecommendations.length > 0 && (
-            <div style={{ background: `${BRAND}08`, border: `1px solid ${BRAND}30`, borderRadius: 14, padding: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <Sparkles size={16} style={{ color: BRAND }} />
-                <span style={{ fontSize: 14, fontWeight: 800, color: BRAND }}>Points soulevés par Flo</span>
-                <button onClick={() => setAiRecommendations([])} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#C0C4CC' }}>Effacer</button>
+          {/* ── Stat cards ── */}
+          {(() => {
+            const totalHours = timesheets.reduce((s, ts) => s + (Number(ts.hours_total || ts.hours) || 0), 0);
+            const pendingCOs = changeOrdersList.filter(co => co.status === 'pending_approval').length;
+            const stats = [
+              { icon: '⏱', label: 'Heures punchées', value: totalHours > 0 ? `${totalHours}h` : '—', color: BRAND, bg: '#FFF1EB' },
+              { icon: '📷', label: 'Médias chantier', value: media.length || '—', color: '#4f46e5', bg: '#EEF1FD' },
+              { icon: '📝', label: 'Avenants', value: changeOrdersList.length || '—', color: '#2563EB', bg: '#EFF6FF' },
+              { icon: '⚠️', label: 'En attente', value: pendingCOs || '—', color: pendingCOs ? '#D97706' : '#9CA3AF', bg: pendingCOs ? '#FFFBEB' : '#F9FAFB' },
+            ];
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                {stats.map((s, i) => (
+                  <div key={i} style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 }}>{s.icon}</div>
+                    <div>
+                      <p style={{ fontSize: 20, fontWeight: 900, color: s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>
+                      <p style={{ fontSize: 11, color: '#9CA3AF', margin: '3px 0 0' }}>{s.label}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
+            );
+          })()}
+
+          {/* ── Insights & Mémoire de Flo ── */}
+          <div style={{ background: `${BRAND}06`, border: `1px solid ${BRAND}25`, borderRadius: 16, padding: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Sparkles size={17} style={{ color: BRAND }} />
+              <span style={{ fontSize: 15, fontWeight: 800, color: BRAND }}>Insights & mémoire de Flo</span>
+              {aiRecommendations.length > 0 && (
+                <button onClick={() => setAiRecommendations([])} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#C0C4CC' }}>Effacer</button>
+              )}
+            </div>
+            {aiRecommendations.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {aiRecommendations.map((rec, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 14px', background: '#fff', borderRadius: 10, border: '1px solid #F0F2F4' }}>
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '11px 14px', background: '#fff', borderRadius: 10, border: '1px solid #F0F2F4' }}>
                     <Sparkles size={13} style={{ color: BRAND, flexShrink: 0, marginTop: 2 }} />
                     <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{rec}</p>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#C4C8CE' }}>
+                <p style={{ fontSize: 13 }}>Aucun insight pour l'instant — utilisez le bouton Flo sur la fiche projet pour générer une analyse.</p>
+              </div>
+            )}
+          </div>
 
-          {/* Notes de chantier */}
+          {/* ── Notes de chantier ── */}
           <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <StickyNote size={15} style={{ color: BRAND }} />
@@ -8707,11 +8763,11 @@ Règles :
               value={notes} onChange={e => handleNotesChange(e.target.value)} />
           </div>
 
-          {/* Activités — fil chronologique */}
+          {/* ── Fil d'activité chronologique ── */}
           <div>
-            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#15171C', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: BRAND, display: 'inline-block' }} />
-              Activités récentes
+            <h2 style={{ fontSize: 15, fontWeight: 800, color: '#15171C', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: BRAND, display: 'inline-block' }} />
+              Fil du chantier
             </h2>
             {(() => {
               const feedItems = [
@@ -8759,10 +8815,10 @@ Règles :
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {feedItems.map((item, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 12, padding: '13px 16px', background: '#FAFAFA', borderRadius: 11, border: '1px solid #F0F2F4', transition: 'background .1s' }}
+                    <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 15px', background: '#FAFAFA', borderRadius: 11, border: '1px solid #F0F2F4', transition: 'background .1s' }}
                       onMouseEnter={e => e.currentTarget.style.background = '#F5F5F7'}
                       onMouseLeave={e => e.currentTarget.style.background = '#FAFAFA'}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 17, flexShrink: 0 }}>{item.icon}</div>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>{item.icon}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{item.title}</p>
                         {item.sub && <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>{item.sub}</p>}
@@ -8778,52 +8834,215 @@ Règles :
             })()}
           </div>
 
-          {/* Médias / Photos */}
-          {media.length > 0 && (
-            <div>
-              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#15171C', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4f46e5', display: 'inline-block' }} />
-                Photos & médias ({media.length})
-              </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
-                {media.map(m => (
-                  <div key={m.id} style={{ borderRadius: 10, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
-                    {m.file_url ? (
-                      <img src={m.file_url} alt={m.caption || 'Media'} style={{ width: '100%', height: 100, objectFit: 'cover', display: 'block' }} />
-                    ) : (
-                      <div style={{ height: 100, display: 'grid', placeItems: 'center', fontSize: 28 }}>
-                        {m.type === 'voice' ? '🎙' : '📌'}
-                      </div>
-                    )}
-                    <div style={{ padding: '6px 8px' }}>
-                      <p style={{ fontSize: 11, color: '#374151', margin: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.author_name || m.type}</p>
-                      {(m.caption || m.transcript) && <p style={{ fontSize: 10, color: '#9CA3AF', margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.caption || m.transcript}</p>}
-                    </div>
+          {/* ── Documents & Liens rapides ── */}
+          <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 20 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4f46e5', display: 'inline-block' }} />
+              Documents & liens rapides
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {project.portal_token && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE' }}>
+                  <span style={{ fontSize: 16 }}>🌐</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#5B21B6', margin: 0 }}>Portail client</p>
+                    <p style={{ fontSize: 11, color: '#7C3AED', margin: 0, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
                   </div>
-                ))}
-              </div>
+                  <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`)} style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', background: '#EDE9FE', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}>Copier</button>
+                </div>
+              )}
+              {project.supplier_portal_token && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#F0F9FF', borderRadius: 10, border: '1px solid #BAE6FD' }}>
+                  <span style={{ fontSize: 16 }}>🏢</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#0369A1', margin: 0 }}>Portail fournisseur</p>
+                    <p style={{ fontSize: 11, color: '#0284C7', margin: 0, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
+                  </div>
+                  <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)} style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}>Copier</button>
+                </div>
+              )}
+              {media.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos & médias ({media.length})</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+                    {media.slice(0, 8).map(m => (
+                      <div key={m.id} style={{ borderRadius: 9, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
+                        {m.file_url ? (
+                          <img src={m.file_url} alt={m.caption || 'Media'} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <div style={{ height: 80, display: 'grid', placeItems: 'center', fontSize: 24 }}>
+                            {m.type === 'voice' ? '🎙' : '📌'}
+                          </div>
+                        )}
+                        <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, padding: '4px 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.author_name || m.type}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {media.length === 0 && !project.portal_token && !project.supplier_portal_token && (
+                <p style={{ fontSize: 13, color: '#C4C8CE', textAlign: 'center', padding: '20px 0', margin: 0 }}>Aucun document ou lien pour l'instant.</p>
+              )}
             </div>
-          )}
+          </div>
+
         </div>
       )}
 
-      {/* ════════════ VUE : COURRIELS & COMMUNICATIONS ════════════ */}
-      {activeTab === 'comms' && (
-        <div style={{ padding: '36px 56px 60px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 32 }}>
-            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#F3F4F6', border: '1px solid #E5E7EB', display: 'grid', placeItems: 'center', fontSize: 24, opacity: 0.7 }}>✉️</div>
+      {/* ════════════ VUE : COMMUNICATIONS ════════════ */}
+      {activeTab === 'communication' && (
+        <div style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* En-tête */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', fontSize: 24 }}>💬</div>
             <div>
-              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#7C8089', margin: 0, letterSpacing: '-.02em' }}>Courriels & Communications</h1>
-              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Gmail · WhatsApp · SMS liés au projet — B9</p>
+              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#15171C', margin: 0, letterSpacing: '-.02em' }}>Communications</h1>
+              <p style={{ fontSize: 13, color: '#7C8089', margin: 0 }}>Client d'un côté · Fournisseurs & équipe de l'autre</p>
             </div>
-            <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089' }}>Bientôt · B9</span>
           </div>
-          <div style={{ background: '#FAFAFA', border: '2px dashed #E5E7EB', borderRadius: 16, padding: '48px 32px', textAlign: 'center', color: '#9CA3AF' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✉️</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#6B7280', margin: '0 0 8px' }}>Communications centralisées</h3>
-            <p style={{ fontSize: 13, lineHeight: 1.7, maxWidth: 400, margin: '0 auto' }}>
-              Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
-            </p>
+
+          {/* ── Grille 2 colonnes ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+
+            {/* ── Colonne gauche : Client ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#7C3AED', display: 'inline-block' }} />
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Client</h2>
+                {project.client_name && <span style={{ fontSize: 12, color: '#7C8089' }}>— {project.client_name}</span>}
+              </div>
+
+              {/* Actions rapides client */}
+              <div style={{ background: '#F5F3FF', borderRadius: 14, border: '1px solid #DDD6FE', padding: 16 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#7C3AED', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Actions rapides</p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {project.client_phone && (
+                    <a href={`https://wa.me/${project.client_phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, background: '#22c55e', color: '#fff', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      💬 WhatsApp
+                    </a>
+                  )}
+                  {project.client_email && (
+                    <a href={`mailto:${project.client_email}?subject=Projet ${encodeURIComponent(project.name || '')}`}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, background: '#4f46e5', color: '#fff', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      ✉️ Courriel
+                    </a>
+                  )}
+                  {project.portal_token && (
+                    <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      🔗 Copier lien portail
+                    </button>
+                  )}
+                  {!project.client_phone && !project.client_email && !project.portal_token && (
+                    <p style={{ fontSize: 12, color: '#C4C8CE', margin: 0 }}>Aucune coordonnée enregistrée</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Messages portail client */}
+              <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 16, maxHeight: 480, overflowY: 'auto' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#7C8089', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                  Messages portail ({portalMessages.length})
+                </p>
+                {portalMessages.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {portalMessages.map(msg => (
+                      <div key={msg.id} style={{ display: 'flex', gap: 9 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#EDE9FE', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#7C3AED' }}>{(msg.author_name?.[0] || 'C').toUpperCase()}</span>
+                        </div>
+                        <div style={{ flex: 1, background: '#F9FAFB', borderRadius: 10, padding: '8px 12px', border: '1px solid #F0F2F4' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>{msg.author_name || 'Client'}</span>
+                            <span style={{ fontSize: 10, color: '#C4C8CE' }}>
+                              {msg.created_at ? new Date(msg.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>{msg.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '28px 0', color: '#C4C8CE' }}>
+                    <span style={{ fontSize: 28 }}>📭</span>
+                    <p style={{ fontSize: 12, marginTop: 8 }}>Aucun message du client pour l'instant.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Colonne droite : Fournisseurs & Équipe ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0EA5E9', display: 'inline-block' }} />
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Fournisseurs & Équipe</h2>
+              </div>
+
+              {/* Actions rapides fournisseurs */}
+              <div style={{ background: '#F0F9FF', borderRadius: 14, border: '1px solid #BAE6FD', padding: 16 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#0369A1', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
+                {project.supplier_portal_token ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, background: '#0EA5E9', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                      🔗 Copier lien portail
+                    </button>
+                    <a href={`https://wa.me/?text=${encodeURIComponent(`Voici le lien du portail fournisseur : ${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, background: '#22c55e', color: '#fff', textDecoration: 'none' }}>
+                      💬 WA
+                    </a>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: '#7CB9D4', margin: 0 }}>Activez le portail fournisseur via l'icône 🏢 en haut de la page.</p>
+                )}
+              </div>
+
+              {/* Liste fournisseurs depuis tradeResourcesMap */}
+              <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 16, maxHeight: 520, overflowY: 'auto' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#7C8089', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Sous-traitants assignés</p>
+                {(() => {
+                  const externalPeople = Object.entries(tradeResourcesMap || {}).flatMap(([tradeName, res]) =>
+                    (res.external || []).map(p => ({ ...p, tradeName }))
+                  );
+                  if (!externalPeople.length) return (
+                    <div style={{ textAlign: 'center', padding: '28px 0', color: '#C4C8CE' }}>
+                      <span style={{ fontSize: 28 }}>🏗️</span>
+                      <p style={{ fontSize: 12, marginTop: 8 }}>Aucun sous-traitant assigné pour l'instant.</p>
+                    </div>
+                  );
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      {externalPeople.map((p, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: '#F9FAFB', borderRadius: 10, border: '1px solid #F0F2F4' }}>
+                          <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#E0F2FE', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                            <span style={{ fontSize: 13 }}>🏗️</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</p>
+                            <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{p.tradeName}</p>
+                          </div>
+                          <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                            {p.phone && (
+                              <a href={`https://wa.me/${p.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"
+                                style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', background: '#DCFCE7', borderRadius: 7, textDecoration: 'none', fontSize: 13 }} title="WhatsApp">💬</a>
+                            )}
+                            {p.email && (
+                              <a href={`mailto:${p.email}?subject=Projet ${encodeURIComponent(project.name || '')}`}
+                                style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', background: '#EEF1FD', borderRadius: 7, textDecoration: 'none', fontSize: 13 }} title="Courriel">✉️</a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
           </div>
         </div>
       )}
