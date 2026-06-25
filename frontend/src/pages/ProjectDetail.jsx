@@ -3748,10 +3748,11 @@ Génère un message court (3-5 phrases), professionnel mais chaleureux. Commence
 
   const generatePO = async (tradeName, person, type, pKey, prix, minDate, maxDate) => {
     setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], poLoading: true } }));
-    const isExt = type === 'external';
+    const isExt    = type === 'external';
+    const poNum    = `PO-${Date.now().toString().slice(-6)}`;
     const dateRange = [minDate, maxDate].filter(Boolean).join(minDate !== maxDate ? ' au ' : '');
     const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un bon de commande (PO) formel et concis en français québécois.
-Numéro PO : PO-${Date.now().toString().slice(-6)}
+Numéro PO : ${poNum}
 Projet : ${project.name || project.description || 'Projet en cours'}
 Adresse : ${project.address || 'À confirmer'}
 Dates : ${dateRange || 'À confirmer'}
@@ -3772,10 +3773,67 @@ Génère un bon de commande formel (150 mots max) incluant : les parties, descri
           try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') txt += evt.text; } catch {}
         }
       }
-      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], po: txt.trim(), poLoading: false } }));
+      const trimmed = txt.trim();
+      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], po: trimmed, poNum, poLoading: false } }));
+      openPOWindow(trimmed, person.name, poNum);
     } catch {
       setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], poLoading: false } }));
     }
+  };
+
+  const openPOWindow = (poText, personName, poNum) => {
+    const projName = project.name || project.description || 'Projet';
+    const address  = project.address || '';
+    const today    = new Date().toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+    const bodyHtml = (poText || '')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br/>');
+    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
+<title>BON DE COMMANDE ${poNum}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;color:#15171C;background:#fff;padding:44px 60px;max-width:880px;margin:0 auto}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #E8794E;padding-bottom:20px;margin-bottom:28px}
+.brand{font-size:24px;font-weight:900;color:#E8794E;letter-spacing:-.03em}
+.brand-sub{font-size:11px;color:#9CA3AF;margin-top:3px}
+.po-num{font-size:22px;font-weight:900;color:#15171C;text-align:right}
+.po-lbl{font-size:9px;color:#9CA3AF;text-transform:uppercase;letter-spacing:.08em;text-align:right}
+.po-date{font-size:12px;color:#6B7280;margin-top:4px;text-align:right}
+h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;background:#F9FAFB;border:1px solid #E8EAED;border-radius:10px;padding:16px;margin-bottom:24px}
+.mi label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#9CA3AF;display:block;margin-bottom:4px}
+.mi p{font-size:13px;font-weight:600;color:#15171C}
+.mi.full{grid-column:span 2}
+.body{background:#FAFAFA;border:1px solid #E8EAED;border-radius:10px;padding:20px;font-size:13px;line-height:1.8;margin-bottom:32px}
+.sigs{display:grid;grid-template-columns:1fr 1fr;gap:44px;border-top:1px solid #E8EAED;padding-top:24px;margin-top:24px}
+.sig label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9CA3AF;display:block;margin-bottom:36px}
+.sig-line{border-top:1px solid #D1D5DB;padding-top:5px;font-size:11px;color:#C4C8CE}
+.foot{margin-top:20px;text-align:center;font-size:10px;color:#C4C8CE;border-top:1px solid #F1F3F5;padding-top:14px}
+@media print{body{padding:20px 30px}button{display:none}@page{margin:18mm}}
+</style></head>
+<body>
+<div class="hdr">
+  <div><div class="brand">MONFLUX</div><div class="brand-sub">Gestion de projet construction · Québec</div></div>
+  <div><div class="po-lbl">Bon de commande</div><div class="po-num">${poNum}</div><div class="po-date">${today}</div></div>
+</div>
+<h1>Bon de commande</h1>
+<div class="meta">
+  <div class="mi"><label>Projet</label><p>${projName}</p></div>
+  <div class="mi"><label>Fournisseur / Prestataire</label><p>${personName}</p></div>
+  <div class="mi"><label>Donneur d'ordre</label><p>MONFLUX</p></div>
+  <div class="mi"><label>Conditions de paiement</label><p>Net 30 jours après facture conforme</p></div>
+  ${address ? `<div class="mi full"><label>Adresse des travaux</label><p>${address}</p></div>` : ''}
+</div>
+<div class="body">${bodyHtml}</div>
+<div class="sigs">
+  <div class="sig"><label>Signature — Donneur d'ordre</label><div class="sig-line">Nom, titre et date</div></div>
+  <div class="sig"><label>Signature — Fournisseur</label><div class="sig-line">Nom, titre et date</div></div>
+</div>
+<div class="foot">Document généré par Florence — MONFLUX · ${today}</div>
+<script>setTimeout(function(){window.print();},500);<\/script>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=960,height=720');
+    if (w) { w.document.write(html); w.document.close(); }
   };
 
   const generatePhasesFromAI = async () => {
@@ -6240,7 +6298,7 @@ Règles :
 
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null;
             // Grid partagé (en-têtes + lignes détail)
-            const COLS = '215px 2fr 145px 1.4fr 1.4fr 105px';
+            const COLS = '215px 2fr 145px 1.4fr 1.4fr';
 
             return (
               <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
@@ -6277,8 +6335,7 @@ Règles :
                       <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
                       <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Réponse</span></div>
                       <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>🔒 Conformité</span></div>
-                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>📄 Bon de commande</span></div>
-                      <div style={{ padding: '7px 12px' }}><span style={hS}>💰 Financier</span></div>
+                      <div style={{ padding: '7px 12px' }}><span style={hS}>📄 Bon de commande</span></div>
                     </div>
 
                     {/* ── Lignes par corps de métier ── */}
@@ -6367,33 +6424,50 @@ Règles :
 
                               return (
                                 <div key={pi}>
-                                  {/* ── Ligne compacte (toujours visible) ── */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 10px', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent', cursor: 'pointer', minHeight: 36 }}
+                                  {/* ── Ligne compacte (toujours visible) — 2 lignes ── */}
+                                  <div style={{ borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent', cursor: 'pointer' }}
                                     onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
-                                    <span style={{ fontSize: 9, color: '#C4C8CE', flexShrink: 0, width: 10 }}>{isExpanded ? '▼' : '▶'}</span>
-                                    <p style={{ fontSize: 12.5, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, minWidth: 70, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{person.name}</p>
-                                    <button onClick={e => { e.stopPropagation(); cycleStatus(type, pi); }}
-                                      style={{ fontSize: 9.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '1px 7px', cursor: 'pointer', flexShrink: 0 }}>
-                                      {pStat.label}
-                                    </button>
-                                    {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
-                                    <span style={{ fontSize: 10.5, color: '#9CA3AF', flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontStyle: msgData.msg ? 'normal' : 'italic' }}>
-                                      {msgData.msg ? msgData.msg.slice(0, 55) + (msgData.msg.length > 55 ? '…' : '') : '—'}
-                                    </span>
-                                    {msgData.disponible && (
-                                      <span style={{ fontSize: 10, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
-                                        {msgData.disponible === 'oui' ? '✓ Dispo' : '✗ Non'}
+
+                                    {/* Ligne 1 : nom + info + delete */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px 1px 10px' }}>
+                                      <span style={{ fontSize: 9, color: '#C4C8CE', flexShrink: 0, width: 10 }}>{isExpanded ? '▼' : '▶'}</span>
+                                      <p style={{ fontSize: 12.5, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, minWidth: 70, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{person.name}</p>
+                                      {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
+                                      <span style={{ fontSize: 10.5, color: '#9CA3AF', flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontStyle: msgData.msg ? 'normal' : 'italic' }}>
+                                        {msgData.msg ? msgData.msg.slice(0, 60) + (msgData.msg.length > 60 ? '…' : '') : '—'}
                                       </span>
-                                    )}
-                                    {pStatus !== 'a_contacter' && (
-                                      <span style={{ fontSize: 9.5, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }}>
-                                        {nonConf ? '⚠ Conf.' : certOk ? '✓ Conf.' : '— Conf.'}
-                                      </span>
-                                    )}
-                                    {msgData.po && <span style={{ fontSize: 9, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>📄</span>}
-                                    {msgData.depenses && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#5A5E6A', flexShrink: 0 }}>{msgData.depenses}</span>}
-                                    <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].filter((_, i) => i !== pi)); }}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 15, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
+                                      {msgData.disponible && (
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
+                                          {msgData.disponible === 'oui' ? '✓ Dispo' : '✗ Non'}
+                                        </span>
+                                      )}
+                                      {pStatus !== 'a_contacter' && (
+                                        <span style={{ fontSize: 9.5, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }}>
+                                          {nonConf ? '⚠ Conf.' : certOk ? '✓ Conf.' : '— Conf.'}
+                                        </span>
+                                      )}
+                                      {msgData.po && <span style={{ fontSize: 9, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>📄 PO</span>}
+                                      <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].filter((_, i) => i !== pi)); }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 15, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
+                                    </div>
+
+                                    {/* Ligne 2 : pipeline statuts cliquables */}
+                                    <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 22, paddingBottom: 5, paddingTop: 2, gap: 0 }}>
+                                      {statusList.map((s, si) => {
+                                        const curIdx = statusList.findIndex(x => x.key === pStatus);
+                                        const isPast = si < curIdx;
+                                        const isCur  = s.key === pStatus;
+                                        return (
+                                          <React.Fragment key={s.key}>
+                                            {si > 0 && <div style={{ width: 12, height: 1, background: isPast ? '#D1D5DB' : '#F1F3F5', flexShrink: 0 }}/>}
+                                            <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, status: s.key } : p2)); }}
+                                              style={{ fontSize: 9.5, fontWeight: isCur ? 800 : 600, padding: '1px 7px', borderRadius: 999, border: `1px solid ${isCur ? s.color : isPast ? s.color + '55' : '#EAECEF'}`, background: isCur ? s.bg : 'transparent', color: isCur ? s.color : isPast ? s.color + 'BB' : '#C4C8CE', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                              {isPast ? '✓ ' : ''}{s.label}
+                                            </button>
+                                          </React.Fragment>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
 
                                   {/* ── Détail éditable (accordéon) ── */}
@@ -6492,30 +6566,37 @@ Règles :
                                       </div>
 
                                       {/* Col 5 : Bon de commande */}
-                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                                         {isConfirmed ? (
                                           msgData.po ? (
                                             <>
-                                              <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 8, padding: '7px 9px', fontSize: 10.5, lineHeight: 1.5, color: '#15171C', maxHeight: 130, overflowY: 'auto', flex: 1 }}>
-                                                <span style={{ fontSize: 9, fontWeight: 800, color: '#16A34A', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.05em' }}>📄 Bon de commande</span>
-                                                {msgData.po}
+                                              <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 9, padding: '9px 11px' }}>
+                                                <span style={{ fontSize: 9, fontWeight: 800, color: '#16A34A', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 3 }}>📄 BON DE COMMANDE</span>
+                                                <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4 }}>
+                                                  {msgData.poNum && <span style={{ fontWeight: 700, color: '#15171C' }}>{msgData.poNum} · </span>}
+                                                  {msgData.po.slice(0, 70).replace(/\*\*/g, '')}…
+                                                </p>
                                               </div>
-                                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                                <button onClick={() => navigator.clipboard?.writeText(msgData.po)}
-                                                  style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 9.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>📋</button>
+                                              <button onClick={() => openPOWindow(msgData.po, person.name, msgData.poNum || `PO-000000`)}
+                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px 10px', borderRadius: 8, border: 'none', background: '#15171C', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+                                                📄 Ouvrir / Imprimer PDF
+                                              </button>
+                                              <div style={{ display: 'flex', gap: 4 }}>
                                                 {person.email && (
-                                                  <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Bon de commande — ${project.name || 'Projet'}`)}&body=${encodeURIComponent(msgData.po)}`}
-                                                    style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 9.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>✉</a>
+                                                  <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Bon de commande ${msgData.poNum || ''} — ${project.name || 'Projet'}`)}&body=${encodeURIComponent(msgData.po)}`}
+                                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 8px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
+                                                    ✉ Envoyer
+                                                  </a>
                                                 )}
                                                 <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
-                                                  style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, border: `1px solid ${BRAND}30`, background: `${BRAND}08`, fontSize: 9.5, fontWeight: 700, color: BRAND, cursor: isLoadingPO ? 'wait' : 'pointer' }}>
-                                                  {isLoadingPO ? <Loader2 size={8} className="animate-spin"/> : '🔄'} Régén.
+                                                  style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, border: `1px solid ${BRAND}30`, background: `${BRAND}08`, fontSize: 10, fontWeight: 700, color: BRAND, cursor: isLoadingPO ? 'wait' : 'pointer' }}>
+                                                  {isLoadingPO ? <Loader2 size={9} className="animate-spin"/> : '🔄'} Régén.
                                                 </button>
                                               </div>
                                             </>
                                           ) : (
                                             <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
-                                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '8px 10px', borderRadius: 9, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
+                                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '9px 10px', borderRadius: 9, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
                                               {isLoadingPO ? <Loader2 size={10} className="animate-spin"/> : '📄'}
                                               {isLoadingPO ? 'Génération…' : 'Générer bon de commande'}
                                             </button>
@@ -6523,19 +6604,6 @@ Règles :
                                         ) : (
                                           <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>
                                             Disponible quand {type === 'internal' ? 'confirmé' : 'accepté'}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Col 6 : Financier */}
-                                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total dépenses</span>
-                                        <input value={msgData.depenses || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], depenses: e.target.value } }))}
-                                          placeholder="0 $"
-                                          style={{ width: '100%', fontSize: 12, fontWeight: 700, border: '1.5px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', outline: 'none', color: '#15171C', boxSizing: 'border-box', textAlign: 'right' }}/>
-                                        {type === 'external' && msgData.prix && msgData.depenses && (
-                                          <span style={{ fontSize: 9, fontWeight: 700, color: Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '#DC2626' : '#16A34A' }}>
-                                            {Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '↑ Dépassement' : '✓ Sous budget'}
                                           </span>
                                         )}
                                       </div>
