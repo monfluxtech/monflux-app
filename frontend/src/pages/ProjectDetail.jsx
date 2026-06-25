@@ -2314,12 +2314,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               </button>
             </div>
           )}
-          {bulkPanel === 'dep' && (
-            <span style={{ fontSize:10, color:'#9CA3AF' }}>
-              {depFirst ? `Lier → ${phases.find(p=>p.id===depFirst)?.name||'?'}` : 'Cliquer sur le prédécesseur dans la liste…'}
-            </span>
-          )}
-
           {/* Boutons d'action */}
           <div style={{ display:'flex', gap:4, flexShrink:0, marginLeft:'auto' }}>
             <button onClick={() => setBulkPanel(bulkPanel==='edit'?null:'edit')}
@@ -2333,11 +2327,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                 M'assigner
               </button>
             )}
-            <button onClick={() => setBulkPanel(bulkPanel==='dep'?null:'dep')}
-              style={{ padding:'5px 10px', borderRadius:7, border:`1px solid ${bulkPanel==='dep'?BRAND:'rgba(255,255,255,.15)'}`,
-                background: bulkPanel==='dep' ? BRAND : 'rgba(255,255,255,.07)', color:'#E5E7EB', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-              Lier
-            </button>
             <button onClick={() => setBulkPanel(bulkPanel==='delete'?null:'delete')}
               style={{ padding:'5px 10px', borderRadius:7, border:'1px solid rgba(239,68,68,.4)', background:'rgba(255,255,255,.07)', color:'#F87171', fontSize:11, fontWeight:600, cursor:'pointer' }}>
               {bulkPanel==='delete' ? '✓ Confirmer' : 'Supprimer'}
@@ -2874,6 +2863,7 @@ export default function ProjectDetail() {
   });
   const [tradeStatusFilter, setTradeStatusFilter] = useState(null);
   const [tradePersonExpanded, setTradePersonExpanded] = useState({});
+  const [tradePersonSelected, setTradePersonSelected] = useState(new Set());
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -3767,15 +3757,38 @@ Réponds en JSON UNIQUEMENT dans ce format :
   const generateContactMessage = async (tradeName, person, type, pKey) => {
     setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], loading: true } }));
     const isExt = type === 'external';
-    const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un message de contact professionnel et direct en français québécois.
-Destinataire : ${person.name}${person.email ? ` (${person.email})` : ''}
-Corps de métier : ${tradeName}
-Projet : ${project.name || project.description || 'Projet en cours'}
-Adresse : ${project.address || 'À confirmer'}
-Dates approximatives : ${project.start_date ? `Début ${project.start_date}` : 'À confirmer'}
-Type : ${isExt ? 'Sous-traitant externe — demander disponibilité ET soumission de prix' : 'Ressource interne — confirmer disponibilité'}
+    // Phases liées à ce corps de métier
+    const trKw = tradeName.toLowerCase().split(/[\s,\/&+]+/).filter(w => w.length >= 4);
+    const relPhases = (project.phases || []).filter(ph =>
+      ph.trade_name?.toLowerCase() === tradeName.toLowerCase() ||
+      (trKw.length && trKw.some(kw => (ph.name||'').toLowerCase().includes(kw)))
+    );
+    const phaseLines = relPhases.map(ph => {
+      const s = ph.start_date || '';
+      const e = ph.end_date || '';
+      const h = ph.duration_hours ? `${ph.duration_hours} h` : '';
+      return `  - ${ph.name}${s ? ` : ${s}${e && e !== s ? ` → ${e}` : ''}` : ''}${h ? ` (${h})` : ''}`;
+    }).join('\n');
+    const totalH = relPhases.reduce((acc, ph) => acc + (Number(ph.duration_hours) || 0), 0);
+    const deadline = (tradeResourcesMap[tradeName]?.[type]?.[parseInt(pKey.split('||')[2])]?.responseDeadline) || '';
+    const prompt = `Génère un message de contact direct et factuel en français québécois.
 
-Génère un message court (3-5 phrases), professionnel mais chaleureux. Commence par "Bonjour [prénom]," uniquement. Sans formule de politesse finale excessive. Réponds avec le message seul.`;
+Destinataire : ${person.name}
+Corps de métier : ${tradeName}
+Projet : ${project.name || project.description || 'Projet'}
+Adresse du chantier : ${project.address || 'À préciser'}
+Travaux concernés :
+${phaseLines || `  - ${tradeName}`}
+Total : ${totalH ? `${totalH} h` : 'à estimer'}
+${deadline ? `Date limite pour confirmer / soumissionner : ${deadline}` : ''}
+
+Instructions :
+- Message court (4-6 phrases max), 0 fluff, 0 formule de politesse excessive
+- Commence directement par "Bonjour [prénom],"
+- Inclure : l'adresse exacte, les ouvrages prévus, les dates et heures totales
+- ${isExt ? 'Demander disponibilité ET prix ferme avant la date limite' : 'Confirmer disponibilité avant la date limite'}
+- Terminer par une seule phrase de clôture directe
+- Réponds avec le message seul`;
     try {
       const token = localStorage.getItem('token');
       const CHAT_BASE2 = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
@@ -6494,6 +6507,65 @@ Règles :
                       </button>
                     ))}
                   </div>
+
+                  {/* ── Barre mass-actions ── */}
+                  {tradePersonSelected.size > 0 && (() => {
+                    const selArr = [...tradePersonSelected];
+                    const massUpdateStatus = (newStatus) => {
+                      const updatedMap = { ...tradeResourcesMap };
+                      selArr.forEach(pk => {
+                        const [tn, tp, piStr] = pk.split('||');
+                        const pi2 = parseInt(piStr);
+                        if (!updatedMap[tn]) return;
+                        const arr = [...(updatedMap[tn][tp] || [])];
+                        if (arr[pi2]) arr[pi2] = { ...arr[pi2], status: newStatus };
+                        updatedMap[tn] = { ...updatedMap[tn], [tp]: arr };
+                      });
+                      setTradeResourcesMap(updatedMap);
+                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
+                      setTradePersonSelected(new Set());
+                    };
+                    const massDelete = () => {
+                      const updatedMap = { ...tradeResourcesMap };
+                      const grouped = {};
+                      selArr.forEach(pk => {
+                        const [tn, tp, piStr] = pk.split('||');
+                        if (!grouped[tn]) grouped[tn] = {};
+                        if (!grouped[tn][tp]) grouped[tn][tp] = new Set();
+                        grouped[tn][tp].add(parseInt(piStr));
+                      });
+                      Object.entries(grouped).forEach(([tn, types]) => {
+                        Object.entries(types).forEach(([tp, indices]) => {
+                          updatedMap[tn] = { ...updatedMap[tn], [tp]: (updatedMap[tn]?.[tp] || []).filter((_, i) => !indices.has(i)) };
+                        });
+                      });
+                      setTradeResourcesMap(updatedMap);
+                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
+                      setTradePersonSelected(new Set());
+                    };
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', background: '#F5F3FF', borderTop: '1px solid #DDD6FE', borderBottom: '1px solid #DDD6FE', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: BRAND }}>
+                          {tradePersonSelected.size} sélectionné(s)
+                        </span>
+                        <span style={{ fontSize: 10, color: '#9CA3AF' }}>— Changer statut :</span>
+                        {allStatuses.map(s => (
+                          <button key={s.key} onClick={() => massUpdateStatus(s.key)}
+                            style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 999, border: `1px solid ${s.color}55`, background: s.bg, color: s.color, fontWeight: 700, cursor: 'pointer' }}>
+                            {s.label}
+                          </button>
+                        ))}
+                        <button onClick={massDelete}
+                          style={{ marginLeft: 'auto', fontSize: 10.5, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: 'pointer' }}>
+                          Supprimer
+                        </button>
+                        <button onClick={() => setTradePersonSelected(new Set())}
+                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 7, border: '1px solid #E0E4E8', background: '#fff', color: '#8B919A', cursor: 'pointer' }}>
+                          ✕ Désélectionner
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -6597,52 +6669,72 @@ Règles :
                               );
 
                               const certOk = cert.rbq?.ok && cert.ccq?.ok && cert.insurance?.ok;
+                              const isSel = tradePersonSelected.has(pKey);
+                              const toggleSel = (e) => {
+                                e.stopPropagation();
+                                setTradePersonSelected(prev => {
+                                  const next = new Set(prev);
+                                  next.has(pKey) ? next.delete(pKey) : next.add(pKey);
+                                  return next;
+                                });
+                              };
 
                               return (
                                 <div key={pi}>
-                                  {/* ── Ligne compacte (toujours visible) — 2 lignes ── */}
-                                  <div style={{ borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent', cursor: 'pointer' }}
-                                    onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
-
-                                    {/* Ligne 1 : nom + info + delete */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px 1px 10px' }}>
-                                      <span style={{ fontSize: 9, color: '#C4C8CE', flexShrink: 0, width: 10 }}>{isExpanded ? '▼' : '▶'}</span>
-                                      <p style={{ fontSize: 12.5, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, minWidth: 70, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{person.name}</p>
-                                      {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
-                                      <span style={{ fontSize: 10.5, color: '#9CA3AF', flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontStyle: msgData.msg ? 'normal' : 'italic' }}>
-                                        {msgData.msg ? msgData.msg.slice(0, 60) + (msgData.msg.length > 60 ? '…' : '') : '—'}
+                                  {/* ── Ligne compacte : checkbox + nom + deadline + pipeline ── */}
+                                  <div style={{ borderTop: '1px solid #F4F5F6', background: isSel ? '#F5F3FF' : nonConf ? '#FFF5F5' : 'transparent' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px 3px 8px' }}>
+                                      {/* Checkbox */}
+                                      <input type="checkbox" checked={isSel} onChange={toggleSel} onClick={e => e.stopPropagation()}
+                                        style={{ width: 13, height: 13, accentColor: BRAND, flexShrink: 0, cursor: 'pointer' }}/>
+                                      {/* Caret */}
+                                      <span style={{ fontSize: 8, color: '#C4C8CE', flexShrink: 0, width: 8, cursor: 'pointer' }}
+                                        onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
+                                        {isExpanded ? '▼' : '▶'}
                                       </span>
+                                      {/* Nom cliquable */}
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', minWidth: 55, maxWidth: 115, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer' }}
+                                        onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
+                                        {person.name}
+                                      </span>
+                                      {nonConf && <span style={{ fontSize: 8, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
+                                      {/* Deadline */}
+                                      {person.responseDeadline && (
+                                        <span style={{ fontSize: 9, color: '#F59E0B', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                          📅 {person.responseDeadline}
+                                        </span>
+                                      )}
+                                      {/* Pipeline stepper — s'étire */}
+                                      <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 0, overflow: 'auto', scrollbarWidth: 'none' }}>
+                                        {statusList.map((s, si) => {
+                                          const curIdx = statusList.findIndex(x => x.key === pStatus);
+                                          const isPast = si < curIdx;
+                                          const isCur  = s.key === pStatus;
+                                          return (
+                                            <React.Fragment key={s.key}>
+                                              {si > 0 && <div style={{ flex: '0 0 6px', height: 1, background: isPast ? '#D1D5DB' : '#EAECEF' }}/>}
+                                              <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, status: s.key } : p2)); }}
+                                                style={{ fontSize: 9, fontWeight: isCur ? 800 : 500, padding: '1px 6px', borderRadius: 999, border: `1px solid ${isCur ? s.color : isPast ? s.color + '44' : '#EAECEF'}`, background: isCur ? s.bg : 'transparent', color: isCur ? s.color : isPast ? s.color + 'AA' : '#C4C8CE', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                                {isPast ? '✓ ' : ''}{s.label}
+                                              </button>
+                                            </React.Fragment>
+                                          );
+                                        })}
+                                      </div>
+                                      {/* Badges compact */}
                                       {msgData.disponible && (
-                                        <span style={{ fontSize: 10, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
-                                          {msgData.disponible === 'oui' ? '✓ Dispo' : '✗ Non'}
+                                        <span style={{ fontSize: 9, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
+                                          {msgData.disponible === 'oui' ? '✓' : '✗'}
                                         </span>
                                       )}
                                       {pStatus !== 'a_contacter' && (
-                                        <span style={{ fontSize: 9.5, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }}>
-                                          {nonConf ? '⚠ Conf.' : certOk ? '✓ Conf.' : '— Conf.'}
+                                        <span style={{ fontSize: 9, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }} title="Conformité">
+                                          {nonConf ? '⚠' : certOk ? '✓C' : '—C'}
                                         </span>
                                       )}
-                                      {msgData.po && <span style={{ fontSize: 9, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>📄 PO</span>}
+                                      {msgData.po && <span style={{ fontSize: 9, color: '#16A34A', flexShrink: 0 }} title="Bon de commande">📄</span>}
                                       <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].filter((_, i) => i !== pi)); }}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 15, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
-                                    </div>
-
-                                    {/* Ligne 2 : pipeline statuts cliquables */}
-                                    <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 22, paddingBottom: 5, paddingTop: 2, gap: 0 }}>
-                                      {statusList.map((s, si) => {
-                                        const curIdx = statusList.findIndex(x => x.key === pStatus);
-                                        const isPast = si < curIdx;
-                                        const isCur  = s.key === pStatus;
-                                        return (
-                                          <React.Fragment key={s.key}>
-                                            {si > 0 && <div style={{ width: 12, height: 1, background: isPast ? '#D1D5DB' : '#F1F3F5', flexShrink: 0 }}/>}
-                                            <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, status: s.key } : p2)); }}
-                                              style={{ fontSize: 9.5, fontWeight: isCur ? 800 : 600, padding: '1px 7px', borderRadius: 999, border: `1px solid ${isCur ? s.color : isPast ? s.color + '55' : '#EAECEF'}`, background: isCur ? s.bg : 'transparent', color: isCur ? s.color : isPast ? s.color + 'BB' : '#C4C8CE', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                              {isPast ? '✓ ' : ''}{s.label}
-                                            </button>
-                                          </React.Fragment>
-                                        );
-                                      })}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 1px', flexShrink: 0 }}>×</button>
                                     </div>
                                   </div>
 
@@ -6656,6 +6748,14 @@ Règles :
                                         {infoInput('phone',    'Téléphone',   '📞')}
                                         {infoInput('email',    'Courriel',    '✉')}
                                         {infoInput('location', 'Localisation','📍')}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                          <span style={{ fontSize: 11 }}>📅</span>
+                                          <input type="date"
+                                            value={person.responseDeadline || ''}
+                                            onChange={e => updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, responseDeadline: e.target.value } : p2))}
+                                            title="Date limite de réponse"
+                                            style={{ fontSize: 10.5, border: 'none', outline: 'none', background: 'transparent', color: person.responseDeadline ? '#F59E0B' : '#C4C8CE', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}/>
+                                        </div>
                                         {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
                                       </div>
 
@@ -6861,45 +6961,7 @@ Règles :
             );
           })()}
 
-          {/* ── Demandes de prix — tableau inline ── */}
-          <div style={{ marginTop: 24, background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0, flex: 1 }}>Demandes de prix (RFQ)</p>
-              {projectRfqs.length > 0 && <span style={{ fontSize: 11, color: '#8B919A' }}>{projectRfqs.length} demande(s)</span>}
-            </div>
-            {projectRfqs.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', padding: '5px 16px', fontSize: 10, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                <span>Titre</span><span>Spécialité</span><span>Échéance</span><span>Invités</span><span/>
-              </div>
-            )}
-            {projectRfqs.map(rfq => (
-              <div key={rfq.id} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', alignItems: 'center', padding: '9px 16px', borderBottom: '1px solid #F9FAFB' }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rfq.title}</p>
-                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.specialty || '—'}</span>
-                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.deadline ? new Date(rfq.deadline).toLocaleDateString('fr-CA') : '—'}</span>
-                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.responses_count || 0}</span>
-                <button onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
-                  style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}10`, border: `1px solid ${BRAND}30`, borderRadius: 6, padding: '3px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <UserPlus size={10}/> Inviter
-                </button>
-              </div>
-            ))}
-            {/* Ligne d'ajout inline */}
-            <form onSubmit={createRfq} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', alignItems: 'center', padding: '7px 16px', background: '#FDFEFF' }}>
-              <input style={{ fontSize: 12, border: 'none', outline: 'none', background: 'transparent', color: '#15171C', padding: '3px 0' }}
-                placeholder="+ Nouvelle demande de prix…" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f, title: e.target.value}))} required/>
-              <input style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#6B7280', padding: '3px 0' }}
-                placeholder="Spécialité" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f, specialty: e.target.value}))}/>
-              <input type="date" style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#6B7280', padding: '3px 0' }}
-                value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f, deadline: e.target.value}))}/>
-              <span/>
-              {rfqForm.title && (
-                <button type="submit" style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: BRAND, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
-                  Créer
-                </button>
-              )}
-            </form>
-          </div>
+
 
         </div>{/* fin s-equipe */}
 
