@@ -45,7 +45,7 @@ async function scrapeHomeDepot(query, maxItems = 8) {
     nom:          item.title || item.name || '',
     prix_unitaire: Number(item.price || item.salePrice || item.regularPrice || 0) || null,
     unite:        'un.',
-    url_source:   item.url || item.productUrl || `https://www.homedepot.ca/search#q=${encodeURIComponent(query)}`,
+    url_source:   item.url || item.productUrl || `https://www.homedepot.ca/fr/s/${encodeURIComponent(query)}`,
     url_image:    item.thumbnail || item.image || '',
     fournisseur:  'Home Depot',
     sku:          item.itemId || item.sku || '',
@@ -326,7 +326,7 @@ Réponds en JSON STRICT:
       "prix_unitaire": 4.50,
       "unite": "pi²",
       "fournisseur": "Rona (estimation)",
-      "url_source": "https://www.rona.ca/fr/search?q=carrelage+12x24",
+      "url_source": "https://www.rona.ca/fr/search?q=carrelage+12x24+gris",
       "url_image": "",
       "categorie": "Revêtements de sol",
       "note_flo": "Estimation Flo — vérifier le prix réel sur rona.ca",
@@ -334,7 +334,17 @@ Réponds en JSON STRICT:
       "source_type": "flo_estimate"
     }
   ]
-}`;
+}
+
+RÈGLES CRITIQUES pour les url_source dans les fallbacks:
+- Home Depot Canada: TOUJOURS "https://www.homedepot.ca/fr/s/MOT_CLE" (jamais /search?q=)
+- Rona: "https://www.rona.ca/fr/search?q=MOT_CLE"
+- Amazon.ca: "https://www.amazon.ca/s?k=MOT_CLE"
+- Canac: "https://www.canac.ca/recherche?q=MOT_CLE"
+- Patrick Morin: "https://www.patrickmorin.com/recherche?q=MOT_CLE"
+- Si tu ne connais pas le bon fournisseur: "https://www.google.com/search?q=MOT_CLE+matériaux+construction+Québec+prix"
+- N'invente JAMAIS lowes.ca, réno-dépôt.ca ou tout autre domaine dont tu n'es pas certain à 100%
+- Le MOT_CLE doit être encodé URL (%20 ou +) et inclure les termes de recherche spécifiques au produit`;
 
   try {
     const msg = await anthropic.messages.create({

@@ -19,8 +19,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
   { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
-  { id: 's-soumission', icon: '📄', label: 'Devis détaillé' },
-  { id: 's-contracts', icon: '✍️', label: 'Contrats' },
+  { id: 's-soumission', icon: '📄', label: 'Devis & Contrat' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
@@ -7422,7 +7421,7 @@ Règles :
         </div>{/* fin s-equipe */}
 
         {/* ── Recherche de matériaux ── */}
-        <div id="s-materiaux" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        <div id="s-materiaux" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', background: '#F0F5FF' }}>
           {(() => {
             const warnings = (() => { try { return JSON.parse(localStorage.getItem(`monflux-mat-warnings-${id}`) || '[]'); } catch { return []; } })();
             const displayed = matFilter === 'wishlist' ? matSearchResults.filter(it => matWishlist.includes(it.id)) : matSearchResults;
@@ -7493,7 +7492,7 @@ Règles :
                           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                             <thead>
                               <tr style={{ background: '#F8F9FA' }}>
-                                {['☑', '', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist'].map((h, hi) => (
+                                {['☑', '', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist', ''].map((h, hi) => (
                                   <th key={hi} style={{ padding: '8px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: (hi === 4 || hi === 8) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED', whiteSpace: 'nowrap' }}>{h}</th>
                                 ))}
                               </tr>
@@ -7546,6 +7545,11 @@ Règles :
                                         style={{ background: inWishlist ? '#FEF3C7' : '#F3F4F6', border: inWishlist ? '1.5px solid #FCD34D' : '1.5px solid #E5E7EB', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', fontSize: 14, color: inWishlist ? '#D97706' : '#9CA3AF', fontWeight: 700, transition: 'all .15s' }}>
                                         {inWishlist ? '⭐' : '☆'}
                                       </button>
+                                    </td>
+                                    <td style={{ padding: '7px 8px', textAlign: 'center' }}>
+                                      <button onClick={() => setMatSearchResults(prev => prev.filter(r => r.id !== it.id))}
+                                        title="Supprimer ce résultat"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: '#D1D5DB', lineHeight: 1, padding: '2px 4px' }}>×</button>
                                     </td>
                                   </tr>
                                 );
@@ -7613,7 +7617,7 @@ Règles :
         </div>
 
         {/* ── Devis détaillé ── */}
-        <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        <div id="s-soumission" style={{ borderTop: '2px solid #E8EAED', padding: '36px 56px 44px', background: '#fff' }}>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
@@ -7937,7 +7941,7 @@ Règles :
             );
           })()}
 
-          {/* Actions */}
+          {/* Actions devis */}
           <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
               <button className="btn-primary text-xs py-2" onClick={sendQuoteToClient} disabled={quoteSending || !quoteBuilderQuote}>
@@ -7957,80 +7961,93 @@ Règles :
               <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
             )}
           </div>
-        </div>
 
-        {/* ── Contrats ── */}
-        <div id="s-contracts" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✍️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Contrats</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Signature électronique et suivi des contrats signés</div>
-            </div>
-            {quoteBuilderQuote && projectContracts.length === 0 && (
-              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
-                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                Générer
-              </button>
-            )}
-            {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
-          </div>
-          {projectContracts.length === 0 ? (
-            <div className="text-center py-6">
-              <FileSignature size={28} className="text-gray-200 mx-auto mb-2"/>
-              {quoteBuilderQuote ? (
-                <p className="text-sm text-gray-400">Génère un contrat depuis la soumission détaillée.</p>
-              ) : (
-                <p className="text-sm text-gray-400">Crée d'abord une soumission dans cet onglet pour générer un contrat.</p>
+          {/* ── Contrat — inline sous le devis ── */}
+          <div id="s-contracts" style={{ marginTop: 48, paddingTop: 36, borderTop: '2px dashed #E8EAED' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F5F3FF', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 }}>✍️</div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, color: '#15171C', margin: 0, letterSpacing: '-.01em' }}>Contrat</h3>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Généré automatiquement à partir du devis détaillé</p>
+              </div>
+              {quoteBuilderQuote && projectContracts.length === 0 && (
+                <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
+                  {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
+                  Générer le contrat
+                </button>
               )}
+              {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
             </div>
-          ) : (
-            <div className="space-y-3">
-              {projectContracts.map(c => {
-                const isSending = contractSendingId === c.id;
-                const statusColor = { draft: 'badge-gray', sent: 'badge-blue', signed: 'badge-green', cancelled: 'badge-gray' };
-                const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé', cancelled: 'Annulé' };
-                return (
-                  <div key={c.id} className="rounded-xl border border-gray-100 p-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{c.title}</p>
-                        <p className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('fr-CA')}</p>
+
+            {projectContracts.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', background: '#FAFAFA', borderRadius: 12, border: '1px dashed #E5E7EB' }}>
+                <FileSignature size={24} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
+                <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 4px', fontWeight: 600 }}>
+                  {quoteBuilderQuote ? 'Contrat non généré' : 'Crée d\'abord un devis'}
+                </p>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
+                  {quoteBuilderQuote ? 'Clique sur "Générer le contrat" pour créer le document à partir du devis.' : 'Le contrat sera disponible une fois le devis détaillé complété.'}
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {projectContracts.map(c => {
+                  const isSending = contractSendingId === c.id;
+                  const isOpen = showContractContent === c.id;
+                  const statusColor = { draft: '#6B7280', sent: '#2563EB', signed: '#16A34A', cancelled: '#9CA3AF' };
+                  const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé ✓', cancelled: 'Annulé' };
+                  return (
+                    <div key={c.id} style={{ border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
+                      {/* En-tête contrat */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#FAFAFA', borderBottom: isOpen ? '1px solid #E5E7EB' : 'none' }}>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>{c.title}</p>
+                          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{new Date(c.created_at).toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[c.status] || '#6B7280', background: `${statusColor[c.status]}15`, padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                          {statusLabel[c.status] || c.status}
+                        </span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(isOpen ? null : c.id)}>
+                            <Eye size={11}/> {isOpen ? 'Masquer' : 'Voir le contrat'}
+                          </button>
+                          {c.status === 'draft' && (
+                            <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
+                              {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer
+                            </button>
+                          )}
+                          <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
+                            <Trash2 size={11}/>
+                          </button>
+                        </div>
                       </div>
-                      <span className={`badge ${statusColor[c.status] || 'badge-gray'} text-xs`}>{statusLabel[c.status] || c.status}</span>
-                    </div>
-                    {c.status === 'signed' && (
-                      <p className="text-xs text-green-600 mb-2 flex items-center gap-1"><CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}</p>
-                    )}
-                    <div className="flex gap-2 flex-wrap">
-                      <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(showContractContent === c.id ? null : c.id)}>
-                        <Eye size={11}/> {showContractContent === c.id ? 'Masquer' : 'Voir le contrat'}
-                      </button>
-                      {c.status === 'draft' && (
-                        <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
-                          {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer (stub)
-                        </button>
+                      {c.status === 'signed' && (
+                        <div style={{ padding: '8px 16px', background: '#F0FFF4', borderBottom: isOpen ? '1px solid #E5E7EB' : 'none' }}>
+                          <p style={{ fontSize: 11, color: '#16A34A', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}
+                          </p>
+                        </div>
                       )}
-                      <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
-                        <Trash2 size={11}/>
-                      </button>
+                      {/* Contenu du contrat — affiché inline */}
+                      {isOpen && (
+                        <div style={{ padding: '20px 24px' }}>
+                          <pre style={{ fontSize: 12, color: '#374151', fontFamily: "'Georgia', serif", lineHeight: 1.8, whiteSpace: 'pre-wrap', margin: 0, wordBreak: 'break-word' }}>
+                            {c.content}
+                          </pre>
+                        </div>
+                      )}
+                      {c.status === 'draft' && (
+                        <div style={{ padding: '10px 16px', background: '#FFFBEB', borderTop: '1px solid #FEF3C7', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <AlertCircle size={12} style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }}/>
+                          <p style={{ fontSize: 11, color: '#92400E', margin: 0, lineHeight: 1.5 }}>Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign.</p>
+                        </div>
+                      )}
                     </div>
-                    {c.status === 'draft' && (
-                      <div className="mt-2 flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
-                        <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-                        <p className="text-xs text-amber-700">Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign / Notarize.</p>
-                      </div>
-                    )}
-                    {showContractContent === c.id && (
-                      <pre className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-xl p-3 overflow-auto whitespace-pre-wrap font-mono" style={{ maxHeight: 320 }}>
-                        {c.content}
-                      </pre>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── Médias chantier ── (cream) */}
