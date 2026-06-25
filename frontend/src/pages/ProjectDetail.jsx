@@ -2874,8 +2874,14 @@ export default function ProjectDetail() {
   const [tradeResInput, setTradeResInput] = useState({});
   const [loadingFloPersonCheck, setLoadingFloPersonCheck] = useState({});
   const [tradePersonPanels, setTradePersonPanels] = useState({});
-  const [tradePersonMsgs, setTradePersonMsgs] = useState({});
+  const [tradePersonMsgs, setTradePersonMsgs] = useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(`monflux-trade-msgs-${id}`) || '{}');
+      return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { ...v, loading: false, poLoading: false }]));
+    } catch { return {}; }
+  });
   const [tradeStatusFilter, setTradeStatusFilter] = useState(null);
+  const [tradePersonExpanded, setTradePersonExpanded] = useState({});
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -3570,34 +3576,75 @@ export default function ProjectDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id, project?.phases]);
 
+  useEffect(() => {
+    try {
+      const toSave = Object.fromEntries(
+        Object.entries(tradePersonMsgs).map(([k, v]) => [k, { msg: v.msg, disponible: v.disponible, prix: v.prix, depenses: v.depenses, po: v.po }])
+      );
+      localStorage.setItem(`monflux-trade-msgs-${id}`, JSON.stringify(toSave));
+    } catch {}
+  }, [tradePersonMsgs, id]);
+
   // Florence recommande des sous-traitants pour les corps non assignés
   const fetchTradeRecos = async () => {
-    const missingTrades = (project.trades || []).filter(t => t.status === 'to_find' || !t.chosen_subcontractor_id);
-    if (!missingTrades.length) return;
+    const pParsePers = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p } : p);
+    const allTrades = [...new Set([
+      ...(project.trades || []).map(t => t.trade).filter(Boolean),
+      ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
+    ])];
+    if (!allTrades.length) return;
     setLoadingTradeRecos(true);
-    const fa = project.field_assessment || {};
-    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
-Je cherche des sous-traitants pour ce projet :
-- Projet : ${project.description || project.name || ''}
-- Adresse : ${project.address || 'Non précisée'}
-- Corps de métier requis : ${missingTrades.map(t => t.trade).join(', ')}
 
-Pour chaque corps de métier, suggère 2-3 sous-traitants potentiels au Québec (vraisemblables, pas inventés si incertains — tu peux suggérer des types d'entreprises à chercher). Réponds en JSON UNIQUEMENT dans ce format :
-{"trades":{"Électricité":[{"name":"Électro-Pro QC","note":"Spécialiste résidentiel Montréal","phone":"","website":"electricien.ca"}]}}`;
+    // Contexte : ressources internes par corps de métier
+    const internalLines = allTrades.map(trade => {
+      const res = tradeResourcesMap[trade] || {};
+      const names = pParsePers(res.internal).map(p => p.name).filter(Boolean);
+      return names.length ? `  ${trade} → interne: ${names.join(', ')}` : null;
+    }).filter(Boolean).join('\n');
+
+    // Contexte : sous-traitants connus dans la base
+    const knownLines = allTrades.map(trade => {
+      const matched = subs.filter(s =>
+        (s.trades||[]).some(st => st.toLowerCase().includes(trade.toLowerCase()) || trade.toLowerCase().includes(st.toLowerCase())) ||
+        (s.specialty||'').toLowerCase().includes(trade.toLowerCase())
+      );
+      return matched.length ? `  ${trade} → connus: ${matched.map(s => `${s.name}${s.phone ? ` (${s.phone})` : ''}`).join(', ')}` : null;
+    }).filter(Boolean).join('\n');
+
+    const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
+Projet : ${project.description || project.name || ''}
+Adresse : ${project.address || 'Non précisée'}
+Corps de métier requis : ${allTrades.join(', ')}
+
+CONTEXTE — ressources déjà disponibles :
+${internalLines || '  (aucune ressource interne renseignée)'}
+${knownLines || '  (aucun sous-traitant connu en base)'}
+
+Pour CHAQUE corps de métier, génère 3 à 5 fiches en distinguant EXACTEMENT ces 3 types :
+- "internal" : si une ressource interne listée ci-dessus peut couvrir ce métier
+- "known" : si un sous-traitant connu ci-dessus correspond (reprends les vraies infos)
+- "new" : suggère 1-2 nouveaux sous-traitants vraisemblables au Québec — donne une source vérifiable (rbq.gouv.qc.ca, répertoire CCQ, APCHQ, etc.)
+
+Réponds en JSON UNIQUEMENT, format strict :
+{"trades":{"Électricité":[
+  {"name":"Jean Tremblay","type":"internal","note":"Électricien dans l'équipe interne","source":"Équipe MONFLUX"},
+  {"name":"Volt Express Inc.","type":"known","note":"Partenaire habituel, bonne fiabilité","phone":"514-555-0101","source":"Base MONFLUX"},
+  {"name":"Courant Plus Montréal","type":"new","note":"Spécialiste résidentiel certifié RBQ","phone":"","website":"rbq.gouv.qc.ca","source":"Répertoire RBQ","source_url":"https://www.rbq.gouv.qc.ca/trouver-un-entrepreneur-ou-un-constructeur-proprietaire.html"}
+]}}`;
 
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${PROJ_CHAT_BASE}/chat`, {
-        method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
-        body: JSON.stringify({ messages:[{role:'user',content:prompt}] }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
       });
       if (!res.ok) { setTradeRecos({}); return; }
       const reader = res.body.getReader(); const dec = new TextDecoder();
       let raw = '';
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
-        for (const line of dec.decode(value).split('\n').filter(l=>l.startsWith('data: '))) {
-          try { const evt = JSON.parse(line.slice(6)); if (evt.type==='text') raw += evt.text; } catch {}
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') raw += evt.text; } catch {}
         }
       }
       const match = raw.match(/\{[\s\S]*\}/);
@@ -3651,6 +3698,7 @@ Réponds en JSON UNIQUEMENT dans ce format :
               [pKey]: {
                 ...prev[pKey],
                 floNotes: parsed.summary || '',
+                floDate: new Date().toLocaleString('fr-CA', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
                 floResult: parsed,
               }
             };
@@ -6190,8 +6238,9 @@ Règles :
               );
             };
 
-            // ── Légende + filtre ──
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null;
+            // Grid partagé (en-têtes + lignes détail)
+            const COLS = '215px 2fr 145px 1.4fr 1.4fr 105px';
 
             return (
               <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
@@ -6220,20 +6269,16 @@ Règles :
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 1260 }}>
+                  <div style={{ minWidth: 1160 }}>
 
                     {/* ── En-têtes ── */}
-                    <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#FAFAFA' }}>
-                      <div style={{ width: 200, flexShrink: 0, padding: '7px 12px 7px 20px', borderRight: '1px solid #E8EAED' }}>
-                        <span style={hS}>Corps de métier & étape</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '185px 2fr 145px 1.5fr 130px', flex: 1 }}>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>Personne & contact</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Réponse</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>🔒 Conformité</span></div>
-                        <div style={{ padding: '7px 12px' }}><span style={hS}>💰 Financier</span></div>
-                      </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: COLS, borderBottom: '2px solid #E8EAED', background: '#FAFAFA' }}>
+                      <div style={{ padding: '7px 12px 7px 20px', borderRight: '1px solid #EAECEF' }}><span style={hS}>Personne & contact</span></div>
+                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
+                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Réponse</span></div>
+                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>🔒 Conformité</span></div>
+                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>📄 Bon de commande</span></div>
+                      <div style={{ padding: '7px 12px' }}><span style={hS}>💰 Financier</span></div>
                     </div>
 
                     {/* ── Lignes par corps de métier ── */}
@@ -6281,14 +6326,13 @@ Règles :
                         const inputKey    = `${tradeName}_add_${type}`;
                         const confirmedKey = type === 'internal' ? 'confirme' : 'accepte';
 
-                        // Appliquer le filtre statut
                         const visibleList = tradeStatusFilter
                           ? list.filter(p => (p.status || 'a_contacter') === tradeStatusFilter)
                           : list;
 
                         return (
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 4px 20px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 4px 16px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5' }}>
                               <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: typeColor }}>{typeIcon} {typeLabel}</span>
                               {tradeStatusFilter && list.length !== visibleList.length && (
                                 <span style={{ fontSize: 9, color: '#A8AEB6' }}>({visibleList.length}/{list.length} affichés)</span>
@@ -6296,7 +6340,6 @@ Règles :
                             </div>
 
                             {visibleList.map((person) => {
-                              // Index réel dans la liste complète (pour pKey cohérent)
                               const pi           = list.indexOf(person);
                               const pKey         = personKey(tradeName, type, pi);
                               const cert         = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
@@ -6309,6 +6352,7 @@ Règles :
                               const isLoadingMsg = !!msgData.loading;
                               const isLoadingFlo = !!loadingFloPersonCheck[pKey];
                               const isLoadingPO  = !!msgData.poLoading;
+                              const isExpanded   = !!tradePersonExpanded[pKey];
 
                               const infoInput = (field, placeholder, icon) => (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -6319,176 +6363,212 @@ Règles :
                                 </div>
                               );
 
-                              return (
-                                <div key={pi} style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent' }}>
+                              const certOk = cert.rbq?.ok && cert.ccq?.ok && cert.insurance?.ok;
 
-                                  {/* Col 1 : Régénérer message */}
-                                  <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', padding: '10px 12px', gap: 5 }}>
-                                    <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={isLoadingMsg}
-                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', borderRadius: 8, border: `1.5px solid ${BRAND}40`, background: isLoadingMsg ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 10.5, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', width: '100%' }}>
-                                      {isLoadingMsg ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
-                                      {isLoadingMsg ? 'Génération…' : msgData.msg ? '🔄 Régénérer message' : 'Générer message'}
+                              return (
+                                <div key={pi}>
+                                  {/* ── Ligne compacte (toujours visible) ── */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 10px', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent', cursor: 'pointer', minHeight: 36 }}
+                                    onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
+                                    <span style={{ fontSize: 9, color: '#C4C8CE', flexShrink: 0, width: 10 }}>{isExpanded ? '▼' : '▶'}</span>
+                                    <p style={{ fontSize: 12.5, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, minWidth: 70, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{person.name}</p>
+                                    <button onClick={e => { e.stopPropagation(); cycleStatus(type, pi); }}
+                                      style={{ fontSize: 9.5, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '1px 7px', cursor: 'pointer', flexShrink: 0 }}>
+                                      {pStat.label}
                                     </button>
-                                    {isConfirmed && (
-                                      <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', borderRadius: 8, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
-                                        {isLoadingPO ? <Loader2 size={10} className="animate-spin"/> : <span>📄</span>}
-                                        {isLoadingPO ? 'Génération PO…' : 'Générer bon de commande'}
-                                      </button>
+                                    {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
+                                    <span style={{ fontSize: 10.5, color: '#9CA3AF', flex: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontStyle: msgData.msg ? 'normal' : 'italic' }}>
+                                      {msgData.msg ? msgData.msg.slice(0, 55) + (msgData.msg.length > 55 ? '…' : '') : '—'}
+                                    </span>
+                                    {msgData.disponible && (
+                                      <span style={{ fontSize: 10, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
+                                        {msgData.disponible === 'oui' ? '✓ Dispo' : '✗ Non'}
+                                      </span>
                                     )}
+                                    {pStatus !== 'a_contacter' && (
+                                      <span style={{ fontSize: 9.5, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }}>
+                                        {nonConf ? '⚠ Conf.' : certOk ? '✓ Conf.' : '— Conf.'}
+                                      </span>
+                                    )}
+                                    {msgData.po && <span style={{ fontSize: 9, fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>📄</span>}
+                                    {msgData.depenses && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#5A5E6A', flexShrink: 0 }}>{msgData.depenses}</span>}
+                                    <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].filter((_, i) => i !== pi)); }}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 15, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
                                   </div>
 
-                                  {/* Cols 2–6 */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '185px 2fr 145px 1.5fr 130px', flex: 1 }}>
+                                  {/* ── Détail éditable (accordéon) ── */}
+                                  {isExpanded && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: COLS, background: '#FAFAFA', borderTop: '1px solid #F1F3F5', borderBottom: '1px solid #EAECEF' }}>
 
-                                    {/* Col 2 : Personne */}
-                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, flex: 1 }}>{person.name}</p>
-                                        <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
-                                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
-                                      </div>
-                                      {infoInput('phone',    'Téléphone',   '📞')}
-                                      {infoInput('email',    'Courriel',    '✉')}
-                                      {infoInput('location', 'Localisation','📍')}
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
-                                        <button onClick={() => cycleStatus(type, pi)}
-                                          style={{ fontSize: 10, fontWeight: 700, color: pStat.color, background: pStat.bg, border: `1px solid ${pStat.color}40`, borderRadius: 999, padding: '2px 8px', cursor: 'pointer' }}>
-                                          {pStat.label}
-                                        </button>
+                                      {/* Col 1 : Personne */}
+                                      <div style={{ padding: '10px 12px 10px 16px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0 }}>{person.name}</p>
+                                        {infoInput('phone',    'Téléphone',   '📞')}
+                                        {infoInput('email',    'Courriel',    '✉')}
+                                        {infoInput('location', 'Localisation','📍')}
                                         {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
                                       </div>
-                                    </div>
 
-                                    {/* Col 3 : Message */}
-                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                      <textarea
-                                        value={msgData.po ? msgData.po : (msgData.msg || '')}
-                                        onChange={e => {
-                                          const k = msgData.po ? 'po' : 'msg';
-                                          setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], [k]: e.target.value } }));
-                                        }}
-                                        rows={4}
-                                        placeholder={isLoadingMsg ? 'Génération en cours…' : 'Le message sera généré automatiquement à l\'ajout, ou cliquez Régénérer.'}
-                                        style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: `1px solid ${msgData.po ? '#16A34A40' : '#F1F3F5'}`, borderRadius: 8, padding: '7px 9px', resize: 'vertical', fontFamily: 'inherit', background: msgData.po ? '#F0FDF4' : '#FAFAFA', outline: 'none', boxSizing: 'border-box' }}
-                                      />
-                                      {msgData.po && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#16A34A' }}>📄 Bon de commande</span>}
-                                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                        {(msgData.msg || msgData.po) && (
-                                          <button onClick={() => navigator.clipboard?.writeText(msgData.po || msgData.msg)}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
-                                            📋 Copier
-                                          </button>
-                                        )}
-                                        {person.email && (msgData.msg || msgData.po) && (
-                                          <a href={`mailto:${person.email}?subject=${encodeURIComponent(msgData.po ? `Bon de commande — Projet ${project.name || ''}` : `Projet ${project.name || ''}`)}&body=${encodeURIComponent(msgData.po || msgData.msg)}`}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
-                                            ✉ Envoyer
-                                          </a>
-                                        )}
-                                        {msgData.po && (
-                                          <button onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], po: null } }))}
-                                            style={{ padding: '4px 9px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', cursor: 'pointer' }}>
-                                            ← Message
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Col 4 : Réponse */}
-                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                                        {type === 'internal' ? 'Disponibilité' : 'Disponibilité'}
-                                      </span>
-                                      {[
-                                        { label: type === 'internal' ? 'Disponible ✓' : 'Intéressé ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
-                                        { label: type === 'internal' ? 'Indisponible ✗' : 'Pas intéressé ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
-                                      ].map(opt => (
-                                        <button key={opt.val}
-                                          onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
-                                          style={{ width: '100%', padding: '4px 6px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 10, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
-                                          {opt.label}
+                                      {/* Col 2 : Message */}
+                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 5, position: 'relative' }}>
+                                        <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={isLoadingMsg}
+                                          style={{ position: 'absolute', top: 8, right: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: `1px solid ${BRAND}30`, background: isLoadingMsg ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9.5, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', zIndex: 1 }}>
+                                          {isLoadingMsg ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
+                                          {isLoadingMsg ? 'Génère…' : '🔄 Régénérer'}
                                         </button>
-                                      ))}
-                                      {type === 'external' && (
-                                        <div style={{ marginTop: 2 }}>
-                                          <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Prix soumis</span>
-                                          <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
-                                            placeholder="ex. 4 500 $"
-                                            style={{ width: '100%', marginTop: 4, fontSize: 11, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '4px 7px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
-                                          {msgData.prix && msgData.disponible === 'oui' && (
-                                            <button onClick={() => cycleStatus(type, list.indexOf(person))}
-                                              style={{ width: '100%', marginTop: 6, padding: '5px 7px', borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}>
-                                              ✓ Accepter le prix → {externalStatuses.find(s => s.key === 'accepte')?.label}
+                                        <textarea
+                                          value={msgData.msg || ''}
+                                          onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
+                                          rows={4}
+                                          placeholder="Le message est généré automatiquement à l'ajout…"
+                                          style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: '1px solid #EAECEF', borderRadius: 8, padding: '7px 9px', paddingTop: 30, resize: 'vertical', fontFamily: 'inherit', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                                        />
+                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                          {msgData.msg && (
+                                            <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
+                                              📋 Copier
                                             </button>
                                           )}
+                                          {person.email && msgData.msg && (
+                                            <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Projet ${project.name || ''}`)}&body=${encodeURIComponent(msgData.msg)}`}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
+                                              ✉ Envoyer
+                                            </a>
+                                          )}
                                         </div>
-                                      )}
-                                    </div>
+                                      </div>
 
-                                    {/* Col 5 : Conformité */}
-                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                                      {isAC ? (
-                                        <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>Après contact</span>
-                                      ) : (
-                                        <>
-                                          {renderCertMini(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
-                                          {renderCertMini(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
-                                          {renderCertMini(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
-                                          <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 7, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9.5, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer' }}>
-                                            {isLoadingFlo ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                                            {isLoadingFlo ? 'Vérif…' : 'Flo — Vérifier'}
+                                      {/* Col 3 : Réponse */}
+                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                        {[
+                                          { label: type === 'internal' ? 'Disponible ✓' : 'Intéressé ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
+                                          { label: type === 'internal' ? 'Indisponible ✗' : 'Pas intéressé ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
+                                        ].map(opt => (
+                                          <button key={opt.val}
+                                            onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
+                                            style={{ width: '100%', padding: '4px 6px', borderRadius: 7, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 10, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
+                                            {opt.label}
                                           </button>
-                                          {cert.floNotes && <p style={{ fontSize: 9.5, color: '#6B7280', margin: 0, lineHeight: 1.4, fontStyle: 'italic' }}>{cert.floNotes}</p>}
-                                        </>
-                                      )}
-                                    </div>
+                                        ))}
+                                        {type === 'external' && (
+                                          <div style={{ marginTop: 2 }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Prix soumis</span>
+                                            <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
+                                              placeholder="ex. 4 500 $"
+                                              style={{ width: '100%', marginTop: 3, fontSize: 11, border: '1.5px solid #E0E4E8', borderRadius: 7, padding: '4px 7px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
+                                            {msgData.prix && msgData.disponible === 'oui' && (
+                                              <button onClick={() => cycleStatus(type, pi)}
+                                                style={{ width: '100%', marginTop: 5, padding: '4px 7px', borderRadius: 7, border: 'none', background: '#16A34A', color: '#fff', fontSize: 9.5, fontWeight: 800, cursor: 'pointer' }}>
+                                                ✓ Accepter → {externalStatuses.find(s => s.key === 'accepte')?.label}
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
 
-                                    {/* Col 6 : Financier */}
-                                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total dépenses</span>
-                                      <input value={msgData.depenses || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], depenses: e.target.value } }))}
-                                        placeholder="0 $"
-                                        style={{ width: '100%', fontSize: 12, fontWeight: 700, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '5px 8px', outline: 'none', color: '#15171C', boxSizing: 'border-box', textAlign: 'right' }}/>
-                                      {type === 'external' && msgData.prix && msgData.depenses && (
-                                        <span style={{ fontSize: 9, color: Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '#DC2626' : '#16A34A', fontWeight: 700 }}>
-                                          {Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '↑ Dépassement' : '✓ Sous budget'}
-                                        </span>
-                                      )}
-                                    </div>
+                                      {/* Col 4 : Conformité */}
+                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        {isAC ? (
+                                          <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>Après contact</span>
+                                        ) : (
+                                          <>
+                                            {renderCertMini(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
+                                            {renderCertMini(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
+                                            {renderCertMini(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
+                                            <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer' }}>
+                                              {isLoadingFlo ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
+                                              {isLoadingFlo ? 'Vérif…' : 'Flo — Vérifier'}
+                                            </button>
+                                            {cert.floNotes && (
+                                              <p style={{ fontSize: 9, color: '#6B7280', margin: 0, lineHeight: 1.4, fontStyle: 'italic' }}>
+                                                {cert.floNotes}
+                                                {cert.floDate && <span style={{ display: 'block', fontSize: 8.5, color: '#B0B4BB', marginTop: 2 }}>{cert.floDate}</span>}
+                                              </p>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
 
-                                  </div>
+                                      {/* Col 5 : Bon de commande */}
+                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        {isConfirmed ? (
+                                          msgData.po ? (
+                                            <>
+                                              <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 8, padding: '7px 9px', fontSize: 10.5, lineHeight: 1.5, color: '#15171C', maxHeight: 130, overflowY: 'auto', flex: 1 }}>
+                                                <span style={{ fontSize: 9, fontWeight: 800, color: '#16A34A', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.05em' }}>📄 Bon de commande</span>
+                                                {msgData.po}
+                                              </div>
+                                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                <button onClick={() => navigator.clipboard?.writeText(msgData.po)}
+                                                  style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 9.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>📋</button>
+                                                {person.email && (
+                                                  <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Bon de commande — ${project.name || 'Projet'}`)}&body=${encodeURIComponent(msgData.po)}`}
+                                                    style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 9.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>✉</a>
+                                                )}
+                                                <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
+                                                  style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, border: `1px solid ${BRAND}30`, background: `${BRAND}08`, fontSize: 9.5, fontWeight: 700, color: BRAND, cursor: isLoadingPO ? 'wait' : 'pointer' }}>
+                                                  {isLoadingPO ? <Loader2 size={8} className="animate-spin"/> : '🔄'} Régén.
+                                                </button>
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
+                                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '8px 10px', borderRadius: 9, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
+                                              {isLoadingPO ? <Loader2 size={10} className="animate-spin"/> : '📄'}
+                                              {isLoadingPO ? 'Génération…' : 'Générer bon de commande'}
+                                            </button>
+                                          )
+                                        ) : (
+                                          <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>
+                                            Disponible quand {type === 'internal' ? 'confirmé' : 'accepté'}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Col 6 : Financier */}
+                                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total dépenses</span>
+                                        <input value={msgData.depenses || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], depenses: e.target.value } }))}
+                                          placeholder="0 $"
+                                          style={{ width: '100%', fontSize: 12, fontWeight: 700, border: '1.5px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', outline: 'none', color: '#15171C', boxSizing: 'border-box', textAlign: 'right' }}/>
+                                        {type === 'external' && msgData.prix && msgData.depenses && (
+                                          <span style={{ fontSize: 9, fontWeight: 700, color: Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '#DC2626' : '#16A34A' }}>
+                                            {Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '↑ Dépassement' : '✓ Sous budget'}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
 
                             {/* Ajout personne */}
                             {!tradeStatusFilter && (
-                              <div style={{ display: 'flex', alignItems: 'center', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
-                                <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase' }}>{typeIcon} {typeLabel}</span>
-                                </div>
-                                <div style={{ flex: 1, padding: '8px 14px' }}>
-                                  <input
-                                    value={tradeResInput[inputKey] || ''}
-                                    onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
-                                    onKeyDown={e => {
-                                      if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
-                                        e.preventDefault();
-                                        const newPerson = { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' };
-                                        const newList = [...resources[type], newPerson];
-                                        updateResources(type, newList);
-                                        const newPKey = personKey(tradeName, type, newList.length - 1);
-                                        setTradeResInput(m => ({ ...m, [inputKey]: '' }));
-                                        // Auto-générer message dès l'ajout
-                                        generateContactMessage(tradeName, newPerson, type, newPKey);
-                                      }
-                                    }}
-                                    placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
-                                    style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
-                                  />
-                                </div>
+                              <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px 7px 16px', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
+                                <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase', width: 50, flexShrink: 0 }}>{typeIcon}</span>
+                                <input
+                                  value={tradeResInput[inputKey] || ''}
+                                  onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
+                                      e.preventDefault();
+                                      const newPerson = { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' };
+                                      const newList = [...resources[type], newPerson];
+                                      updateResources(type, newList);
+                                      const newPKey = personKey(tradeName, type, newList.length - 1);
+                                      // Ouvrir la ligne + auto-générer message
+                                      setTradePersonExpanded(m => ({ ...m, [newPKey]: true }));
+                                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
+                                      generateContactMessage(tradeName, newPerson, type, newPKey);
+                                    }
+                                  }}
+                                  placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
+                                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
+                                />
                               </div>
                             )}
                           </div>
@@ -6498,26 +6578,26 @@ Règles :
                       return (
                         <div key={tradeName} style={{ borderTop: idx > 0 ? '2px solid #EAECEF' : 'none' }}>
                           {/* Barre header du corps de métier */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px 9px 20px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px 8px 16px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
                             <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{tradeName}</p>
-                            {minDate && (
-                              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#6B7280', background: '#F3F4F6', borderRadius: 6, padding: '1px 7px', flexShrink: 0 }}>
-                                {fmtDate(minDate)}{maxDate && maxDate !== minDate ? ` → ${fmtDate(maxDate)}` : ''}
-                              </span>
-                            )}
                             {tradeHours > 0 && (
                               <span style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
                                 {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
                               </span>
                             )}
                             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 2 }}>
-                              {tradePhases.map(phase => (
-                                <span key={phase.id} onClick={() => setEditPhase(phase)}
-                                  style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
-                                  {phase.name}
-                                </span>
-                              ))}
+                              {tradePhases.map(phase => {
+                                const phStart = phase.start_date ? fmtDate(phase.start_date) : null;
+                                const phEnd   = phase.end_date   ? fmtDate(phase.end_date)   : null;
+                                const dateStr = phStart ? ` (${phStart}${phEnd && phEnd !== phStart ? ` → ${phEnd}` : ''})` : '';
+                                return (
+                                  <span key={phase.id} onClick={() => setEditPhase(phase)}
+                                    style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 8px', cursor: 'pointer' }}>
+                                    {phase.name}{dateStr}
+                                  </span>
+                                );
+                              })}
                               {!tradePhases.length && <span style={{ fontSize: 10, color: '#B0B4BB' }}>Aucune phase liée</span>}
                             </div>
                           </div>
@@ -6534,76 +6614,7 @@ Règles :
             );
           })()}
 
-          {/* ── Florence recommande des sous-traitants ── */}
-          {(() => {
-            const missing = (project.trades || []).filter(t => !t.chosen_subcontractor_id);
-            if (!missing.length && !tradeRecos) return null;
-            const dbMatches = missing.map(t => ({
-              trade: t,
-              matches: subs.filter(s =>
-                (s.trades || []).some(st => st.toLowerCase().includes(t.trade.toLowerCase()) || t.trade.toLowerCase().includes(st.toLowerCase())) ||
-                (s.name || '').toLowerCase().includes(t.trade.toLowerCase()) ||
-                (s.specialty || '').toLowerCase().includes(t.trade.toLowerCase())
-              )
-            })).filter(x => x.matches.length > 0);
-
-            return (
-              <div style={{ marginTop: 14, background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,.07)', padding: '16px 18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <Sparkles size={14} color={BRAND}/>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#3A3D44', margin: 0 }}>Flo recommande des sous-traitants</p>
-                  <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
-                    style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 8, border: `1.5px solid ${BRAND}`, background: `${BRAND}10`, fontSize: 11.5, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {loadingTradeRecos ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                    {loadingTradeRecos ? 'Recherche…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
-                  </button>
-                </div>
-                {dbMatches.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Dans ta base de données</p>
-                    {dbMatches.map(({ trade, matches }) => (
-                      <div key={trade.id} style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', flexShrink: 0 }}>{trade.trade} :</span>
-                        {matches.map(s => (
-                          <button key={s.id} onClick={() => patchTrade(trade.id, { chosen_subcontractor_id: s.id, status: 'contacted' })}
-                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 8, background: '#F4F5F6', border: '1.5px solid #E8EAED', fontSize: 12, fontWeight: 600, color: '#3A3D44', cursor: 'pointer' }}>
-                            <UserPlus size={10} color={BRAND}/> {s.name}
-                            {s.phone && <span style={{ fontSize: 11, color: '#9CA3AF' }}>· {s.phone}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {tradeRecos && Object.keys(tradeRecos).length > 0 && (
-                  <div>
-                    <p style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9CA3AF', margin: '0 0 8px' }}>Suggestions Flo</p>
-                    {Object.entries(tradeRecos).map(([tradeName, recos]) => (
-                      <div key={tradeName} style={{ marginBottom: 10 }}>
-                        <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: '0 0 5px' }}>{tradeName}</p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {(recos || []).map((r, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 11px', borderRadius: 8, background: `${BRAND}08`, border: `1px solid ${BRAND}20` }}>
-                              <Sparkles size={11} color={BRAND} style={{ flexShrink: 0 }}/>
-                              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', flex: 1 }}>{r.name}</span>
-                              {r.note && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{r.note}</span>}
-                              {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize: 11.5, color: '#3b82f6', textDecoration: 'none', flexShrink: 0 }}>{r.phone}</a>}
-                              {r.website && <a href={r.website.startsWith('http') ? r.website : `https://${r.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BRAND, textDecoration: 'none', flexShrink: 0 }}>Site →</a>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {tradeRecos && Object.keys(tradeRecos).length === 0 && !loadingTradeRecos && (
-                  <p style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>Flo n'a pas trouvé de suggestions pour les corps de métier actifs.</p>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ── Demandes de prix ── */}
+          {/* ── Demandes de prix + Flo recommande ── */}
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 14 }}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 36, height: 36, borderRadius: 11, background: '#F0EBFD', display: 'grid', placeItems: 'center', fontSize: 18 }}>🤝</div>
@@ -6615,6 +6626,105 @@ Règles :
                 <Plus size={13}/> {t('create_rfq')}
               </button>
             </div>
+
+            {/* ── Flo recommande — intégré dans la section ── */}
+            {(() => {
+              const typeConf = {
+                internal: { label: 'Employé interne', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', icon: '🏠' },
+                known:    { label: 'Sous-traitant connu', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', icon: '⭐' },
+                new:      { label: 'Nouveau', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', icon: '🔍' },
+              };
+              const hasRecos = tradeRecos && Object.keys(tradeRecos).length > 0;
+
+              return (
+                <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F3F5', background: '#FAFBFF' }}>
+                  {/* Titre + bouton */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasRecos ? 14 : 0 }}>
+                    <Sparkles size={13} color={BRAND}/>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: 0, flex: 1 }}>Flo recommande des ressources & sous-traitants</p>
+                    <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: loadingTradeRecos ? '#F9F9F9' : `${BRAND}10`, fontSize: 11, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer' }}>
+                      {loadingTradeRecos ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
+                      {loadingTradeRecos ? 'Analyse en cours…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
+                    </button>
+                  </div>
+
+                  {/* Légende des types */}
+                  {hasRecos && (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                      {Object.entries(typeConf).map(([key, tc]) => (
+                        <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 700, color: tc.color, background: tc.bg, border: `1px solid ${tc.border}`, borderRadius: 999, padding: '2px 9px' }}>
+                          {tc.icon} {tc.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Résultats par corps de métier */}
+                  {hasRecos && Object.entries(tradeRecos).map(([tradeName, recos]) => (
+                    <div key={tradeName} style={{ marginBottom: 14 }}>
+                      <p style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 8px' }}>{tradeName}</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {(recos || []).map((r, i) => {
+                          const tc = typeConf[r.type] || typeConf.new;
+                          const hasSite = !!r.website;
+                          const siteHref = r.source_url || (r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null);
+                          return (
+                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px', borderRadius: 10, background: tc.bg, border: `1.5px solid ${tc.border}` }}>
+                              <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{tc.icon}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{r.name}</p>
+                                  <span style={{ fontSize: 9, fontWeight: 800, color: tc.color, background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 999, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>{tc.label}</span>
+                                </div>
+                                {r.note && <p style={{ fontSize: 11, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4 }}>{r.note}</p>}
+                                {r.source && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6' }}>Source :</span>
+                                    {siteHref ? (
+                                      <a href={siteHref} target="_blank" rel="noopener noreferrer"
+                                        style={{ fontSize: 9.5, fontWeight: 700, color: tc.color, textDecoration: 'none' }}>
+                                        {r.source} ↗
+                                      </a>
+                                    ) : (
+                                      <span style={{ fontSize: 9.5, color: '#A8AEB6' }}>{r.source}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                                {r.phone && (
+                                  <a href={`tel:${r.phone}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 8px' }}>
+                                    📞 {r.phone}
+                                  </a>
+                                )}
+                                {r.email && (
+                                  <a href={`mailto:${r.email}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 8px' }}>
+                                    ✉ {r.email}
+                                  </a>
+                                )}
+                                {hasSite && r.type === 'new' && (
+                                  <a href={siteHref} target="_blank" rel="noopener noreferrer"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: tc.color, textDecoration: 'none', background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 6, padding: '3px 8px' }}>
+                                    🔗 Voir le registre ↗
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  {tradeRecos && !hasRecos && !loadingTradeRecos && (
+                    <p style={{ fontSize: 11.5, color: '#9CA3AF', fontStyle: 'italic', margin: '8px 0 0' }}>
+                      Flo n'a pas trouvé de correspondance pour les corps de métier actifs.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div style={{ padding: '14px 20px' }}>
               {showRfqForm && (
