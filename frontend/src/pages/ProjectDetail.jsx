@@ -2875,6 +2875,7 @@ export default function ProjectDetail() {
   const [loadingFloPersonCheck, setLoadingFloPersonCheck] = useState({});
   const [tradePersonPanels, setTradePersonPanels] = useState({});
   const [tradePersonMsgs, setTradePersonMsgs] = useState({});
+  const [tradeStatusFilter, setTradeStatusFilter] = useState(null);
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
@@ -3694,6 +3695,38 @@ Génère un message court (3-5 phrases), professionnel mais chaleureux. Commence
       setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: txt.trim(), loading: false } }));
     } catch {
       setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], loading: false } }));
+    }
+  };
+
+  const generatePO = async (tradeName, person, type, pKey, prix, minDate, maxDate) => {
+    setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], poLoading: true } }));
+    const isExt = type === 'external';
+    const dateRange = [minDate, maxDate].filter(Boolean).join(minDate !== maxDate ? ' au ' : '');
+    const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un bon de commande (PO) formel et concis en français québécois.
+Numéro PO : PO-${Date.now().toString().slice(-6)}
+Projet : ${project.name || project.description || 'Projet en cours'}
+Adresse : ${project.address || 'À confirmer'}
+Dates : ${dateRange || 'À confirmer'}
+Corps de métier : ${tradeName}
+${isExt ? `Fournisseur : ${person.name}${person.email ? ` — ${person.email}` : ''}` : `Ressource interne : ${person.name}`}
+${isExt && prix ? `Montant convenu : ${prix}` : ''}
+Génère un bon de commande formel (150 mots max) incluant : les parties, description des travaux, dates, ${isExt ? 'montant convenu, conditions de paiement 30 jours net' : 'modalités de disponibilité confirmées'}. Réponds avec le texte du PO seulement.`;
+    try {
+      const token = localStorage.getItem('token');
+      const BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const res = await fetch(`${BASE}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
+      if (!res.ok) return;
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') txt += evt.text; } catch {}
+        }
+      }
+      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], po: txt.trim(), poLoading: false } }));
+    } catch {
+      setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], poLoading: false } }));
     }
   };
 
@@ -6064,13 +6097,23 @@ Règles :
 
             if (!rowNames.length) return null;
 
-            const personStatuses = [
-              { key: 'a_contacter', label: 'À contacter', color: '#E8794E', bg: '#FFF1EB' },
-              { key: 'contacte',    label: 'Contacté',    color: '#F59E0B', bg: '#FFF7E8' },
-              { key: 'soumissionne',label: 'Soumissionné',color: '#3B82F6', bg: '#EFF6FF' },
-              { key: 'confirme',    label: 'Confirmé',    color: '#16A34A', bg: '#ECFDF3' },
-              { key: 'termine',     label: 'Terminé',     color: '#6B7280', bg: '#F9FAFB' },
+            // Statuts séparés : interne vs externe
+            const internalStatuses = [
+              { key: 'a_contacter', label: 'À contacter',  color: '#E8794E', bg: '#FFF1EB' },
+              { key: 'contacte',    label: 'Contacté',     color: '#F59E0B', bg: '#FFF7E8' },
+              { key: 'disponible',  label: 'Disponible',   color: '#3B82F6', bg: '#EFF6FF' },
+              { key: 'confirme',    label: 'Confirmé',     color: '#16A34A', bg: '#ECFDF3' },
+              { key: 'termine',     label: 'Terminé',      color: '#6B7280', bg: '#F9FAFB' },
             ];
+            const externalStatuses = [
+              { key: 'a_contacter',   label: 'À contacter',    color: '#E8794E', bg: '#FFF1EB' },
+              { key: 'contacte',      label: 'Contacté',       color: '#F59E0B', bg: '#FFF7E8' },
+              { key: 'soumis',        label: 'Soumission reçue',color: '#3B82F6', bg: '#EFF6FF' },
+              { key: 'accepte',       label: 'Accepté',        color: '#16A34A', bg: '#ECFDF3' },
+              { key: 'termine',       label: 'Terminé',        color: '#6B7280', bg: '#F9FAFB' },
+            ];
+            // Légende unique (union) pour le filtre
+            const allStatuses = [...new Map([...internalStatuses, ...externalStatuses].map(s => [s.key, s])).values()];
 
             const parsePersons = (arr) => (arr || []).map(p =>
               typeof p === 'string'
@@ -6147,40 +6190,61 @@ Règles :
               );
             };
 
+            // ── Légende + filtre ──
+            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null;
+
             return (
               <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
-                <div style={{ padding: '18px 20px 8px', borderBottom: '1px solid #F1F3F5' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid #F1F3F5' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 11, background: '#FFF4EC', display: 'grid', placeItems: 'center', fontSize: 18 }}>👷</div>
                     <div>
                       <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & équipe</p>
                       <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Ressources internes et externes par métier, avec suivi de conformité (RBQ / CCQ / Assurance).</p>
                     </div>
                   </div>
+                  {/* Légende statuts + filtre */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Filtre :</span>
+                    <button onClick={() => setTradeStatusFilter(null)}
+                      style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${!tradeStatusFilter ? '#15171C' : '#E0E4E8'}`, background: !tradeStatusFilter ? '#15171C' : '#fff', color: !tradeStatusFilter ? '#fff' : '#9CA3AF', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                      Tous
+                    </button>
+                    {allStatuses.map(s => (
+                      <button key={s.key} onClick={() => setTradeStatusFilter(tradeStatusFilter === s.key ? null : s.key)}
+                        style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${tradeStatusFilter === s.key ? s.color : s.color + '50'}`, background: tradeStatusFilter === s.key ? s.bg : '#fff', color: tradeStatusFilter === s.key ? s.color : s.color + 'CC', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 1120 }}>
+                  <div style={{ minWidth: 1260 }}>
 
                     {/* ── En-têtes ── */}
                     <div style={{ display: 'flex', borderBottom: '2px solid #E8EAED', background: '#FAFAFA' }}>
                       <div style={{ width: 200, flexShrink: 0, padding: '7px 12px 7px 20px', borderRight: '1px solid #E8EAED' }}>
                         <span style={hS}>Corps de métier & étape</span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '195px 2fr 140px 1.5fr', flex: 1 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '185px 2fr 145px 1.5fr 130px', flex: 1 }}>
                         <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>Personne & contact</span></div>
                         <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
-                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Disponible</span></div>
-                        <div style={{ padding: '7px 12px' }}><span style={hS}>🔒 Conformité</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Réponse</span></div>
+                        <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>🔒 Conformité</span></div>
+                        <div style={{ padding: '7px 12px' }}><span style={hS}>💰 Financier</span></div>
                       </div>
                     </div>
 
                     {/* ── Lignes par corps de métier ── */}
                     {rowNames.map((tradeName, idx) => {
                       const tradePhases = phases.filter(ph => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
-                      const tradeHours = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
-                      const rawRes = tradeResourcesMap[tradeName] || { internal: [], external: [] };
-                      const resources = { internal: parsePersons(rawRes.internal), external: parsePersons(rawRes.external) };
+                      const tradeHours  = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
+                      const sortedPh    = [...tradePhases].filter(ph => ph.start_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
+                      const minDate     = sortedPh[0]?.start_date;
+                      const maxDate     = sortedPh[sortedPh.length - 1]?.end_date || sortedPh[sortedPh.length - 1]?.start_date;
+                      const rawRes      = tradeResourcesMap[tradeName] || { internal: [], external: [] };
+                      const resources   = { internal: parsePersons(rawRes.internal), external: parsePersons(rawRes.external) };
 
                       const updateResources = (type, newList) => {
                         const updated = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [type]: newList } };
@@ -6193,9 +6257,10 @@ Règles :
                       };
 
                       const cycleStatus = (type, pi) => {
+                        const statusList = type === 'internal' ? internalStatuses : externalStatuses;
                         const list = resources[type];
-                        const cur = personStatuses.findIndex(s => s.key === (list[pi]?.status || 'a_contacter'));
-                        const next = personStatuses[(cur + 1) % personStatuses.length];
+                        const cur  = statusList.findIndex(s => s.key === (list[pi]?.status || 'a_contacter'));
+                        const next = statusList[(cur + 1) % statusList.length];
                         updateResources(type, list.map((p, i) => i === pi ? { ...p, status: next.key } : p));
                       };
 
@@ -6208,29 +6273,42 @@ Règles :
                       };
 
                       const renderPersonSection = (type) => {
-                        const list = resources[type];
-                        const typeColor = type === 'internal' ? '#7C3AED' : '#2563EB';
-                        const typeIcon  = type === 'internal' ? '🏠' : '🏗️';
-                        const typeLabel = type === 'internal' ? 'Interne' : 'Externe';
-                        const inputKey  = `${tradeName}_add_${type}`;
+                        const list        = resources[type];
+                        const statusList  = type === 'internal' ? internalStatuses : externalStatuses;
+                        const typeColor   = type === 'internal' ? '#7C3AED' : '#2563EB';
+                        const typeIcon    = type === 'internal' ? '🏠' : '🏗️';
+                        const typeLabel   = type === 'internal' ? 'Interne' : 'Externe';
+                        const inputKey    = `${tradeName}_add_${type}`;
+                        const confirmedKey = type === 'internal' ? 'confirme' : 'accepte';
+
+                        // Appliquer le filtre statut
+                        const visibleList = tradeStatusFilter
+                          ? list.filter(p => (p.status || 'a_contacter') === tradeStatusFilter)
+                          : list;
 
                         return (
                           <div>
-                            {/* sous-titre Interne / Externe */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 4px 20px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5' }}>
                               <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: typeColor }}>{typeIcon} {typeLabel}</span>
+                              {tradeStatusFilter && list.length !== visibleList.length && (
+                                <span style={{ fontSize: 9, color: '#A8AEB6' }}>({visibleList.length}/{list.length} affichés)</span>
+                              )}
                             </div>
 
-                            {list.map((person, pi) => {
+                            {visibleList.map((person) => {
+                              // Index réel dans la liste complète (pour pKey cohérent)
+                              const pi           = list.indexOf(person);
                               const pKey         = personKey(tradeName, type, pi);
                               const cert         = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
                               const pStatus      = person.status || 'a_contacter';
                               const isAC         = pStatus === 'a_contacter';
+                              const isConfirmed  = pStatus === confirmedKey;
                               const nonConf      = isPersonNonConforme(cert, pStatus);
-                              const pStat        = personStatuses.find(s => s.key === pStatus) || personStatuses[0];
+                              const pStat        = statusList.find(s => s.key === pStatus) || statusList[0];
                               const msgData      = tradePersonMsgs[pKey] || {};
                               const isLoadingMsg = !!msgData.loading;
                               const isLoadingFlo = !!loadingFloPersonCheck[pKey];
+                              const isLoadingPO  = !!msgData.poLoading;
 
                               const infoInput = (field, placeholder, icon) => (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -6244,25 +6322,29 @@ Règles :
                               return (
                                 <div key={pi} style={{ display: 'flex', borderTop: '1px solid #F4F5F6', background: nonConf ? '#FFF5F5' : 'transparent' }}>
 
-                                  {/* ── Col 1 : Corps de métier & étape — bouton Flo par personne ── */}
-                                  <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', padding: '12px 14px', gap: 6 }}>
+                                  {/* Col 1 : Régénérer message */}
+                                  <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', padding: '10px 12px', gap: 5 }}>
                                     <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={isLoadingMsg}
-                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 9, border: 'none', background: isLoadingMsg ? '#F0F0F0' : BRAND, color: '#fff', fontSize: 11, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', width: '100%' }}>
-                                      {isLoadingMsg ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                                      {isLoadingMsg ? 'Génération…' : 'Flo — Contacter'}
+                                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', borderRadius: 8, border: `1.5px solid ${BRAND}40`, background: isLoadingMsg ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 10.5, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', width: '100%' }}>
+                                      {isLoadingMsg ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
+                                      {isLoadingMsg ? 'Génération…' : msgData.msg ? '🔄 Régénérer message' : 'Générer message'}
                                     </button>
-                                    <span style={{ fontSize: 9.5, color: '#B0B4BB', textAlign: 'center', lineHeight: 1.4 }}>
-                                      Étape 1 : contact{type === 'external' ? ' + prix' : ''}
-                                    </span>
+                                    {isConfirmed && (
+                                      <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 8px', borderRadius: 8, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
+                                        {isLoadingPO ? <Loader2 size={10} className="animate-spin"/> : <span>📄</span>}
+                                        {isLoadingPO ? 'Génération PO…' : 'Générer bon de commande'}
+                                      </button>
+                                    )}
                                   </div>
 
-                                  {/* ── Cols 2–5 ── */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '195px 2fr 140px 1.5fr', flex: 1 }}>
+                                  {/* Cols 2–6 */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '185px 2fr 145px 1.5fr 130px', flex: 1 }}>
 
-                                    {/* Col 2 : Personne & contact */}
+                                    {/* Col 2 : Personne */}
                                     <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 4 }}>
                                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, flex: 1, lineHeight: 1.3 }}>{person.name}</p>
+                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0, flex: 1 }}>{person.name}</p>
                                         <button onClick={() => updateResources(type, resources[type].filter((_, i) => i !== pi))}
                                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
                                       </div>
@@ -6281,37 +6363,50 @@ Règles :
                                     {/* Col 3 : Message */}
                                     <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
                                       <textarea
-                                        value={msgData.msg || ''}
-                                        onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
+                                        value={msgData.po ? msgData.po : (msgData.msg || '')}
+                                        onChange={e => {
+                                          const k = msgData.po ? 'po' : 'msg';
+                                          setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], [k]: e.target.value } }));
+                                        }}
                                         rows={4}
-                                        placeholder={isLoadingMsg ? 'Génération en cours…' : 'Cliquez sur « Flo — Contacter » pour générer, ou rédigez manuellement.'}
-                                        style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: '1px solid #F1F3F5', borderRadius: 8, padding: '7px 9px', resize: 'vertical', fontFamily: 'inherit', background: '#FAFAFA', outline: 'none', boxSizing: 'border-box' }}
+                                        placeholder={isLoadingMsg ? 'Génération en cours…' : 'Le message sera généré automatiquement à l\'ajout, ou cliquez Régénérer.'}
+                                        style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: `1px solid ${msgData.po ? '#16A34A40' : '#F1F3F5'}`, borderRadius: 8, padding: '7px 9px', resize: 'vertical', fontFamily: 'inherit', background: msgData.po ? '#F0FDF4' : '#FAFAFA', outline: 'none', boxSizing: 'border-box' }}
                                       />
+                                      {msgData.po && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#16A34A' }}>📄 Bon de commande</span>}
                                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                        {msgData.msg && (
-                                          <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 11, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
+                                        {(msgData.msg || msgData.po) && (
+                                          <button onClick={() => navigator.clipboard?.writeText(msgData.po || msgData.msg)}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10.5, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
                                             📋 Copier
                                           </button>
                                         )}
-                                        {person.email && msgData.msg && (
-                                          <a href={`mailto:${person.email}?subject=Projet ${encodeURIComponent(project.name || '')}&body=${encodeURIComponent(msgData.msg)}`}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
+                                        {person.email && (msgData.msg || msgData.po) && (
+                                          <a href={`mailto:${person.email}?subject=${encodeURIComponent(msgData.po ? `Bon de commande — Projet ${project.name || ''}` : `Projet ${project.name || ''}`)}&body=${encodeURIComponent(msgData.po || msgData.msg)}`}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
                                             ✉ Envoyer
                                           </a>
+                                        )}
+                                        {msgData.po && (
+                                          <button onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], po: null } }))}
+                                            style={{ padding: '4px 9px', borderRadius: 7, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', cursor: 'pointer' }}>
+                                            ← Message
+                                          </button>
                                         )}
                                       </div>
                                     </div>
 
-                                    {/* Col 4 : Disponible */}
+                                    {/* Col 4 : Réponse */}
                                     <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                                        {type === 'internal' ? 'Disponibilité' : 'Disponibilité'}
+                                      </span>
                                       {[
-                                        { label: 'Oui ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
-                                        { label: 'Non ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
+                                        { label: type === 'internal' ? 'Disponible ✓' : 'Intéressé ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
+                                        { label: type === 'internal' ? 'Indisponible ✗' : 'Pas intéressé ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
                                       ].map(opt => (
                                         <button key={opt.val}
                                           onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
-                                          style={{ width: '100%', padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 11, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
+                                          style={{ width: '100%', padding: '4px 6px', borderRadius: 8, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 10, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
                                           {opt.label}
                                         </button>
                                       ))}
@@ -6320,29 +6415,46 @@ Règles :
                                           <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Prix soumis</span>
                                           <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
                                             placeholder="ex. 4 500 $"
-                                            style={{ width: '100%', marginTop: 4, fontSize: 11.5, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '5px 8px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
+                                            style={{ width: '100%', marginTop: 4, fontSize: 11, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '4px 7px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
+                                          {msgData.prix && msgData.disponible === 'oui' && (
+                                            <button onClick={() => cycleStatus(type, list.indexOf(person))}
+                                              style={{ width: '100%', marginTop: 6, padding: '5px 7px', borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}>
+                                              ✓ Accepter le prix → {externalStatuses.find(s => s.key === 'accepte')?.label}
+                                            </button>
+                                          )}
                                         </div>
                                       )}
                                     </div>
 
                                     {/* Col 5 : Conformité */}
-                                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 7 }}>
                                       {isAC ? (
-                                        <span style={{ fontSize: 10.5, color: '#D4D6DA', fontStyle: 'italic' }}>Disponible après contact</span>
+                                        <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>Après contact</span>
                                       ) : (
                                         <>
                                           {renderCertMini(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
                                           {renderCertMini(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
                                           {renderCertMini(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
                                           <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 10, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer', marginTop: 2 }}>
-                                            {isLoadingFlo ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
-                                            {isLoadingFlo ? 'Vérification…' : 'Flo — Vérifier conformité'}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 7, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9.5, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer' }}>
+                                            {isLoadingFlo ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
+                                            {isLoadingFlo ? 'Vérif…' : 'Flo — Vérifier'}
                                           </button>
-                                          {cert.floNotes && (
-                                            <p style={{ fontSize: 10, color: '#6B7280', margin: 0, lineHeight: 1.5, fontStyle: 'italic' }}>{cert.floNotes}</p>
-                                          )}
+                                          {cert.floNotes && <p style={{ fontSize: 9.5, color: '#6B7280', margin: 0, lineHeight: 1.4, fontStyle: 'italic' }}>{cert.floNotes}</p>}
                                         </>
+                                      )}
+                                    </div>
+
+                                    {/* Col 6 : Financier */}
+                                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Total dépenses</span>
+                                      <input value={msgData.depenses || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], depenses: e.target.value } }))}
+                                        placeholder="0 $"
+                                        style={{ width: '100%', fontSize: 12, fontWeight: 700, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '5px 8px', outline: 'none', color: '#15171C', boxSizing: 'border-box', textAlign: 'right' }}/>
+                                      {type === 'external' && msgData.prix && msgData.depenses && (
+                                        <span style={{ fontSize: 9, color: Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '#DC2626' : '#16A34A', fontWeight: 700 }}>
+                                          {Number(msgData.depenses.replace(/[^0-9.]/g,'')) > Number(msgData.prix.replace(/[^0-9.]/g,'')) ? '↑ Dépassement' : '✓ Sous budget'}
+                                        </span>
                                       )}
                                     </div>
 
@@ -6352,49 +6464,61 @@ Règles :
                             })}
 
                             {/* Ajout personne */}
-                            <div style={{ display: 'flex', alignItems: 'center', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
-                              <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase' }}>{typeIcon} {typeLabel}</span>
+                            {!tradeStatusFilter && (
+                              <div style={{ display: 'flex', alignItems: 'center', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
+                                <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #E8EAED', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase' }}>{typeIcon} {typeLabel}</span>
+                                </div>
+                                <div style={{ flex: 1, padding: '8px 14px' }}>
+                                  <input
+                                    value={tradeResInput[inputKey] || ''}
+                                    onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
+                                        e.preventDefault();
+                                        const newPerson = { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' };
+                                        const newList = [...resources[type], newPerson];
+                                        updateResources(type, newList);
+                                        const newPKey = personKey(tradeName, type, newList.length - 1);
+                                        setTradeResInput(m => ({ ...m, [inputKey]: '' }));
+                                        // Auto-générer message dès l'ajout
+                                        generateContactMessage(tradeName, newPerson, type, newPKey);
+                                      }
+                                    }}
+                                    placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
+                                    style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
+                                  />
+                                </div>
                               </div>
-                              <div style={{ flex: 1, padding: '8px 14px' }}>
-                                <input
-                                  value={tradeResInput[inputKey] || ''}
-                                  onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
-                                      e.preventDefault();
-                                      updateResources(type, [...resources[type], { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' }]);
-                                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
-                                    }
-                                  }}
-                                  placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
-                                  style={{ width: '100%', border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
-                                />
-                              </div>
-                            </div>
+                            )}
                           </div>
                         );
                       };
 
                       return (
                         <div key={tradeName} style={{ borderTop: idx > 0 ? '2px solid #EAECEF' : 'none' }}>
-                          {/* Barre d'en-tête du corps de métier (pleine largeur) */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px 9px 20px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
+                          {/* Barre header du corps de métier */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px 9px 20px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
                             <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{tradeName}</p>
+                            {minDate && (
+                              <span style={{ fontSize: 10.5, fontWeight: 600, color: '#6B7280', background: '#F3F4F6', borderRadius: 6, padding: '1px 7px', flexShrink: 0 }}>
+                                {fmtDate(minDate)}{maxDate && maxDate !== minDate ? ` → ${fmtDate(maxDate)}` : ''}
+                              </span>
+                            )}
                             {tradeHours > 0 && (
                               <span style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
                                 {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
                               </span>
                             )}
-                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 4 }}>
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 2 }}>
                               {tradePhases.map(phase => (
                                 <span key={phase.id} onClick={() => setEditPhase(phase)}
                                   style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 7px', cursor: 'pointer' }}>
                                   {phase.name}
                                 </span>
                               ))}
-                              {!tradePhases.length && <span style={{ fontSize: 10.5, color: '#B0B4BB' }}>Aucune phase liée</span>}
+                              {!tradePhases.length && <span style={{ fontSize: 10, color: '#B0B4BB' }}>Aucune phase liée</span>}
                             </div>
                           </div>
 
