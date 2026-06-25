@@ -18,12 +18,12 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
+  { id: 's-soumission', icon: '📄', label: 'Devis détaillé' },
+  { id: 's-contracts', icon: '✍️', label: 'Contrats' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
   { id: 's-orders', icon: '📦', label: 'Commandes' },
-  { id: 's-soumission', icon: '📄', label: 'Devis détaillé' },
-  { id: 's-contracts', icon: '✍️', label: 'Contrats' },
   { id: 's-invoices', icon: '🧾', label: 'Factures' },
   { id: 's-quotes', icon: '📋', label: 'Soumissions' },
   { id: 's-documents', icon: '📁', label: 'Documents' },
@@ -2923,6 +2923,12 @@ export default function ProjectDetail() {
   const [quoteBuilderItems, setQuoteBuilderItems] = useState([]);
   const [quoteSaving, setQuoteSaving] = useState(false);
   const [quoteSending, setQuoteSending] = useState(false);
+  const [quoteSelected, setQuoteSelected] = useState(new Set());
+  const [quoteMarkup, setQuoteMarkup] = useState(() => Number(localStorage.getItem('monflux-quote-markup') || 0));
+  const [showFloQuotePanel, setShowFloQuotePanel] = useState(false);
+  const [floQuoteLoading, setFloQuoteLoading] = useState(false);
+  const [floInspirationInput, setFloInspirationInput] = useState('');
+  const [quoteNewRow, setQuoteNewRow] = useState({ material: {}, labor: {}, subcontractor: {}, other: {} });
   const [projectRfqs, setProjectRfqs] = useState([]);
   const [showRfqForm, setShowRfqForm] = useState(false);
   const [rfqForm, setRfqForm] = useState({ title: '', specialty: '', description: '', deadline: '' });
@@ -4163,6 +4169,87 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     const next = quoteBuilderItems.filter((_, idx) => idx !== i);
     setQuoteBuilderItems(next);
     scheduleQuoteSave(next);
+  };
+
+  const commitNewRow = async (type, draft) => {
+    if (!(draft.name || '').trim()) return;
+    const q = await ensureQuote();
+    if (!q) return;
+    const unitMap = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
+    const next = [...quoteBuilderItems, {
+      type, name: draft.name || '', qty: Number(draft.qty) || 1,
+      unit: draft.unit || unitMap[type] || 'un.',
+      unit_price: Number(draft.unit_price) || 0, url: draft.url || '',
+    }];
+    setQuoteBuilderItems(next);
+    scheduleQuoteSave(next);
+    setQuoteNewRow(m => ({ ...m, [type]: {} }));
+  };
+
+  const fetchQuoteRecos = async () => {
+    setFloQuoteLoading(true);
+    try {
+      const subLines = [];
+      Object.entries(tradeResourcesMap).forEach(([tradeName, res]) => {
+        (res.external || []).forEach((p, pi) => {
+          const pKey = `${tradeName}||external||${pi}`;
+          const msgD = tradePersonMsgs[pKey] || {};
+          if (['accepte','en_negociation','soumis'].includes(p.status) && msgD.prix) {
+            subLines.push(`${tradeName} — ${p.name}: ${msgD.prix} $`);
+          }
+        });
+      });
+      const laborLines = (project.phases || [])
+        .filter(ph => ph.duration_hours > 0)
+        .map(ph => `${ph.name}: ${ph.duration_hours}h${ph.trade_name ? ` (${ph.trade_name})` : ''}`);
+      const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un devis de construction réaliste pour le marché québécois.
+
+PROJET: ${project.name || project.description || 'Projet de construction'}
+ADRESSE: ${project.address || 'À préciser'}
+${floInspirationInput ? `\nIMAGES / INSPIRATIONS:\n${floInspirationInput}` : ''}
+${subLines.length ? `\nSOUS-TRAITANTS CONFIRMÉS:\n${subLines.join('\n')}` : ''}
+${laborLines.length ? `\nPHASES / MAIN D'ŒUVRE:\n${laborLines.join('\n')}` : ''}
+
+Génère un devis JSON réaliste avec:
+- materials: matériaux (nom, qté, unité, prix unitaire marché QC, URL fournisseur réel si connu)
+- labor: main d'œuvre interne (basé phases ci-dessus, taux ~65$/h QC)
+- subcontractors: sous-traitants (prix ci-dessus si dispo, sinon estimation)
+- other: frais divers (permis, transport, location équip.)
+
+Format JSON strict:
+{"materials":[{"name":"","qty":1,"unit":"","unit_price":0,"url":""}],"labor":[{"name":"","qty":1,"unit":"h","unit_price":65}],"subcontractors":[{"name":"","qty":1,"unit":"forfait","unit_price":0,"url":""}],"other":[{"name":"","qty":1,"unit":"","unit_price":0}]}
+
+JSON seulement, pas de texte autour.`;
+      const token = localStorage.getItem('token');
+      const BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const res = await fetch(`${BASE}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) return;
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') txt += evt.text; } catch {}
+        }
+      }
+      const jsonMatch = txt.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+      const recos = JSON.parse(jsonMatch[0]);
+      const unitMap = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
+      const q = await ensureQuote(); if (!q) return;
+      const typeMap = { materials: 'material', labor: 'labor', subcontractors: 'subcontractor', other: 'other' };
+      const newItems = [...quoteBuilderItems];
+      Object.entries(typeMap).forEach(([sec, type]) => {
+        (recos[sec] || []).forEach(it => {
+          newItems.push({ type, name: it.name || '', qty: Number(it.qty) || 1, unit: it.unit || unitMap[type], unit_price: Number(it.unit_price) || 0, url: it.url || '', source: 'flo' });
+        });
+      });
+      setQuoteBuilderItems(newItems);
+      scheduleQuoteSave(newItems);
+      setShowFloQuotePanel(false);
+    } catch (e) { console.error(e); } finally { setFloQuoteLoading(false); }
   };
 
   const sendQuoteToClient = async () => {
@@ -6968,104 +7055,265 @@ Règles :
 
         {/* ── Devis détaillé ── */}
         <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis détaillé</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Soumission détaillée par poste · génération du contrat</div>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Matériaux · Main d'œuvre · Sous-traitants · Génération contrat</div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {/* Markup */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
+                <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
+                <input type="number" min="0" max="300" step="1" value={quoteMarkup}
+                  onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); }}
+                  style={{ width: 42, fontSize: 13, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
+                <span style={{ fontSize: 11, color: '#8B919A' }}>%</span>
+              </div>
+              {/* Flo button */}
+              <button onClick={() => setShowFloQuotePanel(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: showFloQuotePanel ? `${BRAND}15` : '#fff', color: BRAND, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                <Sparkles size={12}/>{floQuoteLoading ? 'Analyse…' : 'Flo complète le devis'}
+              </button>
               {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
               {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
-              {quoteSaving && <span style={{ fontSize: 11, color: '#7C8089', display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }}/> Enreg…</span>}
+              {quoteSaving && <span style={{ fontSize: 11, color: '#9CA3AF' }}>Enreg…</span>}
             </div>
           </div>
 
-          {/* Line items by type */}
-          {['material', 'labor', 'subcontractor', 'other'].map((type) => {
-            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
-            const typeItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
-            return (
-              <div key={type} className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{typeLabels[type]}</p>
-                  <button className="btn-ghost text-xs py-0.5 px-2 text-brand" onClick={() => addQuoteItem(type)}>
-                    <Plus size={11}/> Ligne
-                  </button>
-                </div>
-                {typeItems.length === 0 ? (
-                  <p className="text-xs text-gray-300 italic py-1">Aucun poste</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {typeItems.map((it) => (
-                      <div key={it._i} className="flex items-center gap-1.5 py-1 border-b border-gray-50 last:border-0">
-                        <input
-                          className="input py-1 text-xs flex-1 min-w-0"
-                          placeholder="Description"
-                          value={it.name}
-                          onChange={(e) => updateQuoteItem(it._i, { name: e.target.value })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-14 text-right"
-                          type="number" min="0" step="0.01"
-                          placeholder="Qté"
-                          value={it.qty}
-                          onChange={(e) => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-14"
-                          placeholder="Unité"
-                          value={it.unit}
-                          onChange={(e) => updateQuoteItem(it._i, { unit: e.target.value })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-20 text-right"
-                          type="number" min="0" step="0.01"
-                          placeholder="Prix unit."
-                          value={it.unit_price}
-                          onChange={(e) => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
-                        />
-                        <span className="text-xs text-gray-600 font-medium w-20 text-right flex-shrink-0">
-                          {((Number(it.qty)||1)*(Number(it.unit_price)||0)).toLocaleString('fr-CA',{minimumFractionDigits:2})}$
-                        </span>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => removeQuoteItem(it._i)}>
-                          <Trash2 size={12}/>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+          {/* Panneau Flo */}
+          {showFloQuotePanel && (
+            <div style={{ background: '#F5F3FF', borderRadius: 12, padding: '16px 20px', marginBottom: 20, border: '1px solid #DDD6FE' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Sparkles size={13} style={{ color: BRAND }}/><span style={{ fontSize: 13, fontWeight: 700, color: BRAND }}>Flo complète le devis</span>
               </div>
-            );
-          })}
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 10px', lineHeight: 1.5 }}>
+                Collez des URLs d'images d'inspiration (Pinterest, Houzz…) ou décrivez le style. Flo identifie les matériaux, propose des produits disponibles au Québec avec prix et sources, importe les prix convenus avec les sous-traitants de la section Équipe, et ajoute la main d'œuvre basée sur les phases.
+              </p>
+              <textarea value={floInspirationInput} onChange={e => setFloInspirationInput(e.target.value)}
+                placeholder={"https://pinterest.com/pin/…\nhttps://houzz.com/…\nOu décrivez : planchers de bois naturel, comptoirs de quartz blanc, robinetterie matte noire…"}
+                rows={3}
+                style={{ width: '100%', fontSize: 12, border: '1px solid #DDD6FE', borderRadius: 8, padding: '8px 10px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: '#15171C', boxSizing: 'border-box' }}/>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                <button onClick={fetchQuoteRecos} disabled={floQuoteLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: floQuoteLoading ? 'wait' : 'pointer' }}>
+                  {floQuoteLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={12}/>}
+                  {floQuoteLoading ? 'Analyse en cours…' : 'Analyser et compléter le devis'}
+                </button>
+                <span style={{ fontSize: 11, color: '#9CA3AF' }}>Les postes existants sont conservés — Flo ajoute uniquement les nouvelles lignes.</span>
+              </div>
+            </div>
+          )}
 
-          {/* Totals */}
+          {/* Barre multi-select */}
+          {quoteSelected.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: BRAND }}>{quoteSelected.size} sélectionné(s)</span>
+              <button onClick={() => { [...quoteSelected].sort((a, b) => b - a).forEach(i => removeQuoteItem(i)); setQuoteSelected(new Set()); }}
+                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: 'pointer' }}>
+                Supprimer
+              </button>
+              <button onClick={() => setQuoteSelected(new Set())}
+                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid #E0E4E8', background: '#fff', color: '#8B919A', cursor: 'pointer', marginLeft: 'auto' }}>
+                ✕ Désélectionner
+              </button>
+            </div>
+          )}
+
+          {/* Tables par type */}
+          {(() => {
+            const typeLabels  = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
+            const typeIcons   = { material: '🪵', labor: '🔨', subcontractor: '🏗️', other: '📦' };
+            const typeUnits   = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
+            const hasUrl      = (t) => t === 'material' || t === 'subcontractor';
+            const iS = { fontSize: 11, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '3px 2px' };
+            return ['material', 'labor', 'subcontractor', 'other'].map(type => {
+              const items = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
+              const nd = quoteNewRow[type] || {};
+              const sectionTotal = items.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
+              return (
+                <div key={type} style={{ marginBottom: 24 }}>
+                  {/* Section header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '2px solid #F1F3F5', paddingBottom: 6, marginBottom: 0 }}>
+                    <span style={{ fontSize: 14 }}>{typeIcons[type]}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.07em' }}>{typeLabels[type]}</span>
+                    {items.length > 0 && <span style={{ fontSize: 10, color: '#C4C8CE' }}>{items.length} poste{items.length > 1 ? 's' : ''}</span>}
+                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#15171C' }}>
+                      {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                    </span>
+                  </div>
+                  {/* Tableau */}
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: hasUrl(type) ? 780 : 600 }}>
+                      <colgroup>
+                        <col style={{ width: 28 }}/>
+                        <col style={{ minWidth: 200 }}/>
+                        <col style={{ width: 58 }}/>
+                        <col style={{ width: 54 }}/>
+                        <col style={{ width: 88 }}/>
+                        <col style={{ width: 90 }}/>
+                        {hasUrl(type) && <col style={{ width: 110 }}/>}
+                        <col style={{ width: 26 }}/>
+                      </colgroup>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #F1F3F5' }}>
+                          <th style={{ padding: '4px 4px', textAlign: 'center' }}>
+                            <input type="checkbox"
+                              checked={items.length > 0 && items.every(it => quoteSelected.has(it._i))}
+                              onChange={e => setQuoteSelected(prev => {
+                                const n = new Set(prev);
+                                items.forEach(it => e.target.checked ? n.add(it._i) : n.delete(it._i));
+                                return n;
+                              })}
+                              style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                          </th>
+                          {['Description', 'Qté', 'Unité', 'Prix unit.', 'Total', hasUrl(type) ? 'Source' : null, null].filter(Boolean).map((h, hi) => (
+                            <th key={hi} style={{ padding: '4px 4px', fontSize: 9.5, fontWeight: 700, color: '#B0B4BB', textAlign: hi >= 2 && hi <= 4 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                          ))}
+                          <th/>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map(it => {
+                          const isSel = quoteSelected.has(it._i);
+                          const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
+                          return (
+                            <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#FAFFF5' : 'transparent', borderBottom: '1px solid #F9FAFB' }}>
+                              <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                <input type="checkbox" checked={isSel}
+                                  onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
+                                  style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                              </td>
+                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
+                                  placeholder="Description"
+                                  style={{ ...iS, fontSize: 12, color: '#15171C' }}/>
+                              </td>
+                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                                  style={{ ...iS, fontSize: 11, color: '#5A5E6A', textAlign: 'right' }}/>
+                              </td>
+                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
+                                  placeholder={typeUnits[type]}
+                                  style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
+                              </td>
+                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
+                                  placeholder="0,00"
+                                  style={{ ...iS, fontSize: 11, color: '#5A5E6A', textAlign: 'right' }}/>
+                              </td>
+                              <td style={{ padding: '1px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#15171C', whiteSpace: 'nowrap' }}>
+                                {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                                {it.source === 'flo' && <span style={{ fontSize: 8, color: BRAND, marginLeft: 3 }}>✦</span>}
+                              </td>
+                              {hasUrl(type) && (
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  {it.url ? (
+                                    <a href={it.url} target="_blank" rel="noreferrer"
+                                      style={{ fontSize: 10, color: BRAND, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                      🔗 Source
+                                    </a>
+                                  ) : (
+                                    <input value={it.url || ''} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
+                                      placeholder="URL source"
+                                      style={{ ...iS, fontSize: 10, color: '#C4C8CE' }}/>
+                                  )}
+                                </td>
+                              )}
+                              <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                <button onClick={() => removeQuoteItem(it._i)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {/* Nouvelle ligne vide */}
+                        <tr style={{ borderBottom: '1px solid #F9FAFB', opacity: 0.55 }}>
+                          <td/>
+                          <td style={{ padding: '2px 4px' }}>
+                            <input value={nd.name || ''} placeholder={`+ ${typeLabels[type]}…`}
+                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
+                              onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
+                              onBlur={() => commitNewRow(type, nd)}
+                              style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
+                          </td>
+                          <td style={{ padding: '2px 4px' }}>
+                            <input type="number" value={nd.qty || ''} placeholder="1"
+                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
+                              style={{ ...iS, fontSize: 11, color: '#C4C8CE', textAlign: 'right' }}/>
+                          </td>
+                          <td style={{ padding: '2px 4px' }}>
+                            <input value={nd.unit || ''} placeholder={typeUnits[type]}
+                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
+                              style={{ ...iS, fontSize: 11, color: '#C4C8CE' }}/>
+                          </td>
+                          <td style={{ padding: '2px 4px' }}>
+                            <input type="number" value={nd.unit_price || ''} placeholder="0,00"
+                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
+                              style={{ ...iS, fontSize: 11, color: '#C4C8CE', textAlign: 'right' }}/>
+                          </td>
+                          <td/>
+                          {hasUrl(type) && (
+                            <td style={{ padding: '2px 4px' }}>
+                              <input value={nd.url || ''} placeholder="URL source"
+                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
+                                style={{ ...iS, fontSize: 10, color: '#C4C8CE' }}/>
+                            </td>
+                          )}
+                          <td/>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            });
+          })()}
+
+          {/* Totaux */}
           {quoteBuilderItems.length > 0 && (() => {
-            const subtotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty)||1)*(Number(it.unit_price)||0), 0);
-            const tps = subtotal * 0.05;
-            const tvq = subtotal * 0.09975;
+            const costTotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
+            const markupAmt = costTotal * (quoteMarkup / 100);
+            const subtotal  = costTotal + markupAmt;
+            const tps  = subtotal * 0.05;
+            const tvq  = subtotal * 0.09975;
             const total = subtotal + tps + tvq;
-            const fmt = (v) => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
+            const fmt = v => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
             return (
-              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-sm">
-                <div className="flex justify-between text-gray-500"><span>Sous-total</span><span>{fmt(subtotal)}</span></div>
-                <div className="flex justify-between text-gray-400 text-xs"><span>TPS (5%)</span><span>{fmt(tps)}</span></div>
-                <div className="flex justify-between text-gray-400 text-xs"><span>TVQ (9,975%)</span><span>{fmt(tvq)}</span></div>
-                <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100"><span>Total</span><span className="text-brand">{fmt(total)}</span></div>
+              <div style={{ marginTop: 8, paddingTop: 16, borderTop: '2px solid #E8EAED', display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ width: 320 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: '#6B7280' }}>
+                    <span>Coût total</span><span>{fmt(costTotal)}</span>
+                  </div>
+                  {quoteMarkup > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: BRAND, fontWeight: 600 }}>
+                      <span>Markup ({quoteMarkup}%)</span><span>+ {fmt(markupAmt)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 3px', fontSize: 13, fontWeight: 700, color: '#15171C', borderTop: '1px solid #E8EAED', marginTop: 4 }}>
+                    <span>Sous-total</span><span>{fmt(subtotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#9CA3AF' }}>
+                    <span>TPS (5%)</span><span>{fmt(tps)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#9CA3AF' }}>
+                    <span>TVQ (9,975%)</span><span>{fmt(tvq)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 3px', fontSize: 16, fontWeight: 900, color: '#15171C', borderTop: '2px solid #E8EAED', marginTop: 6 }}>
+                    <span>Total</span><span style={{ color: BRAND }}>{fmt(total)}</span>
+                  </div>
+                </div>
               </div>
             );
           })()}
 
           {/* Actions */}
-          <div className="mt-4 flex gap-2 flex-wrap">
+          <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
-              <button
-                className="btn-primary text-xs py-2"
-                onClick={sendQuoteToClient}
-                disabled={quoteSending || !quoteBuilderQuote}
-              >
-                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
-                Envoyer au client
+              <button className="btn-primary text-xs py-2" onClick={sendQuoteToClient} disabled={quoteSending || !quoteBuilderQuote}>
+                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>} Envoyer au client
               </button>
             )}
             {quoteBuilderQuote && (
@@ -7077,6 +7325,80 @@ Règles :
               <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
             )}
           </div>
+        </div>
+
+        {/* ── Contrats ── */}
+        <div id="s-contracts" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✍️</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Contrats</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Signature électronique et suivi des contrats signés</div>
+            </div>
+            {quoteBuilderQuote && projectContracts.length === 0 && (
+              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
+                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
+                Générer
+              </button>
+            )}
+            {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
+          </div>
+          {projectContracts.length === 0 ? (
+            <div className="text-center py-6">
+              <FileSignature size={28} className="text-gray-200 mx-auto mb-2"/>
+              {quoteBuilderQuote ? (
+                <p className="text-sm text-gray-400">Génère un contrat depuis la soumission détaillée.</p>
+              ) : (
+                <p className="text-sm text-gray-400">Crée d'abord une soumission dans cet onglet pour générer un contrat.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {projectContracts.map(c => {
+                const isSending = contractSendingId === c.id;
+                const statusColor = { draft: 'badge-gray', sent: 'badge-blue', signed: 'badge-green', cancelled: 'badge-gray' };
+                const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé', cancelled: 'Annulé' };
+                return (
+                  <div key={c.id} className="rounded-xl border border-gray-100 p-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{c.title}</p>
+                        <p className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('fr-CA')}</p>
+                      </div>
+                      <span className={`badge ${statusColor[c.status] || 'badge-gray'} text-xs`}>{statusLabel[c.status] || c.status}</span>
+                    </div>
+                    {c.status === 'signed' && (
+                      <p className="text-xs text-green-600 mb-2 flex items-center gap-1"><CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}</p>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(showContractContent === c.id ? null : c.id)}>
+                        <Eye size={11}/> {showContractContent === c.id ? 'Masquer' : 'Voir le contrat'}
+                      </button>
+                      {c.status === 'draft' && (
+                        <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
+                          {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer (stub)
+                        </button>
+                      )}
+                      <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
+                        <Trash2 size={11}/>
+                      </button>
+                    </div>
+                    {c.status === 'draft' && (
+                      <div className="mt-2 flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
+                        <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5"/>
+                        <p className="text-xs text-amber-700">Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign / Notarize.</p>
+                      </div>
+                    )}
+                    {showContractContent === c.id && (
+                      <pre className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-xl p-3 overflow-auto whitespace-pre-wrap font-mono" style={{ maxHeight: 320 }}>
+                        {c.content}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ── Médias chantier ── (cream) */}
@@ -7536,85 +7858,6 @@ Règles :
         )}
 
         {/* ── Contrats ── (white) */}
-        <div id="s-contracts" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✍️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Contrats</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Signature électronique et suivi des contrats signés</div>
-            </div>
-            {quoteBuilderQuote && projectContracts.length === 0 && (
-              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
-                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                Générer
-              </button>
-            )}
-            {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
-          </div>
-
-          {projectContracts.length === 0 ? (
-            <div className="text-center py-6">
-              <FileSignature size={28} className="text-gray-200 mx-auto mb-2"/>
-              {quoteBuilderQuote ? (
-                <p className="text-sm text-gray-400">Génère un contrat depuis la soumission détaillée.</p>
-              ) : (
-                <p className="text-sm text-gray-400">Crée d'abord une soumission dans cet onglet pour générer un contrat.</p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {projectContracts.map(c => {
-                const isSending = contractSendingId === c.id;
-                const statusColor = { draft: 'badge-gray', sent: 'badge-blue', signed: 'badge-green', cancelled: 'badge-gray' };
-                const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé', cancelled: 'Annulé' };
-                return (
-                  <div key={c.id} className="rounded-xl border border-gray-100 p-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{c.title}</p>
-                        <p className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString('fr-CA')}</p>
-                      </div>
-                      <span className={`badge ${statusColor[c.status] || 'badge-gray'} text-xs`}>{statusLabel[c.status] || c.status}</span>
-                    </div>
-
-                    {c.status === 'signed' && (
-                      <p className="text-xs text-green-600 mb-2 flex items-center gap-1"><CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}</p>
-                    )}
-
-                    <div className="flex gap-2 flex-wrap">
-                      <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(showContractContent === c.id ? null : c.id)}>
-                        <Eye size={11}/> {showContractContent === c.id ? 'Masquer' : 'Voir le contrat'}
-                      </button>
-                      {c.status === 'draft' && (
-                        <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
-                          {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer (stub)
-                        </button>
-                      )}
-                      <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
-                        <Trash2 size={11}/>
-                      </button>
-                    </div>
-
-                    {/* E-sign stub notice */}
-                    {c.status === 'draft' && (
-                      <div className="mt-2 flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
-                        <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5"/>
-                        <p className="text-xs text-amber-700">Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign / Notarize.</p>
-                      </div>
-                    )}
-
-                    {showContractContent === c.id && (
-                      <pre className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-xl p-3 overflow-auto whitespace-pre-wrap font-mono" style={{ maxHeight: 320 }}>
-                        {c.content}
-                      </pre>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
         {/* ── Factures ── (mint) */}
         {projectInvoices.length > 0 && (
           <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
