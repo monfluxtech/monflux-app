@@ -99,7 +99,7 @@ function pdfToBuffer(buildFn) {
 
 export async function generateQuotePDF(q) {
   const { rows: items } = await query(
-    `SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`, [q.id]
+    `SELECT * FROM quote_items WHERE quote_id = $1 AND show_on_quote IS NOT FALSE ORDER BY display_order`, [q.id]
   );
   return pdfToBuffer((doc) => {
     const co = { name: q.co_name || q.company_name, phone: q.co_phone || q.company_phone, email: q.co_email || q.company_email };

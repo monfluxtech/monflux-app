@@ -56,10 +56,11 @@ router.post('/', async (req, res) => {
     );
     for (const [i, item] of items.entries()) {
       await client.query(
-        `INSERT INTO quote_items (quote_id,type,name,qty,unit,unit_price,total,display_order,supplier,supplier_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        `INSERT INTO quote_items (quote_id,type,name,qty,unit,unit_price,total,display_order,supplier,supplier_url,show_on_quote)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [q.id, item.type||'material', item.name, item.qty||1, item.unit||'un.', item.unit_price||0,
-         (item.qty||1)*(item.unit_price||0), i, item.supplier||null, item.supplier_url||null]
+         (item.qty||1)*(item.unit_price||0), i, item.supplier||null, item.url||item.supplier_url||null,
+         item.show_on_quote !== false]
       );
     }
     await client.query('COMMIT');
@@ -92,10 +93,11 @@ router.patch('/:id', async (req, res) => {
       await client.query(`DELETE FROM quote_items WHERE quote_id=$1`, [req.params.id]);
       for (const [i, item] of items.entries()) {
         await client.query(
-          `INSERT INTO quote_items (quote_id,type,name,qty,unit,unit_price,total,display_order,supplier,supplier_url)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          `INSERT INTO quote_items (quote_id,type,name,qty,unit,unit_price,total,display_order,supplier,supplier_url,show_on_quote)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [req.params.id, item.type||'material', item.name, item.qty||1, item.unit||'un.', item.unit_price||0,
-           (Number(item.qty)||1)*(Number(item.unit_price)||0), i, item.supplier||null, item.supplier_url||null]
+           (Number(item.qty)||1)*(Number(item.unit_price)||0), i, item.supplier||null, item.url||item.supplier_url||null,
+           item.show_on_quote !== false]
         );
       }
       // Merge explicit field updates with recomputed totals

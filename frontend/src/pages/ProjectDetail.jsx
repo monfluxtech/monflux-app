@@ -2988,6 +2988,7 @@ export default function ProjectDetail() {
   const [matSearchLoading, setMatSearchLoading] = useState(false);
   const [matSearchQuery, setMatSearchQuery] = useState('');
   const [matFilter, setMatFilter] = useState('all'); // 'all' | 'wishlist'
+  const [matSelected, setMatSelected] = useState(new Set());
   const [autreTexts, setAutreTexts] = useState({});
   const [estimMsg, setEstimMsg] = useState('');
   const [estimInspoPhotos, setEstimInspoPhotos] = useState([]);
@@ -4364,7 +4365,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     scheduleQuoteSave(next);
   };
 
-  const normalizeQuoteItems = (items) => (items || []).map(it => ({ ...it, markup: Number(it.markup) || 0 }));
+  const normalizeQuoteItems = (items) => (items || []).map(it => ({ ...it, markup: Number(it.markup) || 0, show_on_quote: it.show_on_quote !== false }));
 
   const commitNewRow = async (type, draft) => {
     if (!(draft.name || '').trim()) return;
@@ -5383,6 +5384,7 @@ Règles :
                 { label: 'Téléphone', value: project.client_phone, field: 'phone', save: v => saveClientField('phone', v), placeholder: '—', w: 130 },
                 { label: 'Courriel', value: project.client_email, field: 'email', save: v => saveClientField('email', v), placeholder: '—', w: 190 },
                 { label: 'Remarque contact', value: fa.client_note, field: 'note', save: v => saveAssessmentField('client_note', v), placeholder: 'meilleur moment, mode de contact…', w: 220 },
+                { label: 'Budget initial', value: fa.budget_initial ? money(fa.budget_initial) : '', field: 'budget_initial', save: v => saveAssessmentField('budget_initial', parseFloat(v.replace(/[^0-9.]/g, '')) || null), placeholder: '—', w: 130 },
               ].map(({ label, value, save, placeholder, w }) => (
                 <div key={label} style={{ minWidth: w }}>
                   <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 3px' }}>{label}</p>
@@ -7477,19 +7479,25 @@ Règles :
                           {cat} · {items.length} option{items.length !== 1 ? 's' : ''}
                         </p>
                         <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #E8EAED' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                             <thead>
                               <tr style={{ background: '#F8F9FA' }}>
-                                {['', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist'].map((h, hi) => (
-                                  <th key={hi} style={{ padding: '8px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: (hi === 3 || hi === 7) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED', whiteSpace: 'nowrap' }}>{h}</th>
+                                {['☑', '', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist'].map((h, hi) => (
+                                  <th key={hi} style={{ padding: '8px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: (hi === 4 || hi === 8) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED', whiteSpace: 'nowrap' }}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {items.map((it, i) => {
                                 const inWishlist = matWishlist.includes(it.id);
+                                const isSel = matSelected.has(it.id);
                                 return (
-                                  <tr key={it.id || i} style={{ borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none', background: inWishlist ? '#FFFDF5' : 'transparent' }}>
+                                  <tr key={it.id || i} style={{ borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none', background: isSel ? '#F0FFF4' : inWishlist ? '#FFFDF5' : 'transparent' }}>
+                                    <td style={{ padding: '7px 10px', width: 34 }}>
+                                      <input type="checkbox" checked={isSel}
+                                        onChange={() => setMatSelected(prev => { const n = new Set(prev); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; })}
+                                        style={{ accentColor: BRAND, cursor: 'pointer', width: 15, height: 15 }}/>
+                                    </td>
                                     <td style={{ padding: '7px 8px', width: 52 }}>
                                       {it.url_image ? (
                                         <img src={it.url_image} alt={it.nom}
@@ -7498,7 +7506,7 @@ Règles :
                                       ) : null}
                                       <div style={{ width: 44, height: 44, borderRadius: 7, background: '#F3F4F6', display: it.url_image ? 'none' : 'grid', placeItems: 'center', fontSize: 20 }}>🪵</div>
                                     </td>
-                                    <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600, color: '#111827', maxWidth: 220 }}>{it.nom}</td>
+                                    <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600, color: '#111827', maxWidth: 200 }}>{it.nom}</td>
                                     <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                         <span style={{ display: 'inline-block', background: '#F3F4F6', borderRadius: 5, padding: '2px 9px', fontSize: 11, fontWeight: 600, color: '#374151' }}>{it.fournisseur}</span>
@@ -7536,6 +7544,29 @@ Règles :
                         </div>
                       </div>
                     ))}
+                    {/* Barre sélection → devis */}
+                    {matSelected.size > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F0FFF4', borderRadius: 10, border: '1px solid #86EFAC', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, color: '#15803D', fontWeight: 700 }}>{matSelected.size} article{matSelected.size !== 1 ? 's' : ''} sélectionné{matSelected.size !== 1 ? 's' : ''}</span>
+                        <button onClick={async () => {
+                          const selItems = matSearchResults.filter(it => matSelected.has(it.id));
+                          const q = await ensureQuote(); if (!q) return;
+                          const newItems = [...quoteBuilderItems, ...selItems.map(it => ({
+                            type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
+                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo', show_on_quote: true,
+                          }))];
+                          setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
+                          setMatSelected(new Set());
+                        }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          → Ajouter au devis détaillé
+                        </button>
+                        <button onClick={() => setMatSelected(new Set())}
+                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, border: '1px solid #86EFAC', background: 'transparent', color: '#16A34A', cursor: 'pointer' }}>
+                          Désélectionner
+                        </button>
+                      </div>
+                    )}
                     {/* Import wishlist dans devis */}
                     {matWishlist.length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE', flexWrap: 'wrap' }}>
@@ -7545,12 +7576,12 @@ Règles :
                           const q = await ensureQuote(); if (!q) return;
                           const newItems = [...quoteBuilderItems, ...wishItems.map(it => ({
                             type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
-                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo',
+                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo', show_on_quote: true,
                           }))];
                           setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
                         }}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          → Importer dans le devis
+                          → Importer wishlist dans le devis
                         </button>
                         <span style={{ fontSize: 11, color: '#9CA3AF' }}>Ajoutés dans la section Matériaux du devis détaillé.</span>
                       </div>
@@ -7656,176 +7687,193 @@ Règles :
             </div>
           )}
 
-          {/* Tables par type */}
+          {/* Tableau devis unifié — style Excel avec groupes repliables */}
           {(() => {
-            const typeLabels  = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
-            const typeIcons   = { material: '🪵', labor: '🔨', subcontractor: '🏗️', other: '📦' };
-            const typeUnits   = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
-            const hasUrl      = (t) => t === 'material' || t === 'subcontractor';
-            const iS = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '4px 3px' };
-            const TH = { padding: '5px 4px', fontSize: 9.5, fontWeight: 700, color: '#4B5563', textTransform: 'uppercase', letterSpacing: '.05em' };
-            return ['material', 'labor', 'subcontractor', 'other'].map(type => {
-              const items = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
-              const nd    = quoteNewRow[type] || {};
-              const isCollapsed = quoteCollapsed[type];
-              const sectionTotal = items.reduce((s, it) => {
-                const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
-                return s + base * (1 + (Number(it.markup) || 0) / 100);
-              }, 0);
-              return (
-                <div key={type} style={{ marginBottom: 20, border: '1px solid #E8EAED', borderRadius: 10, overflow: 'hidden' }}>
-                  {/* Section header cliquable */}
-                  <div onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#F8F9FA', cursor: 'pointer', borderBottom: isCollapsed ? 'none' : '1px solid #F1F3F5' }}>
-                    <span style={{ fontSize: 8, color: '#9CA3AF', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
-                    <span style={{ fontSize: 13 }}>{typeIcons[type]}</span>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em' }}>{typeLabels[type]}</span>
-                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>{items.length} poste{items.length !== 1 ? 's' : ''}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#15171C' }}>
-                      {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                    </span>
-                  </div>
-                  {/* Tableau (masqué si collapsed) */}
-                  {!isCollapsed && (
-                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: hasUrl(type) ? 860 : 660 }}>
-                        <colgroup>
-                          <col style={{ width: 28 }}/>
-                          <col style={{ minWidth: 180 }}/>
-                          <col style={{ width: 54 }}/>
-                          <col style={{ width: 50 }}/>
-                          <col style={{ width: 82 }}/>
-                          <col style={{ width: 68 }}/>{/* markup % */}
-                          <col style={{ width: 96 }}/>{/* total ligne */}
-                          {hasUrl(type) && <col style={{ width: 100 }}/>}
-                          <col style={{ width: 24 }}/>
-                        </colgroup>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid #E5E7EB', background: '#FAFAFA' }}>
-                            <th style={{ ...TH, textAlign: 'center' }}>
-                              <input type="checkbox"
-                                checked={items.length > 0 && items.every(it => quoteSelected.has(it._i))}
-                                onChange={e => setQuoteSelected(prev => {
-                                  const n = new Set(prev);
-                                  items.forEach(it => e.target.checked ? n.add(it._i) : n.delete(it._i));
-                                  return n;
-                                })}
-                                style={{ accentColor: BRAND, cursor: 'pointer' }}/>
-                            </th>
-                            <th style={{ ...TH, textAlign: 'left' }}>Description</th>
-                            <th style={{ ...TH, textAlign: 'right' }}>Qté</th>
-                            <th style={{ ...TH, textAlign: 'left' }}>Unité</th>
-                            <th style={{ ...TH, textAlign: 'right' }}>Prix unit.</th>
-                            <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
-                            <th style={{ ...TH, textAlign: 'right' }}>Total</th>
-                            {hasUrl(type) && <th style={{ ...TH, textAlign: 'left' }}>Source</th>}
-                            <th/>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {items.map(it => {
-                            const isSel = quoteSelected.has(it._i);
-                            const mu = Number(it.markup) || 0;
-                            const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
-                            return (
-                              <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'transparent', borderBottom: '1px solid #F3F4F6' }}>
-                                <td style={{ padding: '3px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                  <input type="checkbox" checked={isSel}
-                                    onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
-                                    style={{ accentColor: BRAND, cursor: 'pointer' }}/>
-                                </td>
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
-                                    placeholder="Description"
-                                    style={{ ...iS, fontSize: 12, color: '#111827', fontWeight: it.name ? 500 : 400 }}/>
-                                </td>
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
-                                    style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
-                                </td>
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
-                                    placeholder={typeUnits[type]}
-                                    style={{ ...iS, fontSize: 11, color: '#6B7280' }}/>
-                                </td>
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
-                                    placeholder="0"
-                                    style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
-                                </td>
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
-                                    <input type="number" value={it.markup || ''} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
+            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
+            const typeIcons  = { material: '🪵', labor: '🔨', subcontractor: '🏗️', other: '📦' };
+            const typeUnits  = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
+            const iS = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '3px 2px' };
+            const TH = { padding: '5px 6px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', background: '#F9FAFB', whiteSpace: 'nowrap' };
+            const allItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i }));
+            return (
+              <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+                    <colgroup>
+                      <col style={{ width: 28 }}/>{/* checkbox */}
+                      <col style={{ width: 26 }}/>{/* eye */}
+                      <col style={{ minWidth: 180 }}/>{/* description */}
+                      <col style={{ width: 54 }}/>{/* qty */}
+                      <col style={{ width: 50 }}/>{/* unit */}
+                      <col style={{ width: 86 }}/>{/* prix unit */}
+                      <col style={{ width: 70 }}/>{/* markup */}
+                      <col style={{ width: 100 }}/>{/* total */}
+                      <col style={{ width: 84 }}/>{/* source */}
+                      <col style={{ width: 24 }}/>{/* delete */}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th style={{ ...TH, textAlign: 'center' }}>
+                          <input type="checkbox"
+                            checked={allItems.length > 0 && allItems.every(it => quoteSelected.has(it._i))}
+                            onChange={e => setQuoteSelected(() => {
+                              const n = new Set();
+                              if (e.target.checked) allItems.forEach(it => n.add(it._i));
+                              return n;
+                            })}
+                            style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                        </th>
+                        <th style={{ ...TH, textAlign: 'center' }} title="Afficher sur le devis PDF">👁</th>
+                        <th style={{ ...TH, textAlign: 'left' }}>Description</th>
+                        <th style={{ ...TH, textAlign: 'right' }}>Qté</th>
+                        <th style={{ ...TH, textAlign: 'left' }}>Unité</th>
+                        <th style={{ ...TH, textAlign: 'right' }}>Prix unit.</th>
+                        <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
+                        <th style={{ ...TH, textAlign: 'right' }}>Total</th>
+                        <th style={{ ...TH, textAlign: 'left' }}>Source</th>
+                        <th style={{ ...TH }}/>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {['material', 'labor', 'subcontractor', 'other'].map(type => {
+                        const typeItems = allItems.filter(it => it.type === type);
+                        const nd = quoteNewRow[type] || {};
+                        const isCollapsed = quoteCollapsed[type];
+                        const sectionTotal = typeItems.reduce((s, it) => {
+                          const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
+                          return s + base * (1 + (Number(it.markup) || 0) / 100);
+                        }, 0);
+                        return (
+                          <React.Fragment key={type}>
+                            {/* Ligne-groupe repliable */}
+                            <tr onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
+                              style={{ background: '#F3F4F6', cursor: 'pointer', userSelect: 'none' }}>
+                              <td colSpan={2} style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                <span style={{ fontSize: 8, color: '#9CA3AF', display: 'inline-block', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                              </td>
+                              <td colSpan={6} style={{ padding: '6px 6px' }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em', marginRight: 8 }}>
+                                  {typeIcons[type]} {typeLabels[type]}
+                                </span>
+                                <span style={{ fontSize: 10, color: '#9CA3AF' }}>{typeItems.length} poste{typeItems.length !== 1 ? 's' : ''}</span>
+                              </td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                                {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                              </td>
+                              <td/>
+                            </tr>
+
+                            {/* Lignes d'articles */}
+                            {!isCollapsed && typeItems.map(it => {
+                              const isSel = quoteSelected.has(it._i);
+                              const mu = Number(it.markup) || 0;
+                              const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
+                              const showOn = it.show_on_quote !== false;
+                              return (
+                                <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'white', borderBottom: '1px solid #F3F4F6', opacity: showOn ? 1 : 0.45 }}>
+                                  <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <input type="checkbox" checked={isSel}
+                                      onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
+                                      style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                                  </td>
+                                  <td style={{ padding: '2px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                    <button onClick={() => updateQuoteItem(it._i, { show_on_quote: !showOn })}
+                                      title={showOn ? 'Masquer du PDF' : 'Afficher sur le PDF'}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '1px 4px', color: showOn ? '#374151' : '#D1D5DB' }}>
+                                      {showOn ? '👁' : '🙈'}
+                                    </button>
+                                  </td>
+                                  <td style={{ padding: '1px 6px', verticalAlign: 'middle' }}>
+                                    <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
+                                      placeholder="Description"
+                                      style={{ ...iS, fontSize: 12, color: '#111827', fontWeight: it.name ? 500 : 400 }}/>
+                                  </td>
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                    <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                                      style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
+                                  </td>
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                    <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
+                                      placeholder={typeUnits[type]}
+                                      style={{ ...iS, fontSize: 11, color: '#6B7280' }}/>
+                                  </td>
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                    <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
                                       placeholder="0"
-                                      style={{ ...iS, fontSize: 11, color: BRAND, textAlign: 'right', width: 38, fontWeight: 600 }}/>
-                                    <span style={{ fontSize: 10, color: BRAND, flexShrink: 0 }}>%</span>
-                                  </div>
-                                </td>
-                                <td style={{ padding: '2px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                                  {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                                  {it.source === 'flo' && <span style={{ fontSize: 8, color: '#16A34A', marginLeft: 3 }}>✦</span>}
-                                </td>
-                                {hasUrl(type) && (
+                                      style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
+                                  </td>
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
+                                      <input type="number" value={it.markup || ''} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
+                                        placeholder="0"
+                                        style={{ ...iS, fontSize: 11, color: BRAND, textAlign: 'right', width: 36, fontWeight: 600 }}/>
+                                      <span style={{ fontSize: 10, color: BRAND, flexShrink: 0 }}>%</span>
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '2px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                                    {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                                    {it.source === 'flo' && <span style={{ fontSize: 8, color: '#16A34A', marginLeft: 3 }}>✦</span>}
+                                  </td>
                                   <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
                                     {it.url ? (
                                       <a href={it.url} target="_blank" rel="noreferrer"
-                                        style={{ fontSize: 10, color: BRAND, textDecoration: 'none' }}>🔗 Source</a>
+                                        style={{ fontSize: 10, color: BRAND, textDecoration: 'none', whiteSpace: 'nowrap' }}>🔗 Source</a>
                                     ) : (
                                       <input value={it.url || ''} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
                                         placeholder="URL"
                                         style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
                                     )}
                                   </td>
-                                )}
-                                <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                  <button onClick={() => removeQuoteItem(it._i)}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
+                                  <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                    <button onClick={() => removeQuoteItem(it._i)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+
+                            {/* Ligne d'ajout rapide */}
+                            {!isCollapsed && (
+                              <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
+                                <td colSpan={2}/>
+                                <td style={{ padding: '4px 6px' }}>
+                                  <input value={nd.name || ''} placeholder={`+ Ajouter ${typeLabels[type].toLowerCase()}…`}
+                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
+                                    onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
+                                    onBlur={() => commitNewRow(type, nd)}
+                                    style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
                                 </td>
+                                <td style={{ padding: '4px 4px' }}>
+                                  <input type="number" value={nd.qty || ''} placeholder="1"
+                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
+                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
+                                </td>
+                                <td style={{ padding: '4px 4px' }}>
+                                  <input value={nd.unit || ''} placeholder={typeUnits[type]}
+                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
+                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
+                                </td>
+                                <td style={{ padding: '4px 4px' }}>
+                                  <input type="number" value={nd.unit_price || ''} placeholder="0"
+                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
+                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
+                                </td>
+                                <td/><td/><td style={{ padding: '4px 4px' }}>
+                                  <input value={nd.url || ''} placeholder="URL"
+                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
+                                    style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
+                                </td>
+                                <td/>
                               </tr>
-                            );
-                          })}
-                          {/* Nouvelle ligne */}
-                          <tr style={{ background: '#FAFAFA' }}>
-                            <td/>
-                            <td style={{ padding: '4px 4px' }}>
-                              <input value={nd.name || ''} placeholder={`+ ${typeLabels[type]}…`}
-                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
-                                onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
-                                onBlur={() => commitNewRow(type, nd)}
-                                style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
-                            </td>
-                            <td style={{ padding: '4px 4px' }}>
-                              <input type="number" value={nd.qty || ''} placeholder="1"
-                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
-                                style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
-                            </td>
-                            <td style={{ padding: '4px 4px' }}>
-                              <input value={nd.unit || ''} placeholder={typeUnits[type]}
-                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
-                                style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                            </td>
-                            <td style={{ padding: '4px 4px' }}>
-                              <input type="number" value={nd.unit_price || ''} placeholder="0"
-                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
-                                style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
-                            </td>
-                            <td/><td/>
-                            {hasUrl(type) && (
-                              <td style={{ padding: '4px 4px' }}>
-                                <input value={nd.url || ''} placeholder="URL"
-                                  onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
-                                  style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
-                              </td>
                             )}
-                            <td/>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              );
-            });
+              </div>
+            );
           })()}
 
           {/* Totaux */}

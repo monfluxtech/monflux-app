@@ -416,6 +416,10 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS dep_to_pt VARCHAR(15) DEFAULT 'left'`);
   await run('project_phases: dep_idx dep',
     `CREATE INDEX IF NOT EXISTS project_phases_depends_on_idx ON project_phases(depends_on_phase_id) WHERE depends_on_phase_id IS NOT NULL`);
+
+  // ── Devis — visibilité ligne sur le PDF (2026-06-25) ─────────────────────
+  await run('quote_items: show_on_quote',
+    `ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS show_on_quote BOOLEAN DEFAULT TRUE`);
 }
 
 export async function initializeDatabase() {

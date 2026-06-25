@@ -2,7 +2,8 @@ import jwt from 'jsonwebtoken';
 import { query } from '../db.js';
 
 export function authenticateToken(req, res, next) {
-  const token = req.headers['authorization']?.split(' ')[1];
+  // Accept token from Authorization header OR ?token= query param (used by PDF iframes)
+  const token = req.headers['authorization']?.split(' ')[1] || req.query?.token;
   if (!token) return res.status(401).json({ error: 'Token requis' });
 
   const secret = process.env.JWT_SECRET;
