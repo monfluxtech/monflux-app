@@ -14,6 +14,15 @@ const BRAND_DARK = '#C85A2B';
 const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
+const STICKY_COLORS = [
+  { key: 'yellow', bg: '#FEF9C3', border: '#EAB308', text: '#713F12' },
+  { key: 'pink',   bg: '#FCE7F3', border: '#EC4899', text: '#831843' },
+  { key: 'blue',   bg: '#DBEAFE', border: '#3B82F6', text: '#1E3A5F' },
+  { key: 'green',  bg: '#DCFCE7', border: '#22c55e', text: '#14532D' },
+  { key: 'purple', bg: '#EDE9FE', border: '#8B5CF6', text: '#4C1D95' },
+  { key: 'orange', bg: '#FFEDD5', border: '#F97316', text: '#7C2D12' },
+];
+
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
@@ -2857,6 +2866,13 @@ export default function ProjectDetail() {
   const [tradeStatusFilter, setTradeStatusFilter] = useState(null);
   const [tradeTypeFilter, setTradeTypeFilter] = useState(null); // null | 'internal' | 'external'
   const [tradeDateFilter, setTradeDateFilter] = useState(''); // ISO date string — deadline <= date
+  const [stickyNotes, setStickyNotes] = useState([]);
+  const [stickyDraft, setStickyDraft] = useState(null); // { top, left, color, text } when creating
+  const [stickyDragging, setStickyDragging] = useState(null); // { id, offsetX, offsetY }
+  const stickyContainerRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const longPressPosRef = useRef(null);
+  const stickyLoadedRef = useRef(false);
   const [tradePersonExpanded, setTradePersonExpanded] = useState({});
   const [tradePersonSelected, setTradePersonSelected] = useState(new Set());
   const [generatingPhases, setGeneratingPhases] = useState(false);
@@ -3461,6 +3477,82 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       setQuittance(data);
       setShowQuittanceForm(false);
     } catch {} finally { setSavingQuittance(false); }
+  };
+
+  // ── Sticky notes — chargement initial
+  useEffect(() => {
+    if (project?.id && !stickyLoadedRef.current) {
+      stickyLoadedRef.current = true;
+      setStickyNotes(project.field_assessment?.sticky_notes || []);
+    }
+  }, [project?.id]);
+
+  const saveStickyNotes = async (notes) => {
+    setStickyNotes(notes);
+    const nextFa = { ...(project.field_assessment || {}), sticky_notes: notes };
+    await projectsApi.update(id, { field_assessment: nextFa });
+    setProject(p => ({ ...p, field_assessment: nextFa }));
+  };
+
+  const handleDetailMouseDown = (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, input, textarea, select, a, label, [role="button"], [contenteditable]')) return;
+    const container = stickyContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const scrollTop = window.scrollY;
+    longPressPosRef.current = { top: e.clientY - rect.top + scrollTop, left: e.clientX - rect.left };
+    longPressTimerRef.current = setTimeout(() => {
+      setStickyDraft({ ...longPressPosRef.current, color: 'yellow', text: '' });
+    }, 650);
+  };
+
+  const handleDetailMouseUp = () => clearTimeout(longPressTimerRef.current);
+
+  const handleDetailMouseMove = (e) => {
+    if (longPressTimerRef.current && longPressPosRef.current) {
+      const dx = e.clientX - (longPressPosRef.current.left + (stickyContainerRef.current?.getBoundingClientRect().left || 0));
+      const dy = e.clientY - (longPressPosRef.current.top + (stickyContainerRef.current?.getBoundingClientRect().top || 0) - window.scrollY);
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) clearTimeout(longPressTimerRef.current);
+    }
+    if (stickyDragging) {
+      const container = stickyContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const newTop = e.clientY - rect.top + window.scrollY - stickyDragging.offsetY;
+      const newLeft = e.clientX - rect.left - stickyDragging.offsetX;
+      setStickyNotes(prev => prev.map(n =>
+        n.id === stickyDragging.id ? { ...n, top: Math.max(0, newTop), left: Math.max(0, newLeft) } : n
+      ));
+    }
+  };
+
+  const handleDetailMouseUpGlobal = (e) => {
+    clearTimeout(longPressTimerRef.current);
+    if (stickyDragging) {
+      setStickyNotes(prev => {
+        saveStickyNotes(prev);
+        return prev;
+      });
+      setStickyDragging(null);
+    }
+  };
+
+  const addStickyNote = (draft) => {
+    const { user } = useAuthStore.getState();
+    const note = {
+      id: Date.now(),
+      text: draft.text.trim(),
+      color: draft.color,
+      top: draft.top,
+      left: draft.left,
+      archived: false,
+      created_at: new Date().toISOString(),
+      author_name: user?.name || user?.email?.split('@')[0] || 'Équipe',
+    };
+    const next = [...stickyNotes, note];
+    saveStickyNotes(next);
+    setStickyDraft(null);
   };
 
   const resetPortalToken = async () => {
@@ -5775,7 +5867,14 @@ Règles :
       )}
 
       {/* ── Doc sections (detail tab only) ── */}
-      <div style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column' }}>
+      <div
+        ref={stickyContainerRef}
+        style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column', position: 'relative' }}
+        onMouseDown={handleDetailMouseDown}
+        onMouseUp={handleDetailMouseUpGlobal}
+        onMouseLeave={handleDetailMouseUp}
+        onMouseMove={handleDetailMouseMove}
+      >
 
         {/* ── Descriptif de la demande ── */}
         {(() => {
@@ -8774,6 +8873,139 @@ Règles :
 
         {/* s-comms est maintenant dans son propre onglet */}
 
+        {/* ── Post-its flottants ── */}
+        {stickyNotes.filter(n => !n.archived).map(note => {
+          const col = STICKY_COLORS.find(c => c.key === note.color) || STICKY_COLORS[0];
+          return (
+            <div
+              key={note.id}
+              style={{
+                position: 'absolute',
+                top: note.top || 120,
+                left: Math.min(note.left || 40, (stickyContainerRef.current?.offsetWidth || 900) - 220),
+                width: 210,
+                background: col.bg,
+                border: `1.5px solid ${col.border}`,
+                borderRadius: 12,
+                padding: '10px 12px 10px',
+                boxShadow: '0 6px 24px rgba(0,0,0,.13), 0 1px 4px rgba(0,0,0,.07)',
+                zIndex: 30,
+                userSelect: 'none',
+              }}
+              onMouseDown={e => {
+                if (e.target.closest('button, textarea')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setStickyDragging({ id: note.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
+              }}
+            >
+              {/* Handle drag */}
+              <div style={{ cursor: 'grab', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: col.text, opacity: 0.55 }}>⋮⋮</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 9.5, fontWeight: 700, color: col.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {note.author_name}
+                  </p>
+                  <p style={{ fontSize: 9, color: col.text, opacity: 0.55, margin: 0, whiteSpace: 'nowrap' }}>
+                    {new Date(note.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })} · {new Date(note.created_at).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, archived: true } : n))}
+                  style={{ width: 18, height: 18, borderRadius: 5, background: 'transparent', border: 'none', color: col.text, opacity: 0.5, fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, flexShrink: 0 }}
+                  title="Archiver"
+                >×</button>
+              </div>
+              {/* Texte */}
+              <textarea
+                value={note.text}
+                placeholder="Votre note…"
+                onChange={e => setStickyNotes(prev => prev.map(n => n.id === note.id ? { ...n, text: e.target.value } : n))}
+                onBlur={() => saveStickyNotes(stickyNotes)}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: col.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 65, cursor: 'text', padding: 0, boxSizing: 'border-box' }}
+              />
+              {/* Sélecteur couleur */}
+              <div style={{ display: 'flex', gap: 5, marginTop: 8, paddingTop: 7, borderTop: `1px solid ${col.border}50` }}>
+                {STICKY_COLORS.map(c => (
+                  <button
+                    key={c.key}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, color: c.key } : n))}
+                    style={{ width: 13, height: 13, borderRadius: '50%', background: c.bg, border: `2px solid ${c.key === note.color ? c.border : 'transparent'}`, cursor: 'pointer', padding: 0, flexShrink: 0, outline: c.key === note.color ? `1px solid ${c.border}` : 'none', outlineOffset: 1 }}
+                    title={c.key}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ── Draft post-it (en cours de création) ── */}
+        {stickyDraft && (
+          <div
+            style={{
+              position: 'absolute',
+              top: stickyDraft.top,
+              left: Math.min(stickyDraft.left, (stickyContainerRef.current?.offsetWidth || 900) - 240),
+              width: 230,
+              background: (STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0]).bg,
+              border: `2px solid ${(STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0]).border}`,
+              borderRadius: 13,
+              padding: '12px 14px 12px',
+              boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+              zIndex: 50,
+            }}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            {(() => {
+              const dCol = STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0];
+              return (
+                <>
+                  <p style={{ fontSize: 10, fontWeight: 800, color: dCol.text, margin: '0 0 8px', opacity: 0.7 }}>Nouveau post-it</p>
+                  <textarea
+                    autoFocus
+                    value={stickyDraft.text}
+                    onChange={e => setStickyDraft(d => ({ ...d, text: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) addStickyNote(stickyDraft); if (e.key === 'Escape') setStickyDraft(null); }}
+                    placeholder="Tapez votre note… (⌘↵ pour sauvegarder)"
+                    style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: dCol.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 70, padding: 0, boxSizing: 'border-box' }}
+                  />
+                  {/* Couleurs */}
+                  <div style={{ display: 'flex', gap: 6, margin: '8px 0' }}>
+                    {STICKY_COLORS.map(c => (
+                      <button
+                        key={c.key}
+                        onClick={() => setStickyDraft(d => ({ ...d, color: c.key }))}
+                        style={{ width: 16, height: 16, borderRadius: '50%', background: c.bg, border: `2.5px solid ${c.key === stickyDraft.color ? c.border : 'transparent'}`, cursor: 'pointer', padding: 0, outline: c.key === stickyDraft.color ? `1.5px solid ${c.border}` : 'none', outlineOffset: 1 }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 7, marginTop: 4 }}>
+                    <button
+                      onClick={() => addStickyNote(stickyDraft)}
+                      style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 0', borderRadius: 8, border: 'none', background: dCol.border, color: '#fff', cursor: 'pointer' }}
+                    >Épingler</button>
+                    <button
+                      onClick={() => setStickyDraft(null)}
+                      style={{ fontSize: 11.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: `1px solid ${dCol.border}50`, background: 'transparent', color: dCol.text, cursor: 'pointer', opacity: 0.7 }}
+                    >Annuler</button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Hint long-press — visible seulement sur la vue detail */}
+        {activeTab === 'detail' && stickyNotes.filter(n => !n.archived).length === 0 && !stickyDraft && (
+          <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(21,23,28,.78)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: 11.5, padding: '8px 14px', borderRadius: 10, pointerEvents: 'none', zIndex: 100, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span>📌</span> Maintenir le clic pour ajouter un post-it
+          </div>
+        )}
+
         {/* Portal Messages */}
         {portalMessages.length > 0 && (
           <div className="card mt-4">
@@ -9002,6 +9234,70 @@ Règles :
               )}
             </div>
           </div>
+
+          {/* ── Post-its du projet ── */}
+          {stickyNotes.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <span style={{ fontSize: 18 }}>📌</span>
+                <h2 style={{ fontSize: 17, fontWeight: 800, color: '#15171C', margin: 0 }}>Post-its</h2>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99, background: '#FFF1EB', color: '#E8794E', border: '1px solid #FDDCCA' }}>
+                  {stickyNotes.filter(n => !n.archived).length} actifs
+                </span>
+                {stickyNotes.some(n => n.archived) && (
+                  <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 2 }}>
+                    · {stickyNotes.filter(n => n.archived).length} archivé{stickyNotes.filter(n => n.archived).length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: 12 }}>
+                {[...stickyNotes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(note => {
+                  const col = note.archived ? null : (STICKY_COLORS.find(c => c.key === note.color) || STICKY_COLORS[0]);
+                  return (
+                    <div
+                      key={note.id}
+                      style={{
+                        background: note.archived ? '#F9FAFB' : col.bg,
+                        border: `1.5px solid ${note.archived ? '#E5E7EB' : col.border}`,
+                        borderRadius: 12,
+                        padding: '12px 14px',
+                        opacity: note.archived ? 0.62 : 1,
+                        filter: note.archived ? 'grayscale(1)' : 'none',
+                        transition: 'opacity .2s, filter .2s',
+                      }}
+                    >
+                      {/* Auteur + date */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 7 }}>
+                        <p style={{ fontSize: 10, fontWeight: 800, color: note.archived ? '#9CA3AF' : col.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{note.author_name}</p>
+                        {note.archived && (
+                          <span style={{ fontSize: 9, fontWeight: 700, background: '#E5E7EB', color: '#6B7280', padding: '1px 6px', borderRadius: 99, flexShrink: 0 }}>Archivé</span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 12.5, color: note.archived ? '#6B7280' : col.text, lineHeight: 1.55, margin: '0 0 8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {note.text || <em style={{ opacity: 0.4 }}>Note vide</em>}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <p style={{ fontSize: 9.5, color: note.archived ? '#9CA3AF' : col.text, opacity: 0.55, margin: 0 }}>
+                          {new Date(note.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' })} · {new Date(note.created_at).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {note.archived ? (
+                          <button
+                            onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, archived: false } : n))}
+                            style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer' }}
+                          >Restaurer</button>
+                        ) : (
+                          <button
+                            onClick={() => saveStickyNotes(stickyNotes.filter(n => n.id !== note.id))}
+                            style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 6, border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer' }}
+                          >Supprimer</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
       )}
