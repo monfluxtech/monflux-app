@@ -2932,6 +2932,17 @@ export default function ProjectDetail() {
   const [quoteNewRow, setQuoteNewRow] = useState({ material: {}, labor: {}, subcontractor: {}, other: {} });
   const [quoteCollapsed, setQuoteCollapsed] = useState({ material: false, labor: false, subcontractor: false, other: false });
   const [quoteMassMarkup, setQuoteMassMarkup] = useState('');
+  const [quotePdfCols, setQuotePdfCols] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-quote-pdf-cols') || '{}'); } catch { return {}; }
+  });
+  const togglePdfCol = (col) => {
+    setQuotePdfCols(prev => {
+      const next = { ...prev, [col]: prev[col] === false ? true : false };
+      localStorage.setItem('monflux-quote-pdf-cols', JSON.stringify(next));
+      return next;
+    });
+  };
+  const isPdfColOn = (col) => quotePdfCols[col] !== false;
   const [projectRfqs, setProjectRfqs] = useState([]);
   const [showRfqForm, setShowRfqForm] = useState(false);
   const [rfqForm, setRfqForm] = useState({ title: '', specialty: '', description: '', deadline: '' });
@@ -7701,12 +7712,11 @@ Règles :
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                     <colgroup>
                       <col style={{ width: 28 }}/>{/* checkbox */}
-                      <col style={{ width: 26 }}/>{/* eye */}
                       <col style={{ minWidth: 180 }}/>{/* description */}
-                      <col style={{ width: 54 }}/>{/* qty */}
-                      <col style={{ width: 50 }}/>{/* unit */}
-                      <col style={{ width: 86 }}/>{/* prix unit */}
-                      <col style={{ width: 70 }}/>{/* markup */}
+                      <col style={{ width: 60 }}/>{/* qty */}
+                      <col style={{ width: 54 }}/>{/* unit */}
+                      <col style={{ width: 90 }}/>{/* prix unit */}
+                      <col style={{ width: 72 }}/>{/* markup */}
                       <col style={{ width: 100 }}/>{/* total */}
                       <col style={{ width: 84 }}/>{/* source */}
                       <col style={{ width: 24 }}/>{/* delete */}
@@ -7723,11 +7733,17 @@ Règles :
                             })}
                             style={{ accentColor: BRAND, cursor: 'pointer' }}/>
                         </th>
-                        <th style={{ ...TH, textAlign: 'center' }} title="Afficher sur le devis PDF">👁</th>
                         <th style={{ ...TH, textAlign: 'left' }}>Description</th>
-                        <th style={{ ...TH, textAlign: 'right' }}>Qté</th>
-                        <th style={{ ...TH, textAlign: 'left' }}>Unité</th>
-                        <th style={{ ...TH, textAlign: 'right' }}>Prix unit.</th>
+                        {/* Colonnes PDF — œil cliquable pour inclure/exclure du PDF client */}
+                        <th style={{ ...TH, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }} title="Afficher Qté sur le PDF" onClick={() => togglePdfCol('qty')}>
+                          <span style={{ opacity: isPdfColOn('qty') ? 1 : 0.35 }}>Qté {isPdfColOn('qty') ? '👁' : '🙈'}</span>
+                        </th>
+                        <th style={{ ...TH, textAlign: 'left', cursor: 'pointer', userSelect: 'none' }} title="Afficher Unité sur le PDF" onClick={() => togglePdfCol('unit')}>
+                          <span style={{ opacity: isPdfColOn('unit') ? 1 : 0.35 }}>Unité {isPdfColOn('unit') ? '👁' : '🙈'}</span>
+                        </th>
+                        <th style={{ ...TH, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }} title="Afficher Prix unit. sur le PDF" onClick={() => togglePdfCol('unit_price')}>
+                          <span style={{ opacity: isPdfColOn('unit_price') ? 1 : 0.35 }}>Prix unit. {isPdfColOn('unit_price') ? '👁' : '🙈'}</span>
+                        </th>
                         <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
                         <th style={{ ...TH, textAlign: 'right' }}>Total</th>
                         <th style={{ ...TH, textAlign: 'left' }}>Source</th>
@@ -7748,10 +7764,10 @@ Règles :
                             {/* Ligne-groupe repliable */}
                             <tr onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
                               style={{ background: '#F3F4F6', cursor: 'pointer', userSelect: 'none' }}>
-                              <td colSpan={2} style={{ padding: '6px 10px', textAlign: 'center' }}>
+                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                                 <span style={{ fontSize: 8, color: '#9CA3AF', display: 'inline-block', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                               </td>
-                              <td colSpan={6} style={{ padding: '6px 6px' }}>
+                              <td colSpan={7} style={{ padding: '6px 6px' }}>
                                 <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em', marginRight: 8 }}>
                                   {typeIcons[type]} {typeLabels[type]}
                                 </span>
@@ -7768,20 +7784,12 @@ Règles :
                               const isSel = quoteSelected.has(it._i);
                               const mu = Number(it.markup) || 0;
                               const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
-                              const showOn = it.show_on_quote !== false;
                               return (
-                                <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'white', borderBottom: '1px solid #F3F4F6', opacity: showOn ? 1 : 0.45 }}>
+                                <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'white', borderBottom: '1px solid #F3F4F6' }}>
                                   <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
                                     <input type="checkbox" checked={isSel}
                                       onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
                                       style={{ accentColor: BRAND, cursor: 'pointer' }}/>
-                                  </td>
-                                  <td style={{ padding: '2px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                    <button onClick={() => updateQuoteItem(it._i, { show_on_quote: !showOn })}
-                                      title={showOn ? 'Masquer du PDF' : 'Afficher sur le PDF'}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '1px 4px', color: showOn ? '#374151' : '#D1D5DB' }}>
-                                      {showOn ? '👁' : '🙈'}
-                                    </button>
                                   </td>
                                   <td style={{ padding: '1px 6px', verticalAlign: 'middle' }}>
                                     <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
@@ -7835,7 +7843,7 @@ Règles :
                             {/* Ligne d'ajout rapide */}
                             {!isCollapsed && (
                               <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
-                                <td colSpan={2}/>
+                                <td/>
                                 <td style={{ padding: '4px 6px' }}>
                                   <input value={nd.name || ''} placeholder={`+ Ajouter ${typeLabels[type].toLowerCase()}…`}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
@@ -7937,7 +7945,11 @@ Règles :
               </button>
             )}
             {quoteBuilderQuote && (
-              <button className="btn-secondary text-xs py-2" onClick={() => setPreview({ url: pdf.quoteUrl(quoteBuilderQuote.id), title: 'Soumission' })}>
+              <button className="btn-secondary text-xs py-2" onClick={() => {
+                const cols = ['qty','unit','unit_price'].filter(c => isPdfColOn(c)).join(',');
+                const url = pdf.quoteUrl(quoteBuilderQuote.id) + (cols ? `&cols=${cols}` : '&cols=qty,unit,unit_price');
+                setPreview({ url, title: 'Soumission' });
+              }}>
                 <Eye size={13}/> Aperçu PDF
               </button>
             )}
