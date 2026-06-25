@@ -22,7 +22,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
   { id: 's-orders', icon: '📦', label: 'Commandes' },
-  { id: 's-soumission', icon: '📄', label: 'Devis précis' },
+  { id: 's-soumission', icon: '📄', label: 'Devis détaillé' },
   { id: 's-contracts', icon: '✍️', label: 'Contrats' },
   { id: 's-invoices', icon: '🧾', label: 'Factures' },
   { id: 's-quotes', icon: '📋', label: 'Soumissions' },
@@ -3591,8 +3591,13 @@ export default function ProjectDetail() {
     const allTrades = [...new Set([
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
       ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
-    ])];
-    if (!allTrades.length) return;
+      ...Object.keys(tradeResourcesMap),   // trades ajoutés manuellement via l'UI
+    ])].filter(Boolean);
+    if (!allTrades.length) {
+      setTradeRecos({});
+      setLoadingTradeRecos(false);
+      return;
+    }
     setLoadingTradeRecos(true);
 
     // Contexte : ressources internes par corps de métier
@@ -6920,6 +6925,119 @@ Règles :
           </div>
         </div>{/* fin s-equipe */}
 
+        {/* ── Devis détaillé ── */}
+        <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis détaillé</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Soumission détaillée par poste · génération du contrat</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
+              {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
+              {quoteSaving && <span style={{ fontSize: 11, color: '#7C8089', display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }}/> Enreg…</span>}
+            </div>
+          </div>
+
+          {/* Line items by type */}
+          {['material', 'labor', 'subcontractor', 'other'].map((type) => {
+            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
+            const typeItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
+            return (
+              <div key={type} className="mb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{typeLabels[type]}</p>
+                  <button className="btn-ghost text-xs py-0.5 px-2 text-brand" onClick={() => addQuoteItem(type)}>
+                    <Plus size={11}/> Ligne
+                  </button>
+                </div>
+                {typeItems.length === 0 ? (
+                  <p className="text-xs text-gray-300 italic py-1">Aucun poste</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {typeItems.map((it) => (
+                      <div key={it._i} className="flex items-center gap-1.5 py-1 border-b border-gray-50 last:border-0">
+                        <input
+                          className="input py-1 text-xs flex-1 min-w-0"
+                          placeholder="Description"
+                          value={it.name}
+                          onChange={(e) => updateQuoteItem(it._i, { name: e.target.value })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-14 text-right"
+                          type="number" min="0" step="0.01"
+                          placeholder="Qté"
+                          value={it.qty}
+                          onChange={(e) => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-14"
+                          placeholder="Unité"
+                          value={it.unit}
+                          onChange={(e) => updateQuoteItem(it._i, { unit: e.target.value })}
+                        />
+                        <input
+                          className="input py-1 text-xs w-20 text-right"
+                          type="number" min="0" step="0.01"
+                          placeholder="Prix unit."
+                          value={it.unit_price}
+                          onChange={(e) => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
+                        />
+                        <span className="text-xs text-gray-600 font-medium w-20 text-right flex-shrink-0">
+                          {((Number(it.qty)||1)*(Number(it.unit_price)||0)).toLocaleString('fr-CA',{minimumFractionDigits:2})}$
+                        </span>
+                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => removeQuoteItem(it._i)}>
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Totals */}
+          {quoteBuilderItems.length > 0 && (() => {
+            const subtotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty)||1)*(Number(it.unit_price)||0), 0);
+            const tps = subtotal * 0.05;
+            const tvq = subtotal * 0.09975;
+            const total = subtotal + tps + tvq;
+            const fmt = (v) => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
+            return (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-500"><span>Sous-total</span><span>{fmt(subtotal)}</span></div>
+                <div className="flex justify-between text-gray-400 text-xs"><span>TPS (5%)</span><span>{fmt(tps)}</span></div>
+                <div className="flex justify-between text-gray-400 text-xs"><span>TVQ (9,975%)</span><span>{fmt(tvq)}</span></div>
+                <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100"><span>Total</span><span className="text-brand">{fmt(total)}</span></div>
+              </div>
+            );
+          })()}
+
+          {/* Actions */}
+          <div className="mt-4 flex gap-2 flex-wrap">
+            {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
+              <button
+                className="btn-primary text-xs py-2"
+                onClick={sendQuoteToClient}
+                disabled={quoteSending || !quoteBuilderQuote}
+              >
+                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+                Envoyer au client
+              </button>
+            )}
+            {quoteBuilderQuote && (
+              <button className="btn-secondary text-xs py-2" onClick={() => setPreview({ url: pdf.quoteUrl(quoteBuilderQuote.id), title: 'Soumission' })}>
+                <Eye size={13}/> Aperçu PDF
+              </button>
+            )}
+            {quoteBuilderQuote?.status === 'sent' && (
+              <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
+            )}
+          </div>
+        </div>
+
         {/* ── Médias chantier ── (cream) */}
         {/* ── Fil du chantier ── */}
         <div id="s-feed" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -7343,118 +7461,6 @@ Règles :
         </div>
 
         {/* ── Soumission détaillée ── (white) */}
-        <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis précis</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Soumission détaillée par poste · génération du contrat</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
-              {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
-              {quoteSaving && <span style={{ fontSize: 11, color: '#7C8089', display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }}/> Enreg…</span>}
-            </div>
-          </div>
-
-          {/* Line items by type */}
-          {['material', 'labor', 'subcontractor', 'other'].map((type) => {
-            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
-            const typeItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
-            return (
-              <div key={type} className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{typeLabels[type]}</p>
-                  <button className="btn-ghost text-xs py-0.5 px-2 text-brand" onClick={() => addQuoteItem(type)}>
-                    <Plus size={11}/> Ligne
-                  </button>
-                </div>
-                {typeItems.length === 0 ? (
-                  <p className="text-xs text-gray-300 italic py-1">Aucun poste</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {typeItems.map((it) => (
-                      <div key={it._i} className="flex items-center gap-1.5 py-1 border-b border-gray-50 last:border-0">
-                        <input
-                          className="input py-1 text-xs flex-1 min-w-0"
-                          placeholder="Description"
-                          value={it.name}
-                          onChange={(e) => updateQuoteItem(it._i, { name: e.target.value })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-14 text-right"
-                          type="number" min="0" step="0.01"
-                          placeholder="Qté"
-                          value={it.qty}
-                          onChange={(e) => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-14"
-                          placeholder="Unité"
-                          value={it.unit}
-                          onChange={(e) => updateQuoteItem(it._i, { unit: e.target.value })}
-                        />
-                        <input
-                          className="input py-1 text-xs w-20 text-right"
-                          type="number" min="0" step="0.01"
-                          placeholder="Prix unit."
-                          value={it.unit_price}
-                          onChange={(e) => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
-                        />
-                        <span className="text-xs text-gray-600 font-medium w-20 text-right flex-shrink-0">
-                          {((Number(it.qty)||1)*(Number(it.unit_price)||0)).toLocaleString('fr-CA',{minimumFractionDigits:2})}$
-                        </span>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => removeQuoteItem(it._i)}>
-                          <Trash2 size={12}/>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Totals */}
-          {quoteBuilderItems.length > 0 && (() => {
-            const subtotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty)||1)*(Number(it.unit_price)||0), 0);
-            const tps = subtotal * 0.05;
-            const tvq = subtotal * 0.09975;
-            const total = subtotal + tps + tvq;
-            const fmt = (v) => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
-            return (
-              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-sm">
-                <div className="flex justify-between text-gray-500"><span>Sous-total</span><span>{fmt(subtotal)}</span></div>
-                <div className="flex justify-between text-gray-400 text-xs"><span>TPS (5%)</span><span>{fmt(tps)}</span></div>
-                <div className="flex justify-between text-gray-400 text-xs"><span>TVQ (9,975%)</span><span>{fmt(tvq)}</span></div>
-                <div className="flex justify-between font-bold text-gray-900 text-base pt-1 border-t border-gray-100"><span>Total</span><span className="text-brand">{fmt(total)}</span></div>
-              </div>
-            );
-          })()}
-
-          {/* Actions */}
-          <div className="mt-4 flex gap-2 flex-wrap">
-            {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
-              <button
-                className="btn-primary text-xs py-2"
-                onClick={sendQuoteToClient}
-                disabled={quoteSending || !quoteBuilderQuote}
-              >
-                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
-                Envoyer au client
-              </button>
-            )}
-            {quoteBuilderQuote && (
-              <button className="btn-secondary text-xs py-2" onClick={() => setPreview({ url: pdf.quoteUrl(quoteBuilderQuote.id), title: 'Soumission' })}>
-                <Eye size={13}/> Aperçu PDF
-              </button>
-            )}
-            {quoteBuilderQuote?.status === 'sent' && (
-              <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
-            )}
-          </div>
-        </div>
-
         {/* Invite modal */}
         {showInviteModal && (
           <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
