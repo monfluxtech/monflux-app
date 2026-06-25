@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
@@ -3620,16 +3620,26 @@ CONTEXTE — ressources déjà disponibles :
 ${internalLines || '  (aucune ressource interne renseignée)'}
 ${knownLines || '  (aucun sous-traitant connu en base)'}
 
-Pour CHAQUE corps de métier, génère 3 à 5 fiches en distinguant EXACTEMENT ces 3 types :
-- "internal" : si une ressource interne listée ci-dessus peut couvrir ce métier
-- "known" : si un sous-traitant connu ci-dessus correspond (reprends les vraies infos)
-- "new" : suggère 1-2 nouveaux sous-traitants vraisemblables au Québec — donne une source vérifiable (rbq.gouv.qc.ca, répertoire CCQ, APCHQ, etc.)
+RÈGLES IMPORTANTES :
+1. Pour CHAQUE corps de métier, retourne TOUJOURS au moins 2-3 fiches même si le contexte est vide — utilise des exemples vraisemblables ou des types d'entreprises à chercher.
+2. Distingue EXACTEMENT ces 3 types :
+   - "internal" : ressource interne listée ci-dessus pouvant couvrir ce métier
+   - "known" : sous-traitant connu ci-dessus (reprends ses vraies infos)
+   - "new" : nouvelles entreprises vraisemblables au Québec avec source vérifiable (rbq.gouv.qc.ca, CCQ, APCHQ, CMEQ, CMMTQ, etc.)
+3. Pour CHAQUE fiche, évalue la conformité réglementaire Québec ET inclus un champ "conformite" avec :
+   - "rbq" : "obligatoire" | "non applicable" | "vérifier"
+   - "ccq" : "obligatoire" | "non applicable" | "vérifier"
+   - "insurance" : "obligatoire" | "non applicable" | "vérifier"
+   - "summary" : 1 phrase d'avis de conformité
 
 Réponds en JSON UNIQUEMENT, format strict :
 {"trades":{"Électricité":[
-  {"name":"Jean Tremblay","type":"internal","note":"Électricien dans l'équipe interne","source":"Équipe MONFLUX"},
-  {"name":"Volt Express Inc.","type":"known","note":"Partenaire habituel, bonne fiabilité","phone":"514-555-0101","source":"Base MONFLUX"},
-  {"name":"Courant Plus Montréal","type":"new","note":"Spécialiste résidentiel certifié RBQ","phone":"","website":"rbq.gouv.qc.ca","source":"Répertoire RBQ","source_url":"https://www.rbq.gouv.qc.ca/trouver-un-entrepreneur-ou-un-constructeur-proprietaire.html"}
+  {"name":"Jean Tremblay","type":"internal","note":"Électricien dans l'équipe interne","source":"Équipe MONFLUX","phone":"","email":"",
+   "conformite":{"rbq":"non applicable","ccq":"vérifier","insurance":"obligatoire","summary":"Employé interne — vérifier assurance responsabilité de l'entreprise."}},
+  {"name":"Volt Express Inc.","type":"known","note":"Partenaire habituel","phone":"514-555-0101","source":"Base MONFLUX",
+   "conformite":{"rbq":"obligatoire","ccq":"vérifier","insurance":"obligatoire","summary":"Vérifier licence RBQ active et CCQ avant signature."}},
+  {"name":"CMEQ — Répertoire électriciens","type":"new","note":"Chercher un maître-électricien certifié CMEQ","website":"cmeq.com","source":"CMEQ Québec","source_url":"https://www.cmeq.com/trouver-un-entrepreneur",
+   "conformite":{"rbq":"obligatoire","ccq":"obligatoire","insurance":"obligatoire","summary":"Exiger licence RBQ + certification CCQ + preuve assurance 2M$ min."}}
 ]}}`;
 
     try {
@@ -3834,6 +3844,38 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
 </body></html>`;
     const w = window.open('', '_blank', 'width=960,height=720');
     if (w) { w.document.write(html); w.document.close(); }
+  };
+
+  const addFloRecoToTeam = (tradeName, reco) => {
+    const pType = reco.type === 'internal' ? 'internal' : 'external';
+    const rawRes  = tradeResourcesMap[tradeName] || { internal: [], external: [] };
+    const pParse  = (arr) => (arr||[]).map(p => typeof p === 'string' ? {name:p,status:'a_contacter',phone:'',email:'',location:''} : {phone:'',email:'',location:'',...p});
+    const existing = pParse(rawRes[pType]);
+    if (existing.some(p => p.name === reco.name)) return;
+    const newPerson = { name: reco.name, status: 'a_contacter', phone: reco.phone || '', email: reco.email || '', location: '' };
+    const newList   = [...existing, newPerson];
+    const updated   = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [pType]: newList } };
+    setTradeResourcesMap(updated);
+    localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+    const newPKey = `${tradeName}||${pType}||${existing.length}`;
+    // Pré-remplir conformité si Flo l'a analysée
+    if (reco.conformite) {
+      const confStatus = (v) => v === 'obligatoire' ? undefined : v === 'non applicable' ? false : undefined;
+      const confUpdated = {
+        ...tradeConformite,
+        [newPKey]: {
+          rbq:      { ok: confStatus(reco.conformite.rbq) },
+          ccq:      { ok: confStatus(reco.conformite.ccq) },
+          insurance:{ ok: confStatus(reco.conformite.insurance) },
+          floNotes: reco.conformite.summary || '',
+          floDate:  new Date().toLocaleString('fr-CA', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        }
+      };
+      setTradeConformite(confUpdated);
+      localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(confUpdated));
+    }
+    // Auto-générer le message de contact
+    generateContactMessage(tradeName, newPerson, pType, newPKey);
   };
 
   const generatePhasesFromAI = async () => {
@@ -6340,7 +6382,13 @@ Règles :
 
                     {/* ── Lignes par corps de métier ── */}
                     {rowNames.map((tradeName, idx) => {
-                      const tradePhases = phases.filter(ph => ph.trade_name?.toLowerCase() === tradeName.toLowerCase());
+                      // Phase liée si trade_name exact OU si le nom de la phase mentionne ce corps de métier
+                      const tradeKeywords = tradeName.toLowerCase().split(/[\s,\/&+]+/).filter(w => w.length >= 4);
+                      const tradePhases = phases.filter(ph => {
+                        if (ph.trade_name?.toLowerCase() === tradeName.toLowerCase()) return true;
+                        const pn = (ph.name || '').toLowerCase();
+                        return tradeKeywords.length > 0 && tradeKeywords.some(kw => pn.includes(kw));
+                      });
                       const tradeHours  = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
                       const sortedPh    = [...tradePhases].filter(ph => ph.start_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
                       const minDate     = sortedPh[0]?.start_date;
@@ -6658,7 +6706,10 @@ Règles :
                               {tradePhases.map(phase => {
                                 const phStart = phase.start_date ? fmtDate(phase.start_date) : null;
                                 const phEnd   = phase.end_date   ? fmtDate(phase.end_date)   : null;
-                                const dateStr = phStart ? ` (${phStart}${phEnd && phEnd !== phStart ? ` → ${phEnd}` : ''})` : '';
+                                const phH     = phase.duration_hours ? `${Number(phase.duration_hours) % 1 === 0 ? Number(phase.duration_hours) : Number(phase.duration_hours).toFixed(1)} h` : null;
+                                const dateStr = phStart
+                                  ? ` (${phStart}${phEnd && phEnd !== phStart ? ` → ${phEnd}` : ''}${phH ? ` · ${phH}` : ''})`
+                                  : phH ? ` (${phH})` : '';
                                 return (
                                   <span key={phase.id} onClick={() => setEditPhase(phase)}
                                     style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 8px', cursor: 'pointer' }}>
@@ -6730,53 +6781,79 @@ Règles :
 
                   {/* Résultats par corps de métier */}
                   {hasRecos && Object.entries(tradeRecos).map(([tradeName, recos]) => (
-                    <div key={tradeName} style={{ marginBottom: 14 }}>
+                    <div key={tradeName} style={{ marginBottom: 16 }}>
                       <p style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 8px' }}>{tradeName}</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {(recos || []).map((r, i) => {
                           const tc = typeConf[r.type] || typeConf.new;
-                          const hasSite = !!r.website;
                           const siteHref = r.source_url || (r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null);
+                          const confColor = (v) => v === 'obligatoire' ? '#DC2626' : v === 'non applicable' ? '#9CA3AF' : '#D97706';
+                          const confBg    = (v) => v === 'obligatoire' ? '#FFF5F5' : v === 'non applicable' ? '#F9FAFB' : '#FFFBEB';
                           return (
-                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px', borderRadius: 10, background: tc.bg, border: `1.5px solid ${tc.border}` }}>
-                              <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{tc.icon}</span>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                  <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{r.name}</p>
-                                  <span style={{ fontSize: 9, fontWeight: 800, color: tc.color, background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 999, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>{tc.label}</span>
-                                </div>
-                                {r.note && <p style={{ fontSize: 11, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4 }}>{r.note}</p>}
-                                {r.source && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6' }}>Source :</span>
-                                    {siteHref ? (
-                                      <a href={siteHref} target="_blank" rel="noopener noreferrer"
-                                        style={{ fontSize: 9.5, fontWeight: 700, color: tc.color, textDecoration: 'none' }}>
-                                        {r.source} ↗
-                                      </a>
-                                    ) : (
-                                      <span style={{ fontSize: 9.5, color: '#A8AEB6' }}>{r.source}</span>
-                                    )}
+                            <div key={i} style={{ borderRadius: 11, background: tc.bg, border: `1.5px solid ${tc.border}`, overflow: 'hidden' }}>
+                              {/* Header carte */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px 8px' }}>
+                                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{tc.icon}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{r.name}</p>
+                                    <span style={{ fontSize: 9, fontWeight: 800, color: tc.color, background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 999, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>{tc.label}</span>
                                   </div>
-                                )}
+                                  {r.note && <p style={{ fontSize: 11, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4 }}>{r.note}</p>}
+                                  {r.source && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6' }}>Source :</span>
+                                      {siteHref ? (
+                                        <a href={siteHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, fontWeight: 700, color: tc.color, textDecoration: 'none' }}>{r.source} ↗</a>
+                                      ) : (
+                                        <span style={{ fontSize: 9, color: '#A8AEB6' }}>{r.source}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+
+                              {/* Badges conformité (si disponibles) */}
+                              {r.conformite && (
+                                <div style={{ padding: '6px 12px 6px 38px', background: 'rgba(0,0,0,.03)', borderTop: `1px solid ${tc.border}`, display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
+                                  {['rbq','ccq','insurance'].map(cert => {
+                                    const val = r.conformite[cert];
+                                    if (!val) return null;
+                                    const label = cert === 'insurance' ? 'Assurance' : cert.toUpperCase();
+                                    return (
+                                      <span key={cert} style={{ fontSize: 9, fontWeight: 800, color: confColor(val), background: confBg(val), border: `1px solid ${confColor(val)}30`, borderRadius: 999, padding: '1px 7px' }}>
+                                        {label} · {val}
+                                      </span>
+                                    );
+                                  })}
+                                  {r.conformite.summary && (
+                                    <p style={{ fontSize: 9.5, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4, width: '100%', fontStyle: 'italic' }}>{r.conformite.summary}</p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Actions : contact + ajouter à l'équipe */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderTop: `1px solid ${tc.border}`, flexWrap: 'wrap' }}>
                                 {r.phone && (
-                                  <a href={`tel:${r.phone}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 8px' }}>
+                                  <a href={`tel:${r.phone}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 9px' }}>
                                     📞 {r.phone}
                                   </a>
                                 )}
                                 {r.email && (
-                                  <a href={`mailto:${r.email}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 8px' }}>
+                                  <a href={`mailto:${r.email}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 9px' }}>
                                     ✉ {r.email}
                                   </a>
                                 )}
-                                {hasSite && r.type === 'new' && (
+                                {siteHref && r.type === 'new' && (
                                   <a href={siteHref} target="_blank" rel="noopener noreferrer"
-                                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: tc.color, textDecoration: 'none', background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 6, padding: '3px 8px' }}>
-                                    🔗 Voir le registre ↗
+                                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: tc.color, textDecoration: 'none', background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 6, padding: '3px 9px' }}>
+                                    🔗 Registre ↗
                                   </a>
                                 )}
+                                <button onClick={() => addFloRecoToTeam(tradeName, r)}
+                                  style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, border: 'none', background: tc.color, color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>
+                                  + Ajouter à l'équipe
+                                </button>
                               </div>
                             </div>
                           );
