@@ -17,8 +17,7 @@ const BRAND_BORDER = '#F9D5C0';
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
-  { id: 's-rfq', icon: '🤝', label: 'Demandes de prix' },
-  { id: 's-equipe', icon: '👥', label: 'Équipe et conformité' },
+  { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
@@ -1444,18 +1443,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
             <Download size={10}/> PDF
           </button>
         </div>
-        {/* Rangée 2 : pin | séparateur — Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
+        {/* Rangée 2 : Dates / Dépend. / Cascade / Critique / Aujourd'hui */}
         <div style={{ display:'flex', alignItems:'center', padding:'6px 16px 8px 16px', gap:5 }}>
-          <button
-            onClick={() => hiddenCols.size > 0 ? setHiddenCols(new Set()) : setHiddenCols(new Set(['start','dur_prev','dur_real','assigned','dep_pred','dep_succ']))}
-            title={hiddenCols.size > 0 ? 'Ramener les colonnes à gauche' : 'Déplacer les colonnes optionnelles à droite'}
-            style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:7, flexShrink:0,
-              border:`1.5px solid ${hiddenCols.size > 0 ? BRAND_BORDER : '#E5E7EB'}`,
-              background: hiddenCols.size > 0 ? BRAND_SOFT : '#fff',
-              color: hiddenCols.size > 0 ? BRAND : '#9CA3AF', cursor:'pointer' }}>
-            <Pin size={13}/>
-          </button>
-          <div style={{ width:1, height:16, background:'#E5E7EB', flexShrink:0 }}/>
           <span style={{ flex:1 }}/>
           {[
             [showDates,    ()=>setShowDates(v=>!v),    <Calendar size={10}/>,  'Dates'],
@@ -2868,6 +2857,8 @@ export default function ProjectDetail() {
   const [editPhase, setEditPhase] = useState(null);
   const [tradeRecos, setTradeRecos] = useState(null);
   const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
+  const [showFloPanel, setShowFloPanel] = useState(false);
+  const [floMergePending, setFloMergePending] = useState(null); // recos en attente de choix merge/reset
   const [autoAddingTrades, setAutoAddingTrades] = useState(false);
   const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
   const [tradeResourcesMap, setTradeResourcesMap] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-resources-${id}`) || '{}'); } catch { return {}; } });
@@ -3586,13 +3577,44 @@ export default function ProjectDetail() {
     } catch {}
   }, [tradePersonMsgs, id]);
 
-  // Florence recommande des sous-traitants pour les corps non assignés
-  const fetchTradeRecos = async () => {
+  // Florence recommande des sous-traitants et les ajoute directement dans le tableau
+  const applyFloRecos = (recosMap, mergeMode) => {
+    const pParse = (arr) => (arr||[]).map(p => typeof p === 'string' ? {name:p,status:'a_contacter',phone:'',email:'',location:'',notes:''} : {phone:'',email:'',location:'',notes:'',...p});
+    let updatedMap = mergeMode === 'reset' ? {} : { ...tradeResourcesMap };
+    let updatedConf = { ...tradeConformite };
+    Object.entries(recosMap).forEach(([tradeName, recos]) => {
+      const raw = updatedMap[tradeName] || { internal: [], external: [] };
+      const existing = { internal: pParse(raw.internal), external: pParse(raw.external) };
+      (recos || []).forEach(r => {
+        const pType = r.type === 'internal' ? 'internal' : 'external';
+        if (existing[pType].some(p => p.name === r.name)) return; // déjà présent
+        const newPerson = { name: r.name, status: 'prequalifie_flo', phone: r.phone||'', email: r.email||'', location:'', notes: r.note||'' };
+        existing[pType].push(newPerson);
+        const newPKey = `${tradeName}||${pType}||${existing[pType].length - 1}`;
+        if (r.conformite) {
+          updatedConf[newPKey] = {
+            rbq: { ok: undefined }, ccq: { ok: undefined }, insurance: { ok: undefined },
+            floNotes: r.conformite.summary || '',
+            floDate: new Date().toLocaleString('fr-CA', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }),
+          };
+        }
+      });
+      updatedMap[tradeName] = { internal: existing.internal, external: existing.external };
+    });
+    setTradeResourcesMap(updatedMap);
+    setTradeConformite(updatedConf);
+    localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
+    localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updatedConf));
+    setFloMergePending(null);
+  };
+
+  const fetchTradeRecos = async (mergeMode) => {
     const pParsePers = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p } : p);
-    // Source : Gantt (phases) uniquement — s-rfq est avant l'équipe dans la page
+    // Gantt en priorité + fallback sur les corps de métier déjà dans le tableau
     const allTrades = [...new Set([
       ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
+      ...Object.keys(tradeResourcesMap),
     ])].filter(Boolean);
     if (!allTrades.length) {
       setTradeRecos({});
@@ -3665,7 +3687,21 @@ Réponds en JSON UNIQUEMENT, format strict :
       }
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
-        try { const parsed = JSON.parse(match[0]); setTradeRecos(parsed.trades || {}); } catch { setTradeRecos({}); }
+        try {
+          const parsed = JSON.parse(match[0]);
+          const recos = parsed.trades || {};
+          setTradeRecos(recos);
+          // Auto-peupler le tableau — demander confirmation si données existantes et pas de choix déjà fait
+          const hasExisting = Object.keys(recos).some(t => {
+            const res = tradeResourcesMap[t];
+            return res && ((res.internal||[]).length > 0 || (res.external||[]).length > 0);
+          });
+          if (hasExisting && mergeMode == null) {
+            setFloMergePending(recos); // attendre le choix
+          } else {
+            applyFloRecos(recos, mergeMode || 'merge');
+          }
+        } catch { setTradeRecos({}); }
       } else { setTradeRecos({}); }
     } catch { setTradeRecos({}); } finally { setLoadingTradeRecos(false); }
   };
@@ -6228,17 +6264,97 @@ Règles :
 
         </div>{/* fin s-pipeline */}
 
-        {/* ── Équipe & demande de prix/disponibilités ── */}
+        {/* ── Équipe & conformité ── */}
         <div id="s-equipe" style={{ background: '#F5F0FF', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
 
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>👥</div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
             </div>
+            <button onClick={() => { setShowFloPanel(v => !v); if (!showFloPanel && !tradeRecos) fetchTradeRecos(null); }}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:`1.5px solid ${BRAND}`, background: showFloPanel ? `${BRAND}15` : '#fff', color:BRAND, fontSize:12, fontWeight:800, cursor:'pointer', flexShrink:0 }}>
+              <Sparkles size={13}/>
+              {loadingTradeRecos ? 'Analyse…' : showFloPanel ? 'Masquer Flo' : 'Flo recommande'}
+            </button>
           </div>
+
+          {/* Bannière confirmation merge/reset */}
+          {floMergePending && (
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderRadius:11, background:'#FFFBEB', border:'1.5px solid #FDE68A', marginBottom:16 }}>
+              <Sparkles size={14} color="#D97706"/>
+              <p style={{ fontSize:12, fontWeight:700, color:'#92400E', margin:0, flex:1 }}>Des données existent déjà dans le tableau. Que faire ?</p>
+              <button onClick={() => applyFloRecos(floMergePending, 'merge')}
+                style={{ padding:'5px 13px', borderRadius:7, border:'1.5px solid #D97706', background:'#fff', color:'#D97706', fontSize:11, fontWeight:800, cursor:'pointer' }}>
+                ✓ Ajouter aux existants
+              </button>
+              <button onClick={() => applyFloRecos(floMergePending, 'reset')}
+                style={{ padding:'5px 13px', borderRadius:7, border:'none', background:'#D97706', color:'#fff', fontSize:11, fontWeight:800, cursor:'pointer' }}>
+                🔄 Repartir de zéro
+              </button>
+            </div>
+          )}
+
+          {/* Panneau résultats Flo */}
+          {showFloPanel && (() => {
+            const typeConf = {
+              internal: { label:'Employé interne',    color:'#7C3AED', bg:'#F5F3FF', border:'#DDD6FE', icon:'🏠' },
+              known:    { label:'Sous-traitant connu',color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⭐' },
+              new:      { label:'Nouveau',            color:'#2563EB', bg:'#EFF6FF', border:'#BFDBFE', icon:'🔍' },
+            };
+            const hasRecos = tradeRecos && Object.keys(tradeRecos).length > 0;
+            return (
+              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #E0D5FF', padding:'16px 20px', marginBottom:20 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: hasRecos ? 14 : 4 }}>
+                  <Sparkles size={13} color={BRAND}/>
+                  <p style={{ fontSize:12, fontWeight:700, color:'#3A3D44', margin:0, flex:1 }}>Recommandations Flo — ajoutées automatiquement au tableau</p>
+                  <button onClick={() => fetchTradeRecos(null)} disabled={loadingTradeRecos}
+                    style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 11px', borderRadius:8, border:`1.5px solid ${BRAND}`, background:`${BRAND}10`, fontSize:10.5, fontWeight:700, color:BRAND, cursor:'pointer' }}>
+                    {loadingTradeRecos ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
+                    {loadingTradeRecos ? 'Analyse…' : '↺ Rafraîchir'}
+                  </button>
+                </div>
+                {loadingTradeRecos && (
+                  <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', color:'#9CA3AF' }}>
+                    <Loader2 size={13} className="animate-spin"/> <span style={{ fontSize:12 }}>Flo analyse les corps de métier…</span>
+                  </div>
+                )}
+                {!loadingTradeRecos && !hasRecos && tradeRecos && (
+                  <p style={{ fontSize:11.5, color:'#9CA3AF', fontStyle:'italic', margin:0 }}>Aucune correspondance — ajoute des phases dans le Gantt pour que Flo sache quels corps de métier sont requis.</p>
+                )}
+                {hasRecos && Object.entries(tradeRecos).map(([tradeName, recos]) => (
+                  <div key={tradeName} style={{ marginBottom:12 }}>
+                    <p style={{ fontSize:10, fontWeight:800, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.07em', margin:'0 0 6px' }}>{tradeName}</p>
+                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                      {(recos||[]).map((r, i) => {
+                        const tc = typeConf[r.type] || typeConf.new;
+                        const siteHref = r.source_url || (r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null);
+                        const alreadyAdded = (tradeResourcesMap[tradeName]?.internal||[]).concat(tradeResourcesMap[tradeName]?.external||[]).some(p => (typeof p === 'string' ? p : p.name) === r.name);
+                        return (
+                          <div key={i} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', borderRadius:8, background:tc.bg, border:`1px solid ${tc.border}` }}>
+                            <span style={{ fontSize:13, flexShrink:0 }}>{tc.icon}</span>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <span style={{ fontSize:12, fontWeight:700, color:'#15171C' }}>{r.name}</span>
+                              {r.note && <span style={{ fontSize:10.5, color:'#6B7280', marginLeft:6 }}>{r.note}</span>}
+                            </div>
+                            {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize:10, color:'#2563EB', fontWeight:700, textDecoration:'none', background:'#EFF6FF', borderRadius:5, padding:'2px 7px', flexShrink:0 }}>📞</a>}
+                            {r.email && <a href={`mailto:${r.email}`} style={{ fontSize:10, color:'#2563EB', fontWeight:700, textDecoration:'none', background:'#EFF6FF', borderRadius:5, padding:'2px 7px', flexShrink:0 }}>✉</a>}
+                            {siteHref && <a href={siteHref} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:tc.color, fontWeight:700, textDecoration:'none', background:'#fff', border:`1px solid ${tc.border}`, borderRadius:5, padding:'2px 7px', flexShrink:0 }}>↗</a>}
+                            {alreadyAdded
+                              ? <span style={{ fontSize:10, color:'#16A34A', fontWeight:700, padding:'2px 7px', flexShrink:0 }}>✓ Ajouté</span>
+                              : <button onClick={() => addFloRecoToTeam(tradeName, r)} style={{ fontSize:10, fontWeight:800, color:'#fff', background:tc.color, border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', flexShrink:0 }}>+</button>
+                            }
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {(() => {
             const phases = project.phases || [];
@@ -6253,18 +6369,24 @@ Règles :
 
             // Statuts séparés : interne vs externe
             const internalStatuses = [
-              { key: 'a_contacter', label: 'À contacter',  color: '#E8794E', bg: '#FFF1EB' },
-              { key: 'contacte',    label: 'Contacté',     color: '#F59E0B', bg: '#FFF7E8' },
-              { key: 'disponible',  label: 'Disponible',   color: '#3B82F6', bg: '#EFF6FF' },
-              { key: 'confirme',    label: 'Confirmé',     color: '#16A34A', bg: '#ECFDF3' },
-              { key: 'termine',     label: 'Terminé',      color: '#6B7280', bg: '#F9FAFB' },
+              { key: 'prequalifie_flo', label: '⭐ Pré-qualifié Flo', color: '#7C3AED', bg: '#F5F3FF' },
+              { key: 'a_contacter',     label: 'À contacter',         color: '#E8794E', bg: '#FFF1EB' },
+              { key: 'contacte',        label: 'Contacté',            color: '#F59E0B', bg: '#FFF7E8' },
+              { key: 'disponible',      label: 'Disponible',          color: '#3B82F6', bg: '#EFF6FF' },
+              { key: 'en_negociation',  label: 'En négociation',      color: '#D97706', bg: '#FFFBEB' },
+              { key: 'confirme',        label: 'Confirmé',            color: '#16A34A', bg: '#ECFDF3' },
+              { key: 'refuse',          label: 'Refusé',              color: '#DC2626', bg: '#FFF5F5' },
+              { key: 'termine',         label: 'Terminé',             color: '#6B7280', bg: '#F9FAFB' },
             ];
             const externalStatuses = [
-              { key: 'a_contacter',   label: 'À contacter',    color: '#E8794E', bg: '#FFF1EB' },
-              { key: 'contacte',      label: 'Contacté',       color: '#F59E0B', bg: '#FFF7E8' },
-              { key: 'soumis',        label: 'Soumission reçue',color: '#3B82F6', bg: '#EFF6FF' },
-              { key: 'accepte',       label: 'Accepté',        color: '#16A34A', bg: '#ECFDF3' },
-              { key: 'termine',       label: 'Terminé',        color: '#6B7280', bg: '#F9FAFB' },
+              { key: 'prequalifie_flo', label: '⭐ Pré-qualifié Flo', color: '#7C3AED', bg: '#F5F3FF' },
+              { key: 'a_contacter',     label: 'À contacter',         color: '#E8794E', bg: '#FFF1EB' },
+              { key: 'contacte',        label: 'Contacté',            color: '#F59E0B', bg: '#FFF7E8' },
+              { key: 'soumis',          label: 'Soumission reçue',    color: '#3B82F6', bg: '#EFF6FF' },
+              { key: 'en_negociation',  label: 'En négociation',      color: '#D97706', bg: '#FFFBEB' },
+              { key: 'accepte',         label: 'Accepté',             color: '#16A34A', bg: '#ECFDF3' },
+              { key: 'refuse',          label: 'Refusé',              color: '#DC2626', bg: '#FFF5F5' },
+              { key: 'termine',         label: 'Terminé',             color: '#6B7280', bg: '#F9FAFB' },
             ];
             // Légende unique (union) pour le filtre
             const allStatuses = [...new Map([...internalStatuses, ...externalStatuses].map(s => [s.key, s])).values()];
@@ -6739,204 +6861,48 @@ Règles :
             );
           })()}
 
+          {/* ── Demandes de prix — tableau inline ── */}
+          <div style={{ marginTop: 24, background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0, flex: 1 }}>Demandes de prix (RFQ)</p>
+              {projectRfqs.length > 0 && <span style={{ fontSize: 11, color: '#8B919A' }}>{projectRfqs.length} demande(s)</span>}
+            </div>
+            {projectRfqs.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', padding: '5px 16px', fontSize: 10, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                <span>Titre</span><span>Spécialité</span><span>Échéance</span><span>Invités</span><span/>
+              </div>
+            )}
+            {projectRfqs.map(rfq => (
+              <div key={rfq.id} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', alignItems: 'center', padding: '9px 16px', borderBottom: '1px solid #F9FAFB' }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#15171C', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rfq.title}</p>
+                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.specialty || '—'}</span>
+                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.deadline ? new Date(rfq.deadline).toLocaleDateString('fr-CA') : '—'}</span>
+                <span style={{ fontSize: 11, color: '#6B7280' }}>{rfq.responses_count || 0}</span>
+                <button onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
+                  style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}10`, border: `1px solid ${BRAND}30`, borderRadius: 6, padding: '3px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <UserPlus size={10}/> Inviter
+                </button>
+              </div>
+            ))}
+            {/* Ligne d'ajout inline */}
+            <form onSubmit={createRfq} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 90px 80px', alignItems: 'center', padding: '7px 16px', background: '#FDFEFF' }}>
+              <input style={{ fontSize: 12, border: 'none', outline: 'none', background: 'transparent', color: '#15171C', padding: '3px 0' }}
+                placeholder="+ Nouvelle demande de prix…" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f, title: e.target.value}))} required/>
+              <input style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#6B7280', padding: '3px 0' }}
+                placeholder="Spécialité" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f, specialty: e.target.value}))}/>
+              <input type="date" style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#6B7280', padding: '3px 0' }}
+                value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f, deadline: e.target.value}))}/>
+              <span/>
+              {rfqForm.title && (
+                <button type="submit" style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: BRAND, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                  Créer
+                </button>
+              )}
+            </form>
+          </div>
+
         </div>{/* fin s-equipe */}
 
-        {/* ── Demandes de prix ── */}
-        <div id="s-rfq" style={{ background: '#FFF8F0', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de prix</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>RFQ aux sous-traitants et recommandations Flo</div>
-            </div>
-          </div>
-
-          {/* ── Demandes de prix + Flo recommande ── */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 11, background: '#F0EBFD', display: 'grid', placeItems: 'center', fontSize: 18 }}>🤝</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Demandes de prix</p>
-                <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>RFQ aux sous-traitants{projectRfqs.length > 0 ? ` · ${projectRfqs.length} demande(s)` : ''}</p>
-              </div>
-              <button className="btn-secondary text-xs" onClick={() => setShowRfqForm(v => !v)}>
-                <Plus size={13}/> {t('create_rfq')}
-              </button>
-            </div>
-
-            {/* ── Flo recommande — intégré dans la section ── */}
-            {(() => {
-              const typeConf = {
-                internal: { label: 'Employé interne', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', icon: '🏠' },
-                known:    { label: 'Sous-traitant connu', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', icon: '⭐' },
-                new:      { label: 'Nouveau', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', icon: '🔍' },
-              };
-              const hasRecos = tradeRecos && Object.keys(tradeRecos).length > 0;
-
-              return (
-                <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F3F5', background: '#FAFBFF' }}>
-                  {/* Titre + bouton */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasRecos ? 14 : 0 }}>
-                    <Sparkles size={13} color={BRAND}/>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44', margin: 0, flex: 1 }}>Flo recommande des ressources & sous-traitants</p>
-                    <button onClick={fetchTradeRecos} disabled={loadingTradeRecos}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: loadingTradeRecos ? '#F9F9F9' : `${BRAND}10`, fontSize: 11, fontWeight: 700, color: BRAND, cursor: loadingTradeRecos ? 'wait' : 'pointer' }}>
-                      {loadingTradeRecos ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>}
-                      {loadingTradeRecos ? 'Analyse en cours…' : tradeRecos ? 'Rafraîchir' : 'Trouver des sous-traitants'}
-                    </button>
-                  </div>
-
-                  {/* Légende des types */}
-                  {hasRecos && (
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                      {Object.entries(typeConf).map(([key, tc]) => (
-                        <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 700, color: tc.color, background: tc.bg, border: `1px solid ${tc.border}`, borderRadius: 999, padding: '2px 9px' }}>
-                          {tc.icon} {tc.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Résultats par corps de métier */}
-                  {hasRecos && Object.entries(tradeRecos).map(([tradeName, recos]) => (
-                    <div key={tradeName} style={{ marginBottom: 16 }}>
-                      <p style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 8px' }}>{tradeName}</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {(recos || []).map((r, i) => {
-                          const tc = typeConf[r.type] || typeConf.new;
-                          const siteHref = r.source_url || (r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null);
-                          const confColor = (v) => v === 'obligatoire' ? '#DC2626' : v === 'non applicable' ? '#9CA3AF' : '#D97706';
-                          const confBg    = (v) => v === 'obligatoire' ? '#FFF5F5' : v === 'non applicable' ? '#F9FAFB' : '#FFFBEB';
-                          return (
-                            <div key={i} style={{ borderRadius: 11, background: tc.bg, border: `1.5px solid ${tc.border}`, overflow: 'hidden' }}>
-                              {/* Header carte */}
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px 8px' }}>
-                                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{tc.icon}</span>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{r.name}</p>
-                                    <span style={{ fontSize: 9, fontWeight: 800, color: tc.color, background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 999, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>{tc.label}</span>
-                                  </div>
-                                  {r.note && <p style={{ fontSize: 11, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4 }}>{r.note}</p>}
-                                  {r.source && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6' }}>Source :</span>
-                                      {siteHref ? (
-                                        <a href={siteHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, fontWeight: 700, color: tc.color, textDecoration: 'none' }}>{r.source} ↗</a>
-                                      ) : (
-                                        <span style={{ fontSize: 9, color: '#A8AEB6' }}>{r.source}</span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Badges conformité (si disponibles) */}
-                              {r.conformite && (
-                                <div style={{ padding: '6px 12px 6px 38px', background: 'rgba(0,0,0,.03)', borderTop: `1px solid ${tc.border}`, display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}>
-                                  {['rbq','ccq','insurance'].map(cert => {
-                                    const val = r.conformite[cert];
-                                    if (!val) return null;
-                                    const label = cert === 'insurance' ? 'Assurance' : cert.toUpperCase();
-                                    return (
-                                      <span key={cert} style={{ fontSize: 9, fontWeight: 800, color: confColor(val), background: confBg(val), border: `1px solid ${confColor(val)}30`, borderRadius: 999, padding: '1px 7px' }}>
-                                        {label} · {val}
-                                      </span>
-                                    );
-                                  })}
-                                  {r.conformite.summary && (
-                                    <p style={{ fontSize: 9.5, color: '#6B7280', margin: '3px 0 0', lineHeight: 1.4, width: '100%', fontStyle: 'italic' }}>{r.conformite.summary}</p>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Actions : contact + ajouter à l'équipe */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderTop: `1px solid ${tc.border}`, flexWrap: 'wrap' }}>
-                                {r.phone && (
-                                  <a href={`tel:${r.phone}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 9px' }}>
-                                    📞 {r.phone}
-                                  </a>
-                                )}
-                                {r.email && (
-                                  <a href={`mailto:${r.email}`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#2563EB', textDecoration: 'none', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '3px 9px' }}>
-                                    ✉ {r.email}
-                                  </a>
-                                )}
-                                {siteHref && r.type === 'new' && (
-                                  <a href={siteHref} target="_blank" rel="noopener noreferrer"
-                                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: tc.color, textDecoration: 'none', background: '#fff', border: `1px solid ${tc.border}`, borderRadius: 6, padding: '3px 9px' }}>
-                                    🔗 Registre ↗
-                                  </a>
-                                )}
-                                <button onClick={() => addFloRecoToTeam(tradeName, r)}
-                                  style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, border: 'none', background: tc.color, color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>
-                                  + Ajouter à l'équipe
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  {tradeRecos && !hasRecos && !loadingTradeRecos && (
-                    <p style={{ fontSize: 11.5, color: '#9CA3AF', fontStyle: 'italic', margin: '8px 0 0' }}>
-                      Flo n'a pas trouvé de correspondance pour les corps de métier actifs.
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            <div style={{ padding: '14px 20px' }}>
-              {showRfqForm && (
-                <form onSubmit={createRfq} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><label className="label">Titre *</label><input className="input" value={rfqForm.title} onChange={e => setRfqForm(f => ({...f,title:e.target.value}))} placeholder="Ex: Demande de prix — Électricité" required /></div>
-                    <div><label className="label">Spécialité</label><input className="input" value={rfqForm.specialty} onChange={e => setRfqForm(f => ({...f,specialty:e.target.value}))} placeholder="Électricité, Plomberie…" /></div>
-                  </div>
-                  <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={rfqForm.description} onChange={e => setRfqForm(f => ({...f,description:e.target.value}))} placeholder="Portée des travaux…"/></div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><label className="label">Date limite</label><input className="input" type="date" value={rfqForm.deadline} onChange={e => setRfqForm(f => ({...f,deadline:e.target.value}))}/></div>
-                    <div className="flex items-end gap-2">
-                      <button type="button" className="btn-secondary flex-1 text-xs" onClick={() => setShowRfqForm(false)}>Annuler</button>
-                      <button type="submit" className="btn-primary flex-1 text-xs">Créer</button>
-                    </div>
-                  </div>
-                </form>
-              )}
-
-              {projectRfqs.length === 0 && !showRfqForm ? (
-                <div className="text-center py-5">
-                  <Users size={26} className="text-gray-200 mx-auto mb-2"/>
-                  <p className="text-sm text-gray-400">Créez des demandes de prix aux sous-traitants directement depuis ce projet.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {projectRfqs.map(rfq => (
-                    <div key={rfq.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{rfq.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {rfq.specialty && <span className="badge badge-gray text-xs">{rfq.specialty}</span>}
-                          {rfq.deadline && <span className="text-xs text-gray-400">Échéance: {new Date(rfq.deadline).toLocaleDateString('fr-CA')}</span>}
-                          <span className="text-xs text-gray-400">{rfq.responses_count || 0} invité(s)</span>
-                        </div>
-                      </div>
-                      <button
-                        className="btn-secondary text-xs py-1"
-                        onClick={() => { setShowInviteModal(rfq.id); setSelectedSubIds([]); }}
-                      >
-                        <UserPlus size={12}/> Inviter
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>{/* fin s-rfq */}
 
         {/* ── Devis détaillé ── */}
         <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
