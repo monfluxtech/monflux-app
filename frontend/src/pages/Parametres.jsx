@@ -434,15 +434,21 @@ function TeamTab() {
 }
 
 const DEFAULT_SUPPLIERS = [
-  { id: 'rona', name: 'Rona', url: 'https://www.rona.ca', active: true },
-  { id: 'homedepot', name: 'Home Depot Canada', url: 'https://www.homedepot.ca', active: true },
-  { id: 'lowes', name: "Lowe's Canada", url: 'https://www.lowescanada.ca', active: true },
-  { id: 'patrickmorin', name: 'Patrick Morin', url: 'https://www.patrickmorin.com', active: true },
-  { id: 'canac', name: 'Canac', url: 'https://www.canac.ca', active: true },
-  { id: 'bmr', name: 'BMR', url: 'https://www.bmr.ca', active: false },
-  { id: 'richelieu', name: 'Richelieu', url: 'https://www.richelieu.com', active: false },
-  { id: 'ikea', name: 'IKEA Canada', url: 'https://www.ikea.com/ca', active: false },
-  { id: 'maisondumonde', name: 'Maison du monde', url: 'https://www.maisonsdumonde.com/CA', active: false },
+  // Quincailleries QC — scraped via Apify/API
+  { id: 'homedepot',      name: 'Home Depot Canada',  url: 'https://www.homedepot.ca',          active: true,  scraperKey: 'homedepot' },
+  { id: 'rona',           name: 'Rona',               url: 'https://www.rona.ca',               active: true,  scraperKey: 'rona' },
+  { id: 'canadiantire',   name: 'Canadian Tire',       url: 'https://www.canadiantire.ca',       active: false, scraperKey: 'canadiantire' },
+  { id: 'lowes',          name: "Lowe's Canada",       url: 'https://www.lowescanada.ca',        active: false, scraperKey: null },
+  { id: 'patrickmorin',   name: 'Patrick Morin',       url: 'https://www.patrickmorin.com',      active: false, scraperKey: null },
+  { id: 'canac',          name: 'Canac',               url: 'https://www.canac.ca',              active: false, scraperKey: null },
+  { id: 'bmr',            name: 'BMR',                 url: 'https://www.bmr.ca',               active: false, scraperKey: null },
+  { id: 'richelieu',      name: 'Richelieu',           url: 'https://www.richelieu.com',         active: false, scraperKey: null },
+  { id: 'ikea',           name: 'IKEA Canada',         url: 'https://www.ikea.com/ca',           active: false, scraperKey: null },
+  // Marketplaces — scraped via Apify
+  { id: 'amazon',         name: 'Amazon.ca',           url: 'https://www.amazon.ca',             active: false, scraperKey: 'amazon' },
+  { id: 'aliexpress',     name: 'AliExpress',          url: 'https://www.aliexpress.com',        active: false, scraperKey: 'aliexpress' },
+  { id: 'kijiji',         name: 'Kijiji',              url: 'https://www.kijiji.ca',             active: false, scraperKey: 'kijiji' },
+  { id: 'facebook',       name: 'Facebook Marketplace',url: 'https://www.facebook.com/marketplace', active: false, scraperKey: 'facebook' },
 ];
 
 function SuppliersTab() {

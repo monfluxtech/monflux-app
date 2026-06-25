@@ -2952,6 +2952,7 @@ export default function ProjectDetail() {
   const [lightboxItem, setLightboxItem] = useState(null);
   const [showMediaForm, setShowMediaForm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  const [photoDragOver, setPhotoDragOver] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
   const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
@@ -3163,8 +3164,9 @@ Pour chaque item : element = nom de l'élément, detail = description précise, 
   };
 
   // ── Descriptif : générer prévisualisation IA via Pollinations ──
-  const generatePreview = async () => {
-    if (!floGenPrompt.trim()) return;
+  const generatePreview = async (textOverride) => {
+    const visionText = (textOverride || floGenPrompt || (project.field_assessment?.vision?.text) || '').trim();
+    if (!visionText) return;
     setFloGenLoading(true);
     try {
       const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
@@ -3173,13 +3175,14 @@ Pour chaque item : element = nom de l'élément, detail = description précise, 
       const visionCtx = [
         project.description && `Projet: ${project.description}`,
         fa.work_type && `Type: ${fa.work_type}`,
+        fa.vision?.text && `Vision du client: ${fa.vision.text}`,
         (fa.vision?.inspirations || []).length && `Inspirations: ${fa.vision.inspirations.join(', ')}`,
       ].filter(Boolean).join('\n');
       // Flo génère un prompt d'image optimisé
       const promptRes = await fetch(`${API_BASE}/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messages: [{ role: 'user', content: `Tu es Florence, IA MONFLUX. Génère un prompt d'image en anglais (max 200 mots) pour prévisualiser le résultat final de ces travaux de rénovation. Le prompt doit décrire la pièce/espace rénovée de façon réaliste et photogénique (style photo de magazine immobilier).
-Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${floGenPrompt.trim()}\nRéponds UNIQUEMENT avec le prompt en anglais, rien d'autre.` }] }),
+Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQUEMENT avec le prompt en anglais, rien d'autre.` }] }),
       });
       const reader = promptRes.body.getReader(); const dec2 = new TextDecoder(); let imgPrompt = '';
       while (true) {
@@ -3192,7 +3195,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${floGenPrompt.trim()}\nRépo
       // Génération image via Pollinations.ai
       const seed = Math.floor(Date.now() / 1000);
       const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt + ', interior design, architectural rendering, photorealistic, 8k')}?width=1024&height=768&seed=${seed}&nologo=true`;
-      const newPrev = { id: Date.now(), prompt: floGenPrompt, img_prompt: imgPrompt, url: imageUrl };
+      const newPrev = { id: Date.now(), prompt: visionText, img_prompt: imgPrompt, url: imageUrl };
       const nextPreviews = [newPrev, ...generatedPreviews];
       setGeneratedPreviews(nextPreviews);
       localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(nextPreviews));
@@ -3222,10 +3225,16 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${floGenPrompt.trim()}\nRépo
       // Fournisseurs actifs depuis les settings
       const savedSuppliers = JSON.parse(localStorage.getItem('monflux-suppliers') || '[]');
       const supplierKeys = savedSuppliers.filter(s => s.active).map(s => {
+        // Utilise scraperKey si présent (nouveau format), sinon détection par nom
+        if (s.scraperKey) return s.scraperKey;
         const n = s.name.toLowerCase();
         if (n.includes('home depot')) return 'homedepot';
         if (n.includes('canadian tire')) return 'canadiantire';
         if (n.includes('rona')) return 'rona';
+        if (n.includes('amazon')) return 'amazon';
+        if (n.includes('aliexpress')) return 'aliexpress';
+        if (n.includes('kijiji')) return 'kijiji';
+        if (n.includes('facebook')) return 'facebook';
         return null;
       }).filter(Boolean);
       // Par défaut : Home Depot + Rona
@@ -5723,112 +5732,128 @@ Règles :
                 )}
               </div>
 
-              {/* ─── 2. Photos actuelles & documents reçus ─── */}
-              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}>
+              {/* ─── 2. Photos et documents pré-chantier ─── */}
+              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}
+                onDragOver={e => { e.preventDefault(); setPhotoDragOver(true); }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setPhotoDragOver(false); }}
+                onDrop={async e => {
+                  e.preventDefault(); setPhotoDragOver(false);
+                  const droppedFiles = Array.from(e.dataTransfer.files);
+                  if (!droppedFiles.length) return;
+                  const token = localStorage.getItem('token');
+                  for (const file of droppedFiles) {
+                    const fd = new FormData();
+                    fd.append('file', file); fd.append('project_id', id);
+                    fd.append('type', file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document');
+                    fd.append('caption', file.name);
+                    try {
+                      const res = await fetch(`${PROJ_API_BASE}/media`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+                      if (res.ok) { const data = await res.json(); setMedia(prev => [data, ...prev]); }
+                    } catch {}
+                  }
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 10px' }}>
-                  <SubLabel>Photos actuelles & documents reçus</SubLabel>
+                  <SubLabel>Photos et documents pré-chantier</SubLabel>
                   {(media.length > 0 || (project.documents || []).length > 0) && (
                     <span style={{ fontSize: 10, color: '#C4C8CE' }}>{media.length + (project.documents || []).length} fichier{media.length + (project.documents || []).length !== 1 ? 's' : ''}</span>
                   )}
+                  {photoDragOver && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: BRAND, fontWeight: 700, background: `${BRAND}12`, border: `1.5px dashed ${BRAND}`, borderRadius: 7, padding: '3px 10px' }}>
+                      Déposer ici
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', alignItems: 'flex-start' }}>
+                  {media.map(m => (
+                    <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
+                      onClick={() => setLightboxItem(m)}>
+                      {m.type === 'photo' && m.url
+                        ? <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        : m.type === 'video'
+                          ? <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
+                          : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>}
+                      {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
+                    </div>
+                  ))}
+                  {(project.documents || []).map(d => (
+                    <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
+                      onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
+                      <span style={{ fontSize: 26 }}>📄</span>
+                      <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
+                    </div>
+                  ))}
+                  {/* Tuile + toujours présente à la fin */}
                   <button onClick={() => setShowCapture(true)}
-                    style={{ marginLeft: 'auto', fontSize: 11, color: BRAND, fontWeight: 700, background: 'rgba(232,121,78,.06)', border: `1px dashed rgba(232,121,78,.3)`, borderRadius: 7, padding: '4px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Camera size={12}/> Ajouter
+                    style={{ flexShrink: 0, width: 90, height: 90, borderRadius: 10, border: '1.5px dashed #D1D5DB', background: photoDragOver ? `${BRAND}08` : '#F9FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', color: '#9CA3AF', transition: 'all .15s', padding: 0 }}>
+                    <Plus size={20} strokeWidth={1.5}/>
+                    <span style={{ fontSize: 9.5 }}>Ajouter</span>
                   </button>
                 </div>
-                {(media.length > 0 || (project.documents || []).length > 0) ? (
-                  <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
-                    {media.map(m => (
-                      <div key={m.id} style={{ flexShrink: 0, width: 130, height: 96, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
-                        onClick={() => setLightboxItem(m)}>
-                        {m.type === 'photo' && m.url
-                          ? <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                          : m.type === 'video'
-                            ? <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
-                            : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>}
-                        {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
-                      </div>
-                    ))}
-                    {(project.documents || []).map(d => (
-                      <div key={d.id} style={{ flexShrink: 0, width: 130, height: 96, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
-                        onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
-                        <span style={{ fontSize: 28 }}>📄</span>
-                        <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: 12, color: '#B0B3BA', margin: '4px 0 0' }}>Aucune photo ou document reçu du client pour l'instant.</p>
+                {(media.length === 0 && (project.documents || []).length === 0) && !photoDragOver && (
+                  <p style={{ fontSize: 11.5, color: '#B0B3BA', margin: '2px 0 0', fontStyle: 'italic' }}>Glisse des fichiers ici ou clique sur + pour ajouter des photos et documents.</p>
                 )}
               </div>
 
-              {/* ─── 3. Vision ─── */}
-              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}>
+              {/* ─── 3. Vision + Prévisualisation IA ─── */}
+              <div style={{ padding: '0 56px 26px', borderTop: '1px solid #F4F5F6' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 12px' }}>
                   <SubLabel>Vision</SubLabel>
-                  <span style={{ fontSize: 10.5, color: '#9CA3AF', fontStyle: 'italic' }}>Images d'inspiration · Plans d'architecte</span>
                 </div>
 
-                {/* Inspirations */}
-                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 8 }}>Images d'inspiration</p>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <input value={visionInspirationInput} onChange={e => setVisionInspirationInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') addInspiration(visionInspirationInput); }}
-                    placeholder="Colle une URL Pinterest, Houzz, Instagram… ou décris le style"
-                    style={{ flex: 1, padding: '7px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', color: '#15171C' }}/>
-                  <button onClick={() => addInspiration(visionInspirationInput)} disabled={!visionInspirationInput.trim()}
-                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: visionInspirationInput.trim() ? 1 : 0.4 }}>
-                    Ajouter
+                {/* Zone texte vision + bouton génération côte à côte */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
+                  <textarea
+                    value={vision.text || ''}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setProject(p => ({ ...p, field_assessment: { ...(p.field_assessment || {}), vision: { ...(p.field_assessment?.vision || {}), text: v } } }));
+                    }}
+                    onBlur={e => saveVisionField({ text: e.target.value })}
+                    rows={4}
+                    placeholder="Décris la vision du projet, le style souhaité, les matériaux envisagés… Colle des liens Pinterest, Houzz, Instagram ou toute référence."
+                    style={{ flex: 1, padding: '10px 13px', border: '1.5px solid #E0E4E8', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', color: '#15171C', lineHeight: 1.65 }}
+                  />
+                  <button onClick={() => generatePreview(vision.text)}
+                    disabled={floGenLoading || !(vision.text || '').trim()}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '12px 14px', borderRadius: 10, border: 'none', background: BRAND, color: '#fff', fontSize: 11, fontWeight: 700, cursor: floGenLoading || !(vision.text || '').trim() ? 'default' : 'pointer', opacity: !(vision.text || '').trim() ? 0.4 : 1, flexShrink: 0, minWidth: 80, alignSelf: 'stretch' }}>
+                    {floGenLoading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={15}/>}
+                    <span style={{ lineHeight: 1.3, textAlign: 'center' }}>{floGenLoading ? 'Génération…' : 'Générer\nprévisualisation'}</span>
                   </button>
                 </div>
-                {inspirations.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                    {inspirations.map((url, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F3F4F6', borderRadius: 20, padding: '4px 10px 4px 12px', fontSize: 11, color: '#374151', maxWidth: 320 }}>
-                        {url.startsWith('http') ? (
-                          <a href={url} target="_blank" rel="noreferrer" style={{ color: BRAND, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>🔗 {url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}</a>
-                        ) : (
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>💬 {url}</span>
-                        )}
-                        <button onClick={() => removeInspiration(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {inspirations.length === 0 && (
-                  <p style={{ fontSize: 11.5, color: '#C4C8CE', margin: '0 0 14px', fontStyle: 'italic' }}>Aucune inspiration ajoutée — colle des URLs ou décris le style souhaité.</p>
-                )}
 
-                {/* Plans d'architecte */}
-                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '18px 0 8px' }}>Plans d'architecte</p>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Plans d'architecte — scrollable horizontal */}
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Plans d'architecte</p>
                   <input ref={planUploadRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
                     onChange={e => { const f = e.target.files?.[0]; if (f) analyzePlan(f); e.target.value = ''; }}/>
-                  <button onClick={() => planUploadRef.current?.click()}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: `1.5px dashed #D1D5DB`, background: '#F9FAFB', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    📐 {planUrl ? 'Remplacer le plan' : 'Uploader un plan (image ou PDF)'}
-                  </button>
-                  {planAnalysisLoading && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: BRAND }}>
-                      <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }}/> Flo analyse le plan…
-                    </div>
-                  )}
-                  {planUrl && !planAnalysisLoading && (
-                    <a href={planUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: BRAND, textDecoration: 'none', fontWeight: 600 }}>Voir plan ↗</a>
-                  )}
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', alignItems: 'flex-start' }}>
+                    {planUrl && (
+                      <div style={{ flexShrink: 0, width: 110, height: 82, borderRadius: 9, border: `1.5px solid ${BRAND}40`, background: `${BRAND}06`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', position: 'relative' }}
+                        onClick={() => window.open(planUrl, '_blank')}>
+                        <span style={{ fontSize: 26 }}>📐</span>
+                        <span style={{ fontSize: 9.5, color: BRAND, fontWeight: 600 }}>Voir plan ↗</span>
+                        {planAnalysisLoading && (
+                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 9 }}>
+                            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: BRAND }}/>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Tuile + pour uploader un plan */}
+                    <button onClick={() => planUploadRef.current?.click()}
+                      style={{ flexShrink: 0, width: 90, height: 82, borderRadius: 9, border: '1.5px dashed #D1D5DB', background: '#F9FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', color: '#9CA3AF', padding: 0 }}>
+                      <Plus size={18} strokeWidth={1.5}/>
+                      <span style={{ fontSize: 9.5 }}>{planUrl ? 'Remplacer' : 'Plan'}</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Tableau d'analyse du plan */}
+                {/* Tableau analyse du plan */}
                 {storedAnalysis && (
-                  <div style={{ marginTop: 16 }}>
-                    {/* Infos générales */}
+                  <div style={{ marginTop: 4 }}>
                     {storedAnalysis.general && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                        {[
-                          ['Superficie', storedAnalysis.general.superficie_totale],
-                          ['Pièces', storedAnalysis.general.nb_pieces],
-                          ['Style', storedAnalysis.general.style],
-                          ['Contraintes', storedAnalysis.general.contraintes_particulieres],
-                        ].filter(([, v]) => v).map(([label, val]) => (
+                        {[['Superficie', storedAnalysis.general.superficie_totale], ['Pièces', storedAnalysis.general.nb_pieces], ['Style', storedAnalysis.general.style], ['Contraintes', storedAnalysis.general.contraintes_particulieres]].filter(([, v]) => v).map(([label, val]) => (
                           <div key={label} style={{ background: '#F8F9FA', borderRadius: 8, padding: '5px 12px', border: '1px solid #E8EAED' }}>
                             <span style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block' }}>{label}</span>
                             <span style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>{val}</span>
@@ -5836,7 +5861,6 @@ Règles :
                         ))}
                       </div>
                     )}
-                    {/* Tableau par spécialisation */}
                     {(storedAnalysis.specialisations || []).filter(s => s.items?.length > 0).map(spec => (
                       <div key={spec.metier} style={{ marginBottom: 16 }}>
                         <p style={{ fontSize: 10.5, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -5868,54 +5892,32 @@ Règles :
                     ))}
                   </div>
                 )}
-              </div>
 
-              {/* ─── 4. Génération IA — prévisualisation ─── */}
-              <div style={{ padding: '0 56px 26px', borderTop: '1px solid #F4F5F6' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 12px' }}>
-                  <SubLabel>Prévisualisation IA</SubLabel>
-                  <span style={{ fontSize: 10.5, color: '#9CA3AF', fontStyle: 'italic' }}>Génère des rendus du résultat final</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <textarea value={floGenPrompt} onChange={e => setFloGenPrompt(e.target.value)}
-                    rows={2}
-                    placeholder={`Décris la pièce après rénovation : "cuisine moderne scandinave avec îlot de quartz blanc, armoires gris anthracite, plancher de chêne naturel"…`}
-                    style={{ flex: 1, padding: '9px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', color: '#15171C', lineHeight: 1.5 }}/>
-                  <button onClick={generatePreview} disabled={floGenLoading || !floGenPrompt.trim()}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: floGenLoading || !floGenPrompt.trim() ? 'default' : 'pointer', opacity: !floGenPrompt.trim() ? 0.45 : 1, flexShrink: 0, alignSelf: 'stretch' }}>
-                    {floGenLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={13}/>}
-                    {floGenLoading ? 'Génération…' : 'Générer'}
-                  </button>
-                </div>
-                <p style={{ fontSize: 10.5, color: '#B0B3BA', margin: '6px 0 14px', lineHeight: 1.5 }}>
-                  Flo optimise ta description puis génère un rendu photoréaliste. Le contexte du projet (adresse, type de travaux, inspirations) est inclus automatiquement.
-                </p>
+                {/* Rendus générés */}
                 {generatedPreviews.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-                    {generatedPreviews.map(prev => (
-                      <div key={prev.id} style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA' }}>
-                        <img src={prev.url} alt={prev.prompt} loading="lazy"
-                          style={{ width: '100%', height: 180, objectFit: 'cover', display: 'block' }}
-                          onError={e => { e.target.style.display = 'none'; }}/>
-                        <div style={{ padding: '8px 12px 10px' }}>
-                          <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4 }}>{prev.prompt}</p>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                            <a href={prev.url} target="_blank" rel="noreferrer"
-                              style={{ fontSize: 10, color: BRAND, fontWeight: 700, textDecoration: 'none' }}>Voir grand ↗</a>
-                            <button onClick={() => {
-                              const next = generatedPreviews.filter(p => p.id !== prev.id);
-                              setGeneratedPreviews(next);
-                              localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(next));
-                            }}
-                              style={{ fontSize: 10, color: '#D1D5DB', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Supprimer</button>
+                  <div style={{ marginTop: 16 }}>
+                    <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 10px' }}>Prévisualisations générées</p>
+                    <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
+                      {generatedPreviews.map(prev => (
+                        <div key={prev.id} style={{ flexShrink: 0, width: 240, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA' }}>
+                          <img src={prev.url} alt={prev.prompt} loading="lazy"
+                            style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
+                            onError={e => { e.target.style.display = 'none'; }}/>
+                          <div style={{ padding: '8px 10px 9px' }}>
+                            <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{prev.prompt}</p>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <a href={prev.url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: BRAND, fontWeight: 700, textDecoration: 'none' }}>Voir grand ↗</a>
+                              <button onClick={() => { const next = generatedPreviews.filter(p => p.id !== prev.id); setGeneratedPreviews(next); localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(next)); }}
+                                style={{ fontSize: 10, color: '#D1D5DB', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Supprimer</button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
-                {generatedPreviews.length === 0 && !floGenLoading && (
-                  <p style={{ fontSize: 11.5, color: '#C4C8CE', fontStyle: 'italic' }}>Aucun rendu généré. Décris le résultat souhaité et clique "Générer".</p>
+                {generatedPreviews.length === 0 && !floGenLoading && (vision.text || '').trim() && (
+                  <p style={{ fontSize: 11.5, color: '#C4C8CE', fontStyle: 'italic', marginTop: 6 }}>Clique "Générer prévisualisation" pour voir un rendu photoréaliste du résultat final.</p>
                 )}
               </div>
 

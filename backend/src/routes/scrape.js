@@ -91,6 +91,128 @@ async function scrapeCanadianTire(query, maxItems = 6) {
   }));
 }
 
+// ─── Amazon via Apify igview-owner/amazon-product-data-scraper ──────────────
+async function scrapeAmazon(query, maxItems = 6) {
+  if (!APIFY_TOKEN) throw new Error('APIFY_API_TOKEN non configuré');
+  const url = `${APIFY_BASE}/q0wbO1lB6L73SEax7/run-sync-get-dataset-items` +
+    `?token=${APIFY_TOKEN}&timeout=90&memory=256&format=json`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword: query, maxItems, country: 'CA' }),
+    signal: AbortSignal.timeout(100_000),
+  });
+  if (!res.ok) throw new Error(`Apify Amazon ${res.status}`);
+  const data = await res.json();
+  return (Array.isArray(data) ? data : []).slice(0, maxItems).map(item => ({
+    id:            `amz-${item.asin || item.id || Math.random().toString(36).slice(2)}`,
+    nom:           item.title || item.name || '',
+    prix_unitaire: Number(item.price || item.currentPrice || 0) || null,
+    unite:         'un.',
+    url_source:    item.url || item.productUrl || `https://www.amazon.ca/s?k=${encodeURIComponent(query)}`,
+    url_image:     item.thumbnailImage || item.image || '',
+    fournisseur:   'Amazon.ca',
+    sku:           item.asin || '',
+    disponible:    item.isAvailable !== false,
+    note:          (item.description || item.about || '').slice(0, 120),
+    rating:        item.rating || null,
+    source_verified: true,
+    source_type:   'apify',
+  }));
+}
+
+// ─── Facebook Marketplace via Apify apify/facebook-marketplace-scraper ───────
+async function scrapeFacebookMarketplace(query, location = 'Montreal, QC', maxItems = 6) {
+  if (!APIFY_TOKEN) throw new Error('APIFY_API_TOKEN non configuré');
+  const url = `${APIFY_BASE}/U5DUNxhH3qKt5PnCf/run-sync-get-dataset-items` +
+    `?token=${APIFY_TOKEN}&timeout=120&memory=512&format=json`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      startUrls: [{ url: `https://www.facebook.com/marketplace/montreal/search/?query=${encodeURIComponent(query)}` }],
+      maxItems,
+    }),
+    signal: AbortSignal.timeout(130_000),
+  });
+  if (!res.ok) throw new Error(`Apify FB Marketplace ${res.status}`);
+  const data = await res.json();
+  return (Array.isArray(data) ? data : []).slice(0, maxItems).map(item => ({
+    id:            `fb-${item.id || item.listingId || Math.random().toString(36).slice(2)}`,
+    nom:           item.title || item.name || '',
+    prix_unitaire: Number(item.price || item.priceAmount || 0) || null,
+    unite:         'un.',
+    url_source:    item.url || item.listingUrl || 'https://www.facebook.com/marketplace/',
+    url_image:     item.image || item.primaryImage || '',
+    fournisseur:   'Facebook Marketplace',
+    sku:           item.id || item.listingId || '',
+    disponible:    true,
+    note:          (item.description || item.condition || '').slice(0, 120),
+    source_verified: true,
+    source_type:   'apify',
+  }));
+}
+
+// ─── AliExpress via Apify logical_scrapers/aliexpress-scraper ────────────────
+async function scrapeAliExpress(query, maxItems = 6) {
+  if (!APIFY_TOKEN) throw new Error('APIFY_API_TOKEN non configuré');
+  const url = `${APIFY_BASE}/LEqVhe8SqCDdpdXjw/run-sync-get-dataset-items` +
+    `?token=${APIFY_TOKEN}&timeout=90&memory=256&format=json`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ searchQuery: query, maxResults: maxItems }),
+    signal: AbortSignal.timeout(100_000),
+  });
+  if (!res.ok) throw new Error(`Apify AliExpress ${res.status}`);
+  const data = await res.json();
+  return (Array.isArray(data) ? data : []).slice(0, maxItems).map(item => ({
+    id:            `ali-${item.id || item.productId || Math.random().toString(36).slice(2)}`,
+    nom:           item.title || item.name || '',
+    prix_unitaire: Number(item.price || item.salePrice || item.priceMin || 0) || null,
+    unite:         'un.',
+    url_source:    item.url || item.productUrl || `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(query)}`,
+    url_image:     item.image || item.thumbnail || '',
+    fournisseur:   'AliExpress',
+    sku:           String(item.id || item.productId || ''),
+    disponible:    true,
+    note:          `⏱ Livraison internationale · ${(item.description || '').slice(0, 80)}`,
+    rating:        item.rating || item.starRating || null,
+    source_verified: true,
+    source_type:   'apify',
+  }));
+}
+
+// ─── Kijiji via Apify service-paradis/kijiji-crawler ────────────────────────
+async function scrapeKijiji(query, maxItems = 6) {
+  if (!APIFY_TOKEN) throw new Error('APIFY_API_TOKEN non configuré');
+  const url = `${APIFY_BASE}/PtqfxadmY8UUelaYN/run-sync-get-dataset-items` +
+    `?token=${APIFY_TOKEN}&timeout=90&memory=256&format=json`;
+  const searchUrl = `https://www.kijiji.ca/b-recherche/page-1/${encodeURIComponent(query)}/k0?ad=offering&ll=45.508888,-73.561668&radius=50.0&dc=true`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startUrls: [{ url: searchUrl }], maxAds: maxItems }),
+    signal: AbortSignal.timeout(100_000),
+  });
+  if (!res.ok) throw new Error(`Apify Kijiji ${res.status}`);
+  const data = await res.json();
+  return (Array.isArray(data) ? data : []).slice(0, maxItems).map(item => ({
+    id:            `kijiji-${item.id || item.adId || Math.random().toString(36).slice(2)}`,
+    nom:           item.title || item.name || '',
+    prix_unitaire: Number((item.price || '').toString().replace(/[^0-9.]/g, '') || 0) || null,
+    unite:         'un.',
+    url_source:    item.url || item.adUrl || `https://www.kijiji.ca/b-recherche/page-1/${encodeURIComponent(query)}/k0`,
+    url_image:     item.image || item.thumbnail || '',
+    fournisseur:   'Kijiji',
+    sku:           String(item.id || item.adId || ''),
+    disponible:    true,
+    note:          (item.description || item.location || '').slice(0, 120),
+    source_verified: true,
+    source_type:   'apify',
+  }));
+}
+
 // ─── Rona via leur API JSON interne (Coveo / SLI) ───────────────────────────
 async function scrapeRona(query, maxItems = 6) {
   // Rona.ca fait des appels XHR vers leur API search interne — accessible
@@ -240,12 +362,16 @@ router.post('/search', async (req, res) => {
   const rawItems   = [];
   const startTime  = Date.now();
 
-  // Scraping parallèle de tous les fournisseurs demandés
-  await Promise.allSettled([
-    suppliers.includes('homedepot') ? scrapeHomeDepot(query, max_per_supplier).then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Home Depot', error: e.message })) : null,
-    suppliers.includes('canadiantire') ? scrapeCanadianTire(query, Math.ceil(max_per_supplier / 2)).then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Canadian Tire', error: e.message })) : null,
-    suppliers.includes('rona') ? scrapeRona(query, max_per_supplier).then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Rona', error: e.message })) : null,
-  ].filter(Boolean));
+  const tasks = [
+    suppliers.includes('homedepot')          && scrapeHomeDepot(query, max_per_supplier)                         .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Home Depot',          error: e.message })),
+    suppliers.includes('canadiantire')       && scrapeCanadianTire(query, Math.ceil(max_per_supplier / 2))       .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Canadian Tire',       error: e.message })),
+    suppliers.includes('rona')               && scrapeRona(query, max_per_supplier)                              .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Rona',               error: e.message })),
+    suppliers.includes('amazon')             && scrapeAmazon(query, Math.ceil(max_per_supplier / 2))             .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Amazon.ca',          error: e.message })),
+    suppliers.includes('facebook')           && scrapeFacebookMarketplace(query, 'Montreal, QC', Math.ceil(max_per_supplier / 2)).then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Facebook Marketplace', error: e.message })),
+    suppliers.includes('aliexpress')         && scrapeAliExpress(query, Math.ceil(max_per_supplier / 2))         .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'AliExpress',        error: e.message })),
+    suppliers.includes('kijiji')             && scrapeKijiji(query, Math.ceil(max_per_supplier / 2))             .then(r => rawItems.push(...r)).catch(e => errors.push({ supplier: 'Kijiji',            error: e.message })),
+  ].filter(Boolean);
+  await Promise.allSettled(tasks);
 
   // Enrichissement Flo
   let floData = { categories: [], warnings: [], fallbacks: [] };
