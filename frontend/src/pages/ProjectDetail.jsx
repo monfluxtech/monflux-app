@@ -23,16 +23,11 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
-  { id: 's-orders', icon: '📦', label: 'Commandes' },
   { id: 's-invoices', icon: '🧾', label: 'Factures' },
-  { id: 's-quotes', icon: '📋', label: 'Soumissions' },
-  { id: 's-documents', icon: '📁', label: 'Documents' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-portal', icon: '🌐', label: 'Portails d\'accès' },
   { id: 's-feed', icon: '📰', label: 'Fil du chantier' },
-  { id: 's-plans', icon: '🏛', label: 'Plans & rendus', badge: 'B8' },
   { id: 's-comms', icon: '✉', label: 'Courriels & comms', badge: 'B9' },
-  { id: 's-co', icon: '📝', label: 'Avenants' },
 ];
 
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
@@ -8379,99 +8374,6 @@ Règles :
           )}
         </div>
 
-        {/* ── Commandes ── (cream) */}
-        <div id="s-orders" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📦</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Commandes matériaux</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Approvisionnements et suivi de livraison{materialOrders.length > 0 ? ` · ${materialOrders.length} commande(s)` : ''}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {materialOrders.length > 0 && (
-                <button className="btn-ghost text-xs text-brand" onClick={groupPurchases} disabled={groupingPurchases}>
-                  {groupingPurchases ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>} Regrouper (IA)
-                </button>
-              )}
-              <button className="btn-secondary text-xs" onClick={() => setShowOrderForm(v => !v)}><Plus size={13}/> Commande</button>
-            </div>
-          </div>
-
-          {/* Plan de regroupement IA */}
-          {purchasePlan && (
-            <div className="bg-orange-50/60 border border-orange-100 rounded-xl p-3 mb-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Wand2 size={13} className="text-brand"/>
-                <p className="text-xs font-semibold text-gray-700">Plan d'achat optimisé</p>
-                <button className="ml-auto text-gray-300 hover:text-gray-500" onClick={() => setPurchasePlan(null)}><X size={13}/></button>
-              </div>
-              {purchasePlan.summary && <p className="text-xs text-gray-600 mb-2">{purchasePlan.summary}</p>}
-              {purchasePlan.groups?.length > 0 && (
-                <div className="space-y-1 mb-2">
-                  {purchasePlan.groups.map((g, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <Package size={11} className="text-gray-300"/>
-                      <span className="font-medium text-gray-700">{g.supplier}</span>
-                      <span className="text-gray-400">{g.order_count} cmd{g.total_estimate ? ` · ${money(g.total_estimate)}` : ''}</span>
-                      {g.consolidation_note && <span className="text-gray-500 truncate">— {g.consolidation_note}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {purchasePlan.opportunities?.length > 0 && (
-                <div className="space-y-1">
-                  {purchasePlan.opportunities.map((o, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <Sparkles size={11} className="text-brand mt-0.5 flex-shrink-0"/>
-                      <p className="text-gray-600"><span className="font-medium">{o.supplier}</span> — {o.description}{o.potential_saving ? ` (≈ ${o.potential_saving})` : ''}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {showOrderForm && (
-            <form onSubmit={createOrder} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
-              <div><label className="label">Fournisseur *</label><input className="input" value={orderForm.supplier} onChange={e => setOrderForm(f => ({ ...f, supplier: e.target.value }))} required/></div>
-              <div><label className="label">N° commande</label><input className="input" value={orderForm.order_number} onChange={e => setOrderForm(f => ({ ...f, order_number: e.target.value }))} placeholder="Ex: PO-2026-001"/></div>
-              <div><label className="label">Montant ($)</label><input className="input" type="number" step="0.01" value={orderForm.total_amount} onChange={e => setOrderForm(f => ({ ...f, total_amount: e.target.value }))}/></div>
-              <div><label className="label">Date commande</label><input className="input" type="date" value={orderForm.order_date} onChange={e => setOrderForm(f => ({ ...f, order_date: e.target.value }))}/></div>
-              <div><label className="label">Livraison prévue</label><input className="input" type="date" value={orderForm.expected_date} onChange={e => setOrderForm(f => ({ ...f, expected_date: e.target.value }))}/></div>
-              <div className="flex gap-2">
-                <input className="input flex-1" value={orderForm.description} onChange={e => setOrderForm(f => ({ ...f, description: e.target.value }))} placeholder="Description"/>
-                <button type="submit" className="btn-primary text-xs px-3">OK</button>
-              </div>
-            </form>
-          )}
-          {materialOrders.length > 0 ? (
-            <div className="space-y-2">
-              {materialOrders.map(o => {
-                const statusBadge = { draft: 'badge-gray', ordered: 'badge-blue', partial: 'badge-yellow', received: 'badge-green', cancelled: 'badge-gray' };
-                const statusLabel = { draft: 'Brouillon', ordered: 'Commandé', partial: 'Partiel', received: 'Reçu', cancelled: 'Annulé' };
-                return (
-                  <div key={o.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-gray-50 last:border-0">
-                    <div className="flex-1 min-w-[160px]">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-gray-800">{o.supplier}</p>
-                        {o.order_number && <span className="text-xs text-gray-400">#{o.order_number}</span>}
-                      </div>
-                      {o.description && <p className="text-xs text-gray-400 truncate">{o.description}</p>}
-                      {o.expected_date && <p className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5"><Calendar size={9}/> Livraison {new Date(o.expected_date).toLocaleDateString('fr-CA')}</p>}
-                    </div>
-                    {o.total_amount && <span className="text-sm font-semibold text-gray-700">{money(o.total_amount)}</span>}
-                    <select className="input text-xs py-1 flex-shrink-0" style={{ width: 108 }} value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)}>
-                      {Object.entries(statusLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
-                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 flex-shrink-0" onClick={() => deleteOrder(o.id)}><Trash2 size={13}/></button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : !showOrderForm && (
-            <p className="text-sm text-gray-400 text-center py-4">Aucune commande. Ajoutez des commandes pour suivre vos approvisionnements.</p>
-          )}
-        </div>
-
         {/* ── Soumission détaillée ── (white) */}
         {/* Invite modal */}
         {showInviteModal && (
@@ -8537,67 +8439,6 @@ Règles :
             </div>
           </div>
         )}
-
-        {/* ── Soumissions liées ── (blue) */}
-        {projectQuotes.length > 0 && (
-          <div id="s-quotes" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📋</div>
-              <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Soumissions & Avenants</h2>
-                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>{projectQuotes.length} soumission(s) liée(s) à ce projet</div>
-              </div>
-              <button className="btn-secondary text-xs" onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}><Plus size={12}/> {t('add_change_order')}</button>
-            </div>
-            {(() => {
-              const QSB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', signed:'badge-green', expired:'badge-gray', rejected:'badge-red', converted:'badge-orange' };
-              const QSL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', signed:'Signée', expired:'Expirée', rejected:'Refusée', converted:'Convertie' };
-              return (
-                <div className="space-y-2">
-                  {projectQuotes.map(q => (
-                    <div key={q.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{q.title || 'Soumission'}</p>
-                      </div>
-                      <span className={`badge ${QSB[q.status]||'badge-gray'} text-xs`}>{QSL[q.status]||q.status}</span>
-                      {q.total > 0 && <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(q.total).toLocaleString('fr-CA')}$</p>}
-                      <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.quoteUrl(q.id), title: q.title || 'Soumission' })}><Eye size={13}/></button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* ── Documents ── (white) */}
-        <div id="s-documents" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📁</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Documents</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Plans, permis et fichiers du projet{project.documents?.length > 0 ? ` · ${project.documents.length}` : ''}</div>
-            </div>
-          </div>
-          {project.documents?.length > 0 ? (
-            <div className="space-y-2">
-              {project.documents.map(d => (
-                <div key={d.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                  <FileText size={14} className="text-gray-300 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{d.name}</p>
-                    <p className="text-xs text-gray-400">{d.type}{d.created_at ? ` · ${new Date(d.created_at).toLocaleDateString('fr-CA')}` : ''}</p>
-                  </div>
-                  <button className="btn-ghost text-xs py-1 px-2" onClick={() => setPreview({ url: d.file_url, mime_type: d.mime_type, title: d.name })}>
-                    <Eye size={13} /> Prévisualiser
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun document téléversé sur ce projet.</p>
-          )}
-        </div>
 
         {/* ── Quittance ── (mint) */}
         <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -8762,21 +8603,6 @@ Règles :
           </div>
         </div>
 
-        {/* ── Plans & rendus ── (stub) */}
-        <div id="s-plans" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>🏛</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Plans & rendus d'architecte</h2>
-              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>PDF, DWG, extraction IA des surfaces — B8</div>
-            </div>
-            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B8</span>
-          </div>
-          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
-            Upload de plans (PDF/DWG), prévisualisation, extraction IA des dimensions et surfaces pour préremplir l'estimation, rendu visuel IA, intégration BIM.
-          </div>
-        </div>
-
         {/* ── Courriels & communications ── (stub) */}
         <div id="s-comms" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
@@ -8790,125 +8616,6 @@ Règles :
           <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
             Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
           </div>
-        </div>
-
-        {/* ── Avenants (Change Orders) ── (cream) */}
-        <div id="s-co" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📝</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Avenants</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Demandes de modification{changeOrdersList.length > 0 ? ` · ${changeOrdersList.length}` : ''}</div>
-            </div>
-            <button className="btn-secondary text-xs" onClick={()=>setShowCOForm(v=>!v)}>
-              <Plus size={13}/> Nouvelle
-            </button>
-          </div>
-          {showCOForm && (
-            <form onSubmit={createChangeOrder} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
-              <div><label className="label">Titre *</label><input className="input" value={coForm.title} onChange={e=>setCoForm(f=>({...f,title:e.target.value}))} required placeholder="Ex: Ajout d'une salle de bain"/></div>
-              <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={coForm.description} onChange={e=>setCoForm(f=>({...f,description:e.target.value}))} placeholder="Détails des travaux supplémentaires…"/></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Montant ($)</label><input className="input" type="number" step="0.01" value={coForm.amount} onChange={e=>setCoForm(f=>({...f,amount:e.target.value}))} placeholder="0"/></div>
-                <div><label className="label">Note interne</label><input className="input" value={coForm.notes} onChange={e=>setCoForm(f=>({...f,notes:e.target.value}))}/></div>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" className="btn-secondary flex-1 text-sm" onClick={()=>setShowCOForm(false)}>Annuler</button>
-                <button type="submit" className="btn-primary flex-1 text-sm" disabled={savingCO}>{savingCO&&<Loader2 size={13} className="animate-spin"/>} Créer</button>
-              </div>
-            </form>
-          )}
-
-          {changeOrdersList.length === 0 && !showCOForm ? (
-            <div className="text-center py-5">
-              <FileEdit size={28} className="text-gray-200 mx-auto mb-2"/>
-              <p className="text-sm text-gray-400">Aucune demande de modification. Créez-en une pour tout changement de portée de projet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {changeOrdersList.map(co => {
-                const statusColor = co.status==='approved'?'text-green-600':co.status==='rejected'?'text-red-500':co.status==='pending_approval'?'text-blue-500':'text-gray-400';
-                const statusLabel = co.status==='approved'?'Approuvée':co.status==='rejected'?'Refusée':co.status==='pending_approval'?'Envoyée':'Brouillon';
-                const impact = coImpact[co.id];
-                return (
-                  <div key={co.id} className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${co.status==='approved'?'bg-green-500':co.status==='rejected'?'bg-red-400':co.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{co.title}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
-                        {co.amount > 0 && <span className="text-xs text-gray-400">+{Number(co.amount).toLocaleString('fr-CA')}$</span>}
-                      </div>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors"
-                        title="Analyser l'impact (IA)"
-                        onClick={() => analyzeChangeOrder(co.id)}
-                        disabled={analyzingCoId === co.id}
-                      >
-                        {analyzingCoId === co.id ? <Loader2 size={13} className="animate-spin"/> : <Wand2 size={13}/>}
-                      </button>
-                      <button
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-white transition-colors"
-                        title={copiedCO===co.id?'Copié!':'Copier le lien client'}
-                        onClick={()=>copyCOLink(co)}
-                      >
-                        {copiedCO===co.id?<CheckCheck size={13} className="text-green-500"/>:<Copy size={13}/>}
-                      </button>
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici une demande de modification à approuver : ${FRONTEND_URL}/modification/${co.public_token}`)}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-white transition-colors"
-                        title="Envoyer par WhatsApp"
-                        onClick={async()=>{ if(co.status==='draft') await changeOrdersApi.update(co.id,{status:'pending_approval'}).then(()=>setChangeOrdersList(l=>l.map(c=>c.id===co.id?{...c,status:'pending_approval'}:c))); }}
-                      >
-                        <MessageCircle size={13}/>
-                      </a>
-                      <a
-                        href={`${FRONTEND_URL}/modification/${co.public_token}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white transition-colors"
-                        title="Aperçu"
-                      >
-                        <ExternalLink size={13}/>
-                      </a>
-                      <button
-                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-white transition-colors"
-                        onClick={()=>deleteCO(co.id)}
-                        title="Supprimer"
-                      >
-                        <Trash2 size={13}/>
-                      </button>
-                    </div>
-                  </div>
-                  {/* Impact IA de l'avenant */}
-                  {impact && (
-                    <div className="mt-2 pt-2 border-t border-gray-200/70 space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <Wand2 size={11} className="text-brand"/>
-                        <p className="text-[11px] font-semibold text-gray-600">Impact estimé</p>
-                        {impact.overall_impact && <span className={`badge ${SEV[impact.overall_impact]?.c || 'badge-gray'} text-[9px]`}>{SEV[impact.overall_impact]?.l || impact.overall_impact}</span>}
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-600">
-                        {impact.budget_impact && <span><span className="text-gray-400">Budget :</span> {impact.budget_impact.amount != null ? money(impact.budget_impact.amount) : '—'}{impact.budget_impact.percent_of_contract ? ` (${impact.budget_impact.percent_of_contract}%)` : ''}</span>}
-                        {impact.schedule_impact && <span><span className="text-gray-400">Échéancier :</span> +{impact.schedule_impact.estimated_days || 0} j</span>}
-                        {impact.affected_trades?.length > 0 && <span><span className="text-gray-400">Métiers :</span> {impact.affected_trades.join(', ')}</span>}
-                      </div>
-                      {impact.recommendation && <p className="text-[11px] text-gray-600 italic">💡 {impact.recommendation}</p>}
-                      {impact.risks?.length > 0 && (
-                        <ul className="text-[11px] text-gray-500 list-disc list-inside">
-                          {impact.risks.map((r, i) => <li key={i}>{r}</li>)}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         {/* Portal Messages */}
