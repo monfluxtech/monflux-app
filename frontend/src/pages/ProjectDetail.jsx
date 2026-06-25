@@ -26,8 +26,6 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-invoices', icon: '🧾', label: 'Factures' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-portal', icon: '🌐', label: 'Portails d\'accès' },
-  { id: 's-feed', icon: '📰', label: 'Fil du chantier' },
-  { id: 's-comms', icon: '✉', label: 'Courriels & comms', badge: 'B9' },
 ];
 
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
@@ -2968,6 +2966,8 @@ export default function ProjectDetail() {
   const [aiNotice, setAiNotice] = useState('');
   const [aiRecommendations, setAiRecommendations] = useState([]);
   const [activeSection, setActiveSection] = useState('s-ai');
+  const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'feed' | 'comms'
+  const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
   const [estimTab, setEstimTab] = useState('voieB');
@@ -5289,8 +5289,9 @@ Règles :
         position: 'sticky', top: 0, height: 54,
         background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
-        gap: 10, padding: '0 20px', zIndex: 15,
+        gap: 8, padding: '0 20px', zIndex: 15,
       }}>
+        {/* Breadcrumb */}
         <button
           onClick={() => navigate('/projets')}
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
@@ -5298,8 +5299,81 @@ Règles :
           Projets
         </button>
         <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
-        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700 }}>{project.name}</b>
-        <div style={{ flex: 1 }} />
+        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700, flexShrink: 0, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</b>
+
+        {/* ── Onglets centrés ── */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 2 }}>
+          {[
+            { key: 'detail', label: 'Fiche projet', icon: '📋' },
+            { key: 'feed',   label: 'Fil du chantier', icon: '📰' },
+            { key: 'comms',  label: 'Courriels', icon: '✉️' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+              fontSize: 12.5, fontWeight: activeTab === tab.key ? 700 : 500,
+              color: activeTab === tab.key ? BRAND : '#7C8089',
+              background: activeTab === tab.key ? `${BRAND}12` : 'transparent',
+              border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 5,
+              borderBottom: activeTab === tab.key ? `2px solid ${BRAND}` : '2px solid transparent',
+              transition: 'all .15s',
+            }}>
+              <span style={{ fontSize: 13 }}>{tab.icon}</span> {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Portails — icônes rapides ── */}
+        {project.portal_token && (
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
+            {/* Portail client */}
+            <div style={{ position: 'relative' }}>
+              <button
+                title="Portail client"
+                onClick={() => setPortalCopyTarget(portalCopyTarget === 'client' ? null : 'client')}
+                style={{ width: 32, height: 32, borderRadius: 8, background: '#F0EBFD', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}
+              >🌐</button>
+              {portalCopyTarget === 'client' && (
+                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail client</p>
+                  <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); setPortalCopyTarget(null); }}
+                      style={{ flex: 1, fontSize: 11.5, fontWeight: 600, background: BRAND, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
+                      Copier le lien
+                    </button>
+                    <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre lien pour suivre l'avancement de vos travaux en temps réel :\n${FRONTEND_URL}/portal/${project.portal_token}`)}`}
+                      target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                      style={{ width: 30, height: 30, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 15, textDecoration: 'none' }}
+                      title="WhatsApp">💬</a>
+                    <a href={`${FRONTEND_URL}/portal/${project.portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                      style={{ width: 30, height: 30, background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 13, textDecoration: 'none' }}
+                      title="Aperçu">↗</a>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Portail fournisseur — stub */}
+            <div style={{ position: 'relative' }}>
+              <button
+                title="Portail fournisseur (bientôt)"
+                onClick={() => setPortalCopyTarget(portalCopyTarget === 'supplier' ? null : 'supplier')}
+                style={{ width: 32, height: 32, borderRadius: 8, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}
+              >🏢</button>
+              {portalCopyTarget === 'supplier' && (
+                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 200, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
+                  <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0, lineHeight: 1.5 }}>Les liens fournisseurs seront disponibles prochainement.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Fermer popover portail au clic à l'extérieur */}
+        {portalCopyTarget && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
+        )}
+
         <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
           📥 Exporter PDF
         </button>
@@ -5313,7 +5387,7 @@ Règles :
       </div>
 
       {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
-      <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff' }}>
+      <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff', display: activeTab === 'detail' ? undefined : 'none' }}>
         <button onClick={() => setShowCapture(true)}
           style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
             background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
@@ -5674,8 +5748,8 @@ Règles :
         </div>
       )}
 
-      {/* ── Doc sections ── */}
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {/* ── Doc sections (detail tab only) ── */}
+      <div style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column' }}>
 
         {/* ── Descriptif de la demande ── */}
         {(() => {
@@ -8045,62 +8119,7 @@ Règles :
           </div>
         </div>
 
-        {/* ── Médias chantier ── (cream) */}
-        {/* ── Fil du chantier ── */}
-        <div id="s-feed" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📰</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Fil du chantier</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Activités récentes — statuts, heures, médias, alertes</div>
-            </div>
-          </div>
-          {(() => {
-            const feedItems = [
-              ...(timesheets.slice(0, 5).map(ts => ({
-                type: 'heures', icon: '⏱', color: '#E8794E', bg: '#FFF1EB',
-                title: `${ts.worker_name || 'Employé'} — ${ts.hours ? `${ts.hours}h punchées` : 'punch'}`,
-                sub: ts.note || '',
-                date: ts.date || ts.created_at,
-              }))),
-              ...(media.slice(0, 3).map(m => ({
-                type: 'media', icon: m.type === 'photo' ? '📷' : m.type === 'voice' ? '🎙' : '📌', color: '#4f46e5', bg: '#EEF1FD',
-                title: `${m.author_name || 'Photo'} — ${m.type === 'photo' ? 'photo ajoutée' : m.type === 'voice' ? 'mémo vocal' : 'note de chantier'}`,
-                sub: m.caption || m.transcript || '',
-                date: m.created_at,
-              }))),
-              ...(changeOrdersList.filter(co => co.status === 'pending_approval').map(co => ({
-                type: 'alerte', icon: '⚠', color: '#d97706', bg: '#FFFBEB',
-                title: `Avenant en attente : ${co.title}`,
-                sub: `${co.amount ? money(co.amount) + ' $' : ''}`,
-                date: co.created_at,
-              }))),
-            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
-
-            if (!feedItems.length) return (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', fontSize: 13 }}>
-                Aucune activité enregistrée. Les punchs, photos et alertes apparaîtront ici.
-              </div>
-            );
-
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {feedItems.map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: '#FAFAFA', borderRadius: 10, border: '1px solid #F0F2F4' }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 9, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>{item.icon}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{item.title}</p>
-                      {item.sub && <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sub}</p>}
-                    </div>
-                    <span style={{ fontSize: 11, color: '#C8CACD', flexShrink: 0, alignSelf: 'center' }}>
-                      {item.date ? new Date(item.date).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
+        {/* s-feed et s-comms sont maintenant dans leurs propres onglets */}
 
         <div id="s-media" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
@@ -8603,20 +8622,7 @@ Règles :
           </div>
         </div>
 
-        {/* ── Courriels & communications ── (stub) */}
-        <div id="s-comms" style={{ background: '#F0F2F4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: 0.85 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, opacity: 0.55 }}>✉</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#7C8089', margin: 0 }}>Courriels & communications</h2>
-              <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>Gmail · WhatsApp · SMS liés au projet — B9</div>
-            </div>
-            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089', whiteSpace: 'nowrap', marginTop: 4 }}>Bientôt · B9</span>
-          </div>
-          <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #E8EAED', fontSize: 13, color: '#7C8089', lineHeight: 1.6 }}>
-            Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
-          </div>
-        </div>
+        {/* s-comms est maintenant dans son propre onglet */}
 
         {/* Portal Messages */}
         {portalMessages.length > 0 && (
@@ -8648,6 +8654,171 @@ Règles :
         )}
 
       </div>
+
+      {/* ════════════ VUE : FIL DU CHANTIER ════════════ */}
+      {activeTab === 'feed' && (
+        <div style={{ padding: '36px 56px 60px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+          {/* En-tête */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#FFF1EB', border: '1px solid #FDDCCA', display: 'grid', placeItems: 'center', fontSize: 24 }}>📰</div>
+            <div>
+              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#15171C', margin: 0, letterSpacing: '-.02em' }}>Fil du chantier</h1>
+              <p style={{ fontSize: 13, color: '#7C8089', margin: 0 }}>Toutes les activités du projet · Recommandations de Flo</p>
+            </div>
+          </div>
+
+          {/* Recommandations Flo */}
+          {aiRecommendations.length > 0 && (
+            <div style={{ background: `${BRAND}08`, border: `1px solid ${BRAND}30`, borderRadius: 14, padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <Sparkles size={16} style={{ color: BRAND }} />
+                <span style={{ fontSize: 14, fontWeight: 800, color: BRAND }}>Points soulevés par Flo</span>
+                <button onClick={() => setAiRecommendations([])} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#C0C4CC' }}>Effacer</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {aiRecommendations.map((rec, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 14px', background: '#fff', borderRadius: 10, border: '1px solid #F0F2F4' }}>
+                    <Sparkles size={13} style={{ color: BRAND, flexShrink: 0, marginTop: 2 }} />
+                    <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{rec}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes de chantier */}
+          <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <StickyNote size={15} style={{ color: BRAND }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#15171C' }}>Notes de chantier</span>
+              {notesSaving && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 'auto' }}>Enregistrement…</span>}
+            </div>
+            <textarea className="input resize-none" style={{ minHeight: 90, width: '100%' }}
+              placeholder="Ajoutez des notes, remarques ou observations…"
+              value={notes} onChange={e => handleNotesChange(e.target.value)} />
+          </div>
+
+          {/* Activités — fil chronologique */}
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#15171C', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: BRAND, display: 'inline-block' }} />
+              Activités récentes
+            </h2>
+            {(() => {
+              const feedItems = [
+                ...(timesheets.map(ts => ({
+                  type: 'heures', icon: '⏱', color: '#E8794E', bg: '#FFF1EB',
+                  title: `${ts.worker_name || 'Employé'} — ${ts.hours ? `${ts.hours}h punchées` : 'punch'}`,
+                  sub: ts.note || '',
+                  date: ts.date || ts.created_at,
+                }))),
+                ...(media.map(m => ({
+                  type: 'media', icon: m.type === 'photo' ? '📷' : m.type === 'voice' ? '🎙' : '📌', color: '#4f46e5', bg: '#EEF1FD',
+                  title: `${m.author_name || (m.type === 'photo' ? 'Photo' : m.type === 'voice' ? 'Mémo vocal' : 'Note')} — ${m.type === 'photo' ? 'photo ajoutée' : m.type === 'voice' ? 'mémo vocal' : 'note de chantier'}`,
+                  sub: m.caption || m.transcript || m.ai_summary || '',
+                  date: m.created_at,
+                  aiTag: m.ai_flag,
+                }))),
+                ...(changeOrdersList.filter(co => co.status !== 'draft').map(co => ({
+                  type: 'avenant', icon: '📝', color: '#2563EB', bg: '#EFF6FF',
+                  title: `Avenant : ${co.title}`,
+                  sub: co.amount ? `+${Number(co.amount).toLocaleString('fr-CA')} $` : '',
+                  date: co.created_at,
+                }))),
+                ...(changeOrdersList.filter(co => co.status === 'pending_approval').map(co => ({
+                  type: 'alerte', icon: '⚠️', color: '#D97706', bg: '#FFFBEB',
+                  title: `⚠️ Avenant en attente d'approbation : ${co.title}`,
+                  sub: co.amount ? `${Number(co.amount).toLocaleString('fr-CA')} $` : '',
+                  date: co.created_at,
+                }))),
+                ...(portalMessages.map(msg => ({
+                  type: 'portail', icon: '🌐', color: '#7C3AED', bg: '#F5F3FF',
+                  title: `Message portail — ${msg.author_name || 'Client'}`,
+                  sub: msg.content,
+                  date: msg.created_at,
+                }))),
+              ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+              if (!feedItems.length) return (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#9CA3AF' }}>
+                  <span style={{ fontSize: 32 }}>📭</span>
+                  <p style={{ fontSize: 14, marginTop: 12 }}>Aucune activité enregistrée pour ce projet.</p>
+                  <p style={{ fontSize: 12 }}>Les punchs, photos, notes et avenants apparaîtront ici.</p>
+                </div>
+              );
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {feedItems.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 12, padding: '13px 16px', background: '#FAFAFA', borderRadius: 11, border: '1px solid #F0F2F4', transition: 'background .1s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#F5F5F7'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#FAFAFA'}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: item.bg, display: 'grid', placeItems: 'center', fontSize: 17, flexShrink: 0 }}>{item.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: 0 }}>{item.title}</p>
+                        {item.sub && <p style={{ fontSize: 12, color: '#7C8089', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>{item.sub}</p>}
+                        {item.aiTag && <span style={{ fontSize: 10, fontWeight: 700, background: '#FEF2F2', color: '#DC2626', padding: '2px 6px', borderRadius: 4, marginTop: 4, display: 'inline-block' }}>⚠ {item.aiTag}</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: '#C8CACD', flexShrink: 0, alignSelf: 'center', whiteSpace: 'nowrap' }}>
+                        {item.date ? new Date(item.date).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Médias / Photos */}
+          {media.length > 0 && (
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#15171C', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4f46e5', display: 'inline-block' }} />
+                Photos & médias ({media.length})
+              </h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                {media.map(m => (
+                  <div key={m.id} style={{ borderRadius: 10, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
+                    {m.file_url ? (
+                      <img src={m.file_url} alt={m.caption || 'Media'} style={{ width: '100%', height: 100, objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <div style={{ height: 100, display: 'grid', placeItems: 'center', fontSize: 28 }}>
+                        {m.type === 'voice' ? '🎙' : '📌'}
+                      </div>
+                    )}
+                    <div style={{ padding: '6px 8px' }}>
+                      <p style={{ fontSize: 11, color: '#374151', margin: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.author_name || m.type}</p>
+                      {(m.caption || m.transcript) && <p style={{ fontSize: 10, color: '#9CA3AF', margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.caption || m.transcript}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════ VUE : COURRIELS & COMMUNICATIONS ════════════ */}
+      {activeTab === 'comms' && (
+        <div style={{ padding: '36px 56px 60px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 32 }}>
+            <div style={{ width: 50, height: 50, borderRadius: 14, background: '#F3F4F6', border: '1px solid #E5E7EB', display: 'grid', placeItems: 'center', fontSize: 24, opacity: 0.7 }}>✉️</div>
+            <div>
+              <h1 style={{ fontSize: 26, fontWeight: 900, color: '#7C8089', margin: 0, letterSpacing: '-.02em' }}>Courriels & Communications</h1>
+              <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Gmail · WhatsApp · SMS liés au projet — B9</p>
+            </div>
+            <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: '#E7EFF4', color: '#7C8089' }}>Bientôt · B9</span>
+          </div>
+          <div style={{ background: '#FAFAFA', border: '2px dashed #E5E7EB', borderRadius: 16, padding: '48px 32px', textAlign: 'center', color: '#9CA3AF' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>✉️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#6B7280', margin: '0 0 8px' }}>Communications centralisées</h3>
+            <p style={{ fontSize: 13, lineHeight: 1.7, maxWidth: 400, margin: '0 auto' }}>
+              Synchronisation Gmail et WhatsApp, résumé IA des échanges, actions rapides (répondre, créer avenant) directement depuis la fiche projet.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Popup changement statut pipeline ── */}
       {statusPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setStatusPopup(null)}>
