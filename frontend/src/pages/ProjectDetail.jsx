@@ -7024,6 +7024,11 @@ Règles :
                       style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${!tradeStatusFilter ? '#15171C' : '#E0E4E8'}`, background: !tradeStatusFilter ? '#15171C' : '#fff', color: !tradeStatusFilter ? '#fff' : '#9CA3AF', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
                       Tous
                     </button>
+                    {/* Filtre spécial À trouver */}
+                    <button onClick={() => setTradeStatusFilter(tradeStatusFilter === 'a_trouver' ? null : 'a_trouver')}
+                      style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${tradeStatusFilter === 'a_trouver' ? '#DC2626' : '#FCA5A5'}`, background: tradeStatusFilter === 'a_trouver' ? '#FFF5F5' : '#fff', color: tradeStatusFilter === 'a_trouver' ? '#DC2626' : '#FCA5A5', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
+                      🔍 À trouver
+                    </button>
                     {allStatuses.map(s => (
                       <button key={s.key} onClick={() => setTradeStatusFilter(tradeStatusFilter === s.key ? null : s.key)}
                         style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${tradeStatusFilter === s.key ? s.color : s.color + '50'}`, background: tradeStatusFilter === s.key ? s.bg : '#fff', color: tradeStatusFilter === s.key ? s.color : s.color + 'CC', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
@@ -7105,7 +7110,13 @@ Règles :
                     </div>
 
                     {/* ── Lignes par corps de métier ── */}
-                    {rowNames.map((tradeName, idx) => {
+                    {rowNames.filter(tradeName => {
+                      if (tradeStatusFilter !== 'a_trouver') return true;
+                      const rawR = tradeResourcesMap[tradeName] || {};
+                      const intCount = (rawR.internal || []).length;
+                      const extCount = (rawR.external || []).length;
+                      return intCount + extCount === 0;
+                    }).map((tradeName, idx) => {
                       // Phase liée si trade_name exact OU si le nom de la phase mentionne ce corps de métier
                       const tradeKeywords = tradeName.toLowerCase().split(/[\s,\/&+]+/).filter(w => w.length >= 4);
                       const tradePhases = phases.filter(ph => {
@@ -7150,24 +7161,18 @@ Règles :
                         const list        = resources[type];
                         const statusList  = type === 'internal' ? internalStatuses : externalStatuses;
                         const typeColor   = type === 'internal' ? '#7C3AED' : '#2563EB';
-                        const typeIcon    = type === 'internal' ? '🏠' : '🏗️';
-                        const typeLabel   = type === 'internal' ? 'Interne' : 'Externe';
+                        const typeIcon    = type === 'internal' ? '👤' : '🏗️';
+                        const typeLabel   = type === 'internal' ? 'Employé' : 'Sous-traitant';
                         const inputKey    = `${tradeName}_add_${type}`;
                         const confirmedKey = type === 'internal' ? 'confirme' : 'accepte';
 
-                        const visibleList = tradeStatusFilter
+                        const visibleList = (tradeStatusFilter && tradeStatusFilter !== 'a_trouver')
                           ? list.filter(p => (p.status || 'a_contacter') === tradeStatusFilter)
                           : list;
 
                         return (
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px 4px 16px', background: type === 'internal' ? '#F9F8FF' : '#F7FAFF', borderTop: type === 'external' ? '1px solid #EAECEF' : 'none', borderBottom: '1px solid #F1F3F5' }}>
-                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: typeColor }}>{typeIcon} {typeLabel}</span>
-                              {tradeStatusFilter && list.length !== visibleList.length && (
-                                <span style={{ fontSize: 9, color: '#A8AEB6' }}>({visibleList.length}/{list.length} affichés)</span>
-                              )}
-                            </div>
-
+                            {/* Plus de sous-header INTERNE/EXTERNE — le type est indiqué en badge inline sur chaque ligne */}
                             {visibleList.map((person) => {
                               const pi           = list.indexOf(person);
                               const pKey         = personKey(tradeName, type, pi);
@@ -7220,6 +7225,10 @@ Règles :
                                       <span style={{ fontSize: 12, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', minWidth: 55, maxWidth: 115, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer' }}
                                         onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
                                         {person.name}
+                                      </span>
+                                      {/* Badge Employé / Sous-traitant */}
+                                      <span style={{ fontSize: 8.5, fontWeight: 700, color: typeColor, background: `${typeColor}12`, border: `1px solid ${typeColor}30`, borderRadius: 5, padding: '1px 5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                        {typeLabel}
                                       </span>
                                       {nonConf && <span style={{ fontSize: 8, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
                                       {/* Deadline */}
@@ -7434,7 +7443,7 @@ Règles :
                                       generateContactMessage(tradeName, newPerson, type, newPKey);
                                     }
                                   }}
-                                  placeholder={`+ Ajouter ${type === 'internal' ? 'une ressource interne' : 'une compagnie/personne externe'} — Entrée pour confirmer`}
+                                  placeholder={`+ Ajouter ${type === 'internal' ? 'un employé' : 'un sous-traitant'} — Entrée pour confirmer`}
                                   style={{ flex: 1, border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
                                 />
                               </div>
