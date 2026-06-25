@@ -17,7 +17,8 @@ const BRAND_BORDER = '#F9D5C0';
 const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
-  { id: 's-equipe', icon: '👥', label: 'Équipe & demandes de prix' },
+  { id: 's-rfq', icon: '🤝', label: 'Demandes de prix' },
+  { id: 's-equipe', icon: '👥', label: 'Équipe et conformité' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-expenses', icon: '💸', label: 'Dépenses' },
   { id: 's-punch', icon: '⏱️', label: 'Punch' },
@@ -3588,10 +3589,10 @@ export default function ProjectDetail() {
   // Florence recommande des sous-traitants pour les corps non assignés
   const fetchTradeRecos = async () => {
     const pParsePers = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p } : p);
+    // Source : Gantt (phases) uniquement — s-rfq est avant l'équipe dans la page
     const allTrades = [...new Set([
-      ...(project.trades || []).map(t => t.trade).filter(Boolean),
       ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
-      ...Object.keys(tradeResourcesMap),   // trades ajoutés manuellement via l'UI
+      ...(project.trades || []).map(t => t.trade).filter(Boolean),
     ])].filter(Boolean);
     if (!allTrades.length) {
       setTradeRecos({});
@@ -6234,8 +6235,8 @@ Règles :
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>👥</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe & demande de prix/disponibilités</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, sous-traitants et demandes de prix du projet</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
             </div>
           </div>
 
@@ -6738,8 +6739,20 @@ Règles :
             );
           })()}
 
+        </div>{/* fin s-equipe */}
+
+        {/* ── Demandes de prix ── */}
+        <div id="s-rfq" style={{ background: '#FFF8F0', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de prix</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>RFQ aux sous-traitants et recommandations Flo</div>
+            </div>
+          </div>
+
           {/* ── Demandes de prix + Flo recommande ── */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 14 }}>
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden' }}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 36, height: 36, borderRadius: 11, background: '#F0EBFD', display: 'grid', placeItems: 'center', fontSize: 18 }}>🤝</div>
               <div style={{ flex: 1 }}>
@@ -6923,7 +6936,7 @@ Règles :
               )}
             </div>
           </div>
-        </div>{/* fin s-equipe */}
+        </div>{/* fin s-rfq */}
 
         {/* ── Devis détaillé ── */}
         <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
