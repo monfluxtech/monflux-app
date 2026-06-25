@@ -433,6 +433,85 @@ function TeamTab() {
   );
 }
 
+const DEFAULT_SUPPLIERS = [
+  { id: 'rona', name: 'Rona', url: 'https://www.rona.ca', active: true },
+  { id: 'homedepot', name: 'Home Depot Canada', url: 'https://www.homedepot.ca', active: true },
+  { id: 'lowes', name: "Lowe's Canada", url: 'https://www.lowescanada.ca', active: true },
+  { id: 'patrickmorin', name: 'Patrick Morin', url: 'https://www.patrickmorin.com', active: true },
+  { id: 'canac', name: 'Canac', url: 'https://www.canac.ca', active: true },
+  { id: 'bmr', name: 'BMR', url: 'https://www.bmr.ca', active: false },
+  { id: 'richelieu', name: 'Richelieu', url: 'https://www.richelieu.com', active: false },
+  { id: 'ikea', name: 'IKEA Canada', url: 'https://www.ikea.com/ca', active: false },
+  { id: 'maisondumonde', name: 'Maison du monde', url: 'https://www.maisonsdumonde.com/CA', active: false },
+];
+
+function SuppliersTab() {
+  const [suppliers, setSuppliers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-suppliers') || 'null') || DEFAULT_SUPPLIERS; } catch { return DEFAULT_SUPPLIERS; }
+  });
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const toggle = (id) => setSuppliers(prev => prev.map(s => s.id === id ? { ...s, active: !s.active } : s));
+  const remove = (id) => setSuppliers(prev => prev.filter(s => s.id !== id));
+  const add = () => {
+    if (!newName.trim()) return;
+    setSuppliers(prev => [...prev, { id: `custom-${Date.now()}`, name: newName.trim(), url: newUrl.trim(), active: true }]);
+    setNewName(''); setNewUrl('');
+  };
+  const save = () => {
+    localStorage.setItem('monflux-suppliers', JSON.stringify(suppliers));
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Fournisseurs de matériaux</h3>
+        <p style={{ fontSize: 12.5, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
+          Flo utilise cette liste pour proposer des matériaux et des prix lors de la recherche dans les projets. Active les fournisseurs pertinents pour ton marché.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+        {suppliers.map(s => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: s.active ? '#F0FDF4' : '#F9FAFB', borderRadius: 9, border: `1px solid ${s.active ? '#BBF7D0' : '#E5E7EB'}` }}>
+            <button onClick={() => toggle(s.id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1, flexShrink: 0, color: s.active ? '#16A34A' : '#D1D5DB' }}>
+              {s.active ? '●' : '○'}
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#111827', flex: 1 }}>{s.name}</span>
+            {s.url && (
+              <a href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#9CA3AF', textDecoration: 'none' }}>{s.url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}</a>
+            )}
+            <button onClick={() => remove(s.id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 16, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>×</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Ajouter un fournisseur custom */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nom du fournisseur"
+          style={{ flex: 1, minWidth: 140, padding: '7px 11px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}/>
+        <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://..."
+          style={{ flex: 1, minWidth: 200, padding: '7px 11px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none' }}/>
+        <button onClick={add} disabled={!newName.trim()}
+          style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#111827', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newName.trim() ? 1 : 0.4 }}>
+          + Ajouter
+        </button>
+      </div>
+
+      <button onClick={save}
+        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 8, border: 'none', background: saved ? '#16A34A' : '#6366F1', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        {saved ? <Check size={14}/> : <Save size={14}/>}
+        {saved ? 'Enregistré !' : 'Enregistrer les fournisseurs'}
+      </button>
+    </div>
+  );
+}
+
 function DevTab() {
   const [devPlans, setDevPlans] = useState([]);
   const [devCurrent, setDevCurrent] = useState(null);
@@ -493,10 +572,11 @@ function DevTab() {
 }
 
 const TABS = [
-  { id: 'profil',   label: 'Mon profil',    icon: User },
-  { id: 'company',  label: 'Entreprise',    icon: Building2 },
-  { id: 'team',     label: 'Équipe',        icon: Users },
-  { id: 'sources',  label: 'Sources leads', icon: Settings },
+  { id: 'profil',      label: 'Mon profil',         icon: User },
+  { id: 'company',     label: 'Entreprise',          icon: Building2 },
+  { id: 'team',        label: 'Équipe',              icon: Users },
+  { id: 'sources',     label: 'Sources leads',       icon: Settings },
+  { id: 'fournisseurs', label: 'Fournisseurs',       icon: Settings },
 ];
 
 export default function Parametres() {
@@ -538,11 +618,12 @@ export default function Parametres() {
         </div>
 
         <div className="card">
-          {activeTab === 'profil'  && <ProfileTab />}
-          {activeTab === 'company' && <CompanyTab />}
-          {activeTab === 'team'    && <TeamTab />}
-          {activeTab === 'sources' && <LeadSourcesTab />}
-          {activeTab === 'dev'     && devEnabled && <DevTab />}
+          {activeTab === 'profil'       && <ProfileTab />}
+          {activeTab === 'company'      && <CompanyTab />}
+          {activeTab === 'team'         && <TeamTab />}
+          {activeTab === 'sources'      && <LeadSourcesTab />}
+          {activeTab === 'fournisseurs' && <SuppliersTab />}
+          {activeTab === 'dev'          && devEnabled && <DevTab />}
         </div>
       </div>
     </Layout>

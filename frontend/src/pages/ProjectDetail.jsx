@@ -18,6 +18,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-estimation', icon: '📊', label: 'Estimation approximative' },
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
+  { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
   { id: 's-soumission', icon: '📄', label: 'Devis détaillé' },
   { id: 's-contracts', icon: '✍️', label: 'Contrats' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
@@ -2929,6 +2930,8 @@ export default function ProjectDetail() {
   const [floQuoteLoading, setFloQuoteLoading] = useState(false);
   const [floInspirationInput, setFloInspirationInput] = useState('');
   const [quoteNewRow, setQuoteNewRow] = useState({ material: {}, labor: {}, subcontractor: {}, other: {} });
+  const [quoteCollapsed, setQuoteCollapsed] = useState({ material: false, labor: false, subcontractor: false, other: false });
+  const [quoteMassMarkup, setQuoteMassMarkup] = useState('');
   const [projectRfqs, setProjectRfqs] = useState([]);
   const [showRfqForm, setShowRfqForm] = useState(false);
   const [rfqForm, setRfqForm] = useState({ title: '', specialty: '', description: '', deadline: '' });
@@ -2964,6 +2967,26 @@ export default function ProjectDetail() {
   const [estimTab, setEstimTab] = useState('voieB');
   const [showClientReply, setShowClientReply] = useState(false);
   const [clientReplyText, setClientReplyText] = useState('');
+  // Descriptif de la demande — Vision
+  const [visionInspirationInput, setVisionInspirationInput] = useState('');
+  const [planAnalysis, setPlanAnalysis] = useState(null);
+  const [planAnalysisLoading, setPlanAnalysisLoading] = useState(false);
+  const [floGenPrompt, setFloGenPrompt] = useState('');
+  const [floGenLoading, setFloGenLoading] = useState(false);
+  const [generatedPreviews, setGeneratedPreviews] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`monflux-gen-previews-${id}`) || '[]'); } catch { return []; }
+  });
+  const planUploadRef = React.useRef(null);
+  // Recherche de matériaux
+  const [matSearchResults, setMatSearchResults] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`monflux-mat-results-${id}`) || '[]'); } catch { return []; }
+  });
+  const [matWishlist, setMatWishlist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`monflux-mat-wishlist-${id}`) || '[]'); } catch { return []; }
+  });
+  const [matSearchLoading, setMatSearchLoading] = useState(false);
+  const [matSearchQuery, setMatSearchQuery] = useState('');
+  const [matFilter, setMatFilter] = useState('all'); // 'all' | 'wishlist'
   const [autreTexts, setAutreTexts] = useState({});
   const [estimMsg, setEstimMsg] = useState('');
   const [estimInspoPhotos, setEstimInspoPhotos] = useState([]);
@@ -3015,7 +3038,7 @@ export default function ProjectDetail() {
       // B4 — quote builder, RFQs, contracts
       const firstQuote = projQuotes?.[0] || null;
       setQuoteBuilderQuote(firstQuote);
-      setQuoteBuilderItems(firstQuote?.items || []);
+      setQuoteBuilderItems(normalizeQuoteItems(firstQuote?.items));
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
       setMaterialOrders(orderList || []);
@@ -3093,6 +3116,159 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  // ── Descriptif : analyse plan d'architecte avec Flo ──
+  const analyzePlan = async (file) => {
+    setPlanAnalysisLoading(true);
+    try {
+      const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const token = localStorage.getItem('token');
+      // Upload du fichier
+      const fd = new FormData(); fd.append('file', file); fd.append('project_id', id); fd.append('type', 'plan');
+      const upRes = await fetch(`${API_BASE}/media`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      if (!upRes.ok) throw new Error('Upload failed');
+      const { url: planUrl } = await upRes.json();
+      // Analyse via Flo
+      const fa = project.field_assessment || {};
+      const tradesCtx = (project.phases || []).map(p => p.trade_name || p.name).filter(Boolean).join(', ');
+      const prompt = `Tu es Florence, IA MONFLUX experte en lecture de plans de construction au Québec.
+Projet : ${project.description || project.name}
+Adresse : ${project.address || 'N/A'}
+Corps de métier impliqués : ${tradesCtx || 'à identifier depuis le plan'}
+
+Analyse ce plan d'architecte et extrais TOUTES les informations utiles pour chaque spécialisation. Retourne un JSON STRICT :
+{"general":{"superficie_totale":"","nb_pieces":"","style":"","contraintes_particulieres":""},"specialisations":[{"metier":"Charpenterie / Structure","items":[{"element":"","detail":"","quantite":"","notes_chantier":""}]},{"metier":"Plomberie","items":[...]},{"metier":"Électricité","items":[...]},{"metier":"HVAC","items":[...]},{"metier":"Finition","items":[...]},{"metier":"Autres","items":[...]}]}
+Pour chaque item : element = nom de l'élément, detail = description précise, quantite = mesures si visible, notes_chantier = ce que le travailleur doit savoir.`;
+      const chatRes = await fetch(`${API_BASE}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: planUrl } }, { type: 'text', text: prompt }] }] }),
+      });
+      if (!chatRes.ok) throw new Error('Chat failed');
+      const reader = chatRes.body.getReader(); const dec = new TextDecoder(); let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const ln of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const ev = JSON.parse(ln.slice(6)); if (ev.type === 'text') txt += ev.text; } catch {}
+        }
+      }
+      const m = txt.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('No JSON');
+      const analysis = JSON.parse(m[0]);
+      setPlanAnalysis(analysis);
+      // Sauvegarder dans field_assessment
+      const nextFa = { ...fa, plan_analysis: analysis, plan_url: planUrl };
+      await projectsApi.update(id, { field_assessment: nextFa });
+      setProject(p => ({ ...p, field_assessment: nextFa }));
+    } catch (e) { console.error('analyzePlan', e); } finally { setPlanAnalysisLoading(false); }
+  };
+
+  // ── Descriptif : générer prévisualisation IA via Pollinations ──
+  const generatePreview = async () => {
+    if (!floGenPrompt.trim()) return;
+    setFloGenLoading(true);
+    try {
+      const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const token = localStorage.getItem('token');
+      const fa = project.field_assessment || {};
+      const visionCtx = [
+        project.description && `Projet: ${project.description}`,
+        fa.work_type && `Type: ${fa.work_type}`,
+        (fa.vision?.inspirations || []).length && `Inspirations: ${fa.vision.inspirations.join(', ')}`,
+      ].filter(Boolean).join('\n');
+      // Flo génère un prompt d'image optimisé
+      const promptRes = await fetch(`${API_BASE}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: `Tu es Florence, IA MONFLUX. Génère un prompt d'image en anglais (max 200 mots) pour prévisualiser le résultat final de ces travaux de rénovation. Le prompt doit décrire la pièce/espace rénovée de façon réaliste et photogénique (style photo de magazine immobilier).
+Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${floGenPrompt.trim()}\nRéponds UNIQUEMENT avec le prompt en anglais, rien d'autre.` }] }),
+      });
+      const reader = promptRes.body.getReader(); const dec2 = new TextDecoder(); let imgPrompt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const ln of dec2.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const ev = JSON.parse(ln.slice(6)); if (ev.type === 'text') imgPrompt += ev.text; } catch {}
+        }
+      }
+      imgPrompt = imgPrompt.trim();
+      // Génération image via Pollinations.ai
+      const seed = Math.floor(Date.now() / 1000);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt + ', interior design, architectural rendering, photorealistic, 8k')}?width=1024&height=768&seed=${seed}&nologo=true`;
+      const newPrev = { id: Date.now(), prompt: floGenPrompt, img_prompt: imgPrompt, url: imageUrl };
+      const nextPreviews = [newPrev, ...generatedPreviews];
+      setGeneratedPreviews(nextPreviews);
+      localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(nextPreviews));
+      setFloGenPrompt('');
+    } catch (e) { console.error('generatePreview', e); } finally { setFloGenLoading(false); }
+  };
+
+  // ── Descriptif : inspiration vision ──
+  const saveVisionField = async (patch) => {
+    const fa = project.field_assessment || {};
+    const nextVision = { ...(fa.vision || {}), ...patch };
+    const nextFa = { ...fa, vision: nextVision };
+    try {
+      await projectsApi.update(id, { field_assessment: nextFa });
+      setProject(p => ({ ...p, field_assessment: nextFa }));
+    } catch {}
+  };
+
+  // ── Recherche de matériaux ──
+  const fetchMaterialSearch = async (query) => {
+    setMatSearchLoading(true);
+    try {
+      const BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const token = localStorage.getItem('token');
+      const fa = project.field_assessment || {};
+
+      // Fournisseurs actifs depuis les settings
+      const savedSuppliers = JSON.parse(localStorage.getItem('monflux-suppliers') || '[]');
+      const supplierKeys = savedSuppliers.filter(s => s.active).map(s => {
+        const n = s.name.toLowerCase();
+        if (n.includes('home depot')) return 'homedepot';
+        if (n.includes('canadian tire')) return 'canadiantire';
+        if (n.includes('rona')) return 'rona';
+        return null;
+      }).filter(Boolean);
+      // Par défaut : Home Depot + Rona
+      const suppliers = supplierKeys.length ? supplierKeys : ['homedepot', 'rona'];
+
+      const res = await fetch(`${BASE}/scrape/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          query: query || `matériaux ${fa.work_type || 'rénovation'}`,
+          suppliers,
+          project_context: {
+            description: project.description || project.name,
+            field_assessment: fa,
+            phases: project.phases || [],
+          },
+          max_per_supplier: 8,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`Scraper ${res.status}`);
+      const result = await res.json();
+
+      // result.items est déjà aplati avec { categorie, source_verified, source_type, ... }
+      const items = result.items || [];
+      setMatSearchResults(items);
+      localStorage.setItem(`monflux-mat-results-${id}`, JSON.stringify(items));
+      localStorage.setItem(`monflux-mat-warnings-${id}`, JSON.stringify(result.warnings || []));
+
+      // Log les erreurs de scraping en console (pas bloquant)
+      if (result.errors?.length) {
+        console.warn('[Scraper] Erreurs partielles:', result.errors);
+      }
+    } catch (e) { console.error('fetchMaterialSearch', e); } finally { setMatSearchLoading(false); }
+  };
+
+  const toggleMatWishlist = (itemId) => {
+    const next = matWishlist.includes(itemId)
+      ? matWishlist.filter(x => x !== itemId)
+      : [...matWishlist, itemId];
+    setMatWishlist(next);
+    localStorage.setItem(`monflux-mat-wishlist-${id}`, JSON.stringify(next));
+  };
 
   // Auto-générer le message d'estimation quand le projet ou les résultats IA changent
   const buildEstimMsg = (proj, aiResult) => {
@@ -3606,18 +3782,22 @@ export default function ProjectDetail() {
 
   const fetchTradeRecos = async (mergeMode) => {
     const pParsePers = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p } : p);
-    // Gantt en priorité + fallback sur les corps de métier déjà dans le tableau
-    const allTrades = [...new Set([
+    // Corps de métier explicites (trade_name) + fallback sur noms de phases + entrées manuelles
+    const explicitTrades = [...new Set([
       ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
       ...Object.keys(tradeResourcesMap),
     ])].filter(Boolean);
-    if (!allTrades.length) {
+    const phaseNames = (project.phases || []).map(p => p.name).filter(Boolean);
+    // Si aucun trade_name mais des phases existent → Flo inférera les corps de métier
+    if (!explicitTrades.length && !phaseNames.length) {
       setTradeRecos({});
       setLoadingTradeRecos(false);
       return;
     }
     setLoadingTradeRecos(true);
+    // Utiliser les trades explicites ou, à défaut, laisser Flo inférer depuis les noms de phases
+    const allTrades = explicitTrades.length ? explicitTrades : [];
 
     // Contexte : ressources internes par corps de métier
     const internalLines = allTrades.map(trade => {
@@ -3638,7 +3818,11 @@ export default function ProjectDetail() {
     const prompt = `Tu es Florence, assistante IA MONFLUX spécialisée en construction au Québec.
 Projet : ${project.description || project.name || ''}
 Adresse : ${project.address || 'Non précisée'}
-Corps de métier requis : ${allTrades.join(', ')}
+${allTrades.length
+  ? `Corps de métier requis : ${allTrades.join(', ')}`
+  : `Phases du chantier (identifie les corps de métier nécessaires depuis ces noms) :\n${phaseNames.map(n => `  - ${n}`).join('\n')}`
+}
+${phaseNames.length ? `\nPhases Gantt : ${phaseNames.join(' / ')}` : ''}
 
 CONTEXTE — ressources déjà disponibles :
 ${internalLines || '  (aucune ressource interne renseignée)'}
@@ -4141,7 +4325,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     try {
       const { data } = await quotesApi.update(q.id, { items });
       setQuoteBuilderQuote(data);
-      setQuoteBuilderItems(data.items || items);
+      setQuoteBuilderItems(normalizeQuoteItems(data.items || items));
     } catch {} finally { setQuoteSaving(false); }
   };
 
@@ -4171,6 +4355,8 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     scheduleQuoteSave(next);
   };
 
+  const normalizeQuoteItems = (items) => (items || []).map(it => ({ ...it, markup: Number(it.markup) || 0 }));
+
   const commitNewRow = async (type, draft) => {
     if (!(draft.name || '').trim()) return;
     const q = await ensureQuote();
@@ -4179,7 +4365,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     const next = [...quoteBuilderItems, {
       type, name: draft.name || '', qty: Number(draft.qty) || 1,
       unit: draft.unit || unitMap[type] || 'un.',
-      unit_price: Number(draft.unit_price) || 0, url: draft.url || '',
+      unit_price: Number(draft.unit_price) || 0, url: draft.url || '', markup: 0,
     }];
     setQuoteBuilderItems(next);
     scheduleQuoteSave(next);
@@ -4243,7 +4429,7 @@ JSON seulement, pas de texte autour.`;
       const newItems = [...quoteBuilderItems];
       Object.entries(typeMap).forEach(([sec, type]) => {
         (recos[sec] || []).forEach(it => {
-          newItems.push({ type, name: it.name || '', qty: Number(it.qty) || 1, unit: it.unit || unitMap[type], unit_price: Number(it.unit_price) || 0, url: it.url || '', source: 'flo' });
+          newItems.push({ type, name: it.name || '', qty: Number(it.qty) || 1, unit: it.unit || unitMap[type], unit_price: Number(it.unit_price) || 0, url: it.url || '', markup: 0, source: 'flo' });
         });
       });
       setQuoteBuilderItems(newItems);
@@ -5475,99 +5661,267 @@ Règles :
       {/* ── Doc sections ── */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Résumé de la demande + médias client ── */}
-        <div style={{ background: '#fff', borderBottom: '1px solid #E8EAED' }}>
-          {/* Zone description */}
-          <div style={{ padding: '18px 56px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: 0 }}>Résumé de la demande</p>
-              <button
-                onClick={() => { setShowClientReply(s => !s); setClientReplyText(''); }}
-                style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: BRAND, background: 'rgba(232,121,78,.08)', border: `1px solid rgba(232,121,78,.25)`, borderRadius: 20, padding: '3px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                {showClientReply ? <X size={11}/> : <MessageSquare size={11}/>}
-                {showClientReply ? 'Annuler' : 'Coller réponse client'}
-              </button>
-            </div>
-            <InlineField
-              value={project.description || ''}
-              onSave={v => saveField('description', v)}
-              placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
-              multiline
-              style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-              displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 720 }}
-            />
+        {/* ── Descriptif de la demande ── */}
+        {(() => {
+          const fa = project.field_assessment || {};
+          const vision = fa.vision || {};
+          const inspirations = vision.inspirations || [];
+          const storedAnalysis = fa.plan_analysis || planAnalysis;
+          const planUrl = fa.plan_url;
 
-            {/* Zone coller réponse client */}
-            {showClientReply && (
-              <div style={{ marginTop: 12, padding: 14, background: '#F8FAFB', borderRadius: 10, border: '1px solid #E8EAED' }}>
-                <p style={{ fontSize: 11.5, fontWeight: 700, color: '#4B5563', margin: '0 0 8px' }}>Colle ici la réponse reçue du client — elle remplacera le résumé actuel.</p>
-                <textarea
-                  value={clientReplyText}
-                  onChange={e => setClientReplyText(e.target.value)}
-                  placeholder="Copie-colle le courriel ou message du client ici…"
-                  style={{ width: '100%', minHeight: 100, padding: '10px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 13, lineHeight: 1.6, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#15171C' }}
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          const SubLabel = ({ children }) => (
+            <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: 0 }}>{children}</p>
+          );
+
+          const addInspiration = async (url) => {
+            if (!url.trim()) return;
+            const next = [...inspirations, url.trim()];
+            setVisionInspirationInput('');
+            await saveVisionField({ inspirations: next });
+          };
+
+          const removeInspiration = async (idx) => {
+            const next = inspirations.filter((_, i) => i !== idx);
+            await saveVisionField({ inspirations: next });
+          };
+
+          return (
+            <div style={{ background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+
+              {/* ─── 1. Description des besoins ─── */}
+              <div style={{ padding: '22px 56px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <SubLabel>Descriptif de la demande</SubLabel>
                   <button
-                    disabled={!clientReplyText.trim()}
-                    onClick={async () => { await saveField('description', clientReplyText.trim()); setShowClientReply(false); setClientReplyText(''); }}
-                    className="btn-primary text-xs">
-                    Enregistrer comme résumé
+                    onClick={() => { setShowClientReply(s => !s); setClientReplyText(''); }}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: BRAND, background: 'rgba(232,121,78,.08)', border: `1px solid rgba(232,121,78,.25)`, borderRadius: 20, padding: '3px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {showClientReply ? <X size={11}/> : <MessageSquare size={11}/>}
+                    {showClientReply ? 'Annuler' : 'Coller réponse client'}
                   </button>
-                  <button onClick={() => { setShowClientReply(false); setClientReplyText(''); }} className="btn-secondary text-xs">Annuler</button>
                 </div>
+                <InlineField
+                  value={project.description || ''}
+                  onSave={v => saveField('description', v)}
+                  placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
+                  multiline
+                  style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 760 }}
+                  displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 760 }}
+                />
+                {showClientReply && (
+                  <div style={{ marginTop: 12, padding: 14, background: '#F8FAFB', borderRadius: 10, border: '1px solid #E8EAED' }}>
+                    <p style={{ fontSize: 11.5, fontWeight: 700, color: '#4B5563', margin: '0 0 8px' }}>Colle ici la réponse reçue du client — elle remplacera le descriptif actuel.</p>
+                    <textarea value={clientReplyText} onChange={e => setClientReplyText(e.target.value)}
+                      placeholder="Copie-colle le courriel ou message du client ici…"
+                      style={{ width: '100%', minHeight: 100, padding: '10px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 13, lineHeight: 1.6, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#15171C' }}/>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button disabled={!clientReplyText.trim()}
+                        onClick={async () => { await saveField('description', clientReplyText.trim()); setShowClientReply(false); setClientReplyText(''); }}
+                        className="btn-primary text-xs">Enregistrer comme descriptif</button>
+                      <button onClick={() => { setShowClientReply(false); setClientReplyText(''); }} className="btn-secondary text-xs">Annuler</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Galerie horizontale — photos & documents du client */}
-          {(media.length > 0 || (project.documents || []).length > 0) && (
-            <div style={{ padding: '0 56px 18px' }}>
-              <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: '0 0 8px' }}>
-                Photos & documents reçus · {media.length + (project.documents || []).length}
-              </p>
-              <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
-                {/* Photos / vidéos */}
-                {media.map(m => (
-                  <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
-                    onClick={() => setLightboxItem(m)}>
-                    {m.type === 'photo' && m.url ? (
-                      <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                    ) : m.type === 'video' ? (
-                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>
-                    )}
-                    {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
-                  </div>
-                ))}
-                {/* Documents */}
-                {(project.documents || []).map(d => (
-                  <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
-                    onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
-                    <span style={{ fontSize: 28 }}>📄</span>
-                    <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
-                  </div>
-                ))}
-                {/* Bouton ajouter */}
-                <div style={{ flexShrink: 0, width: 90, height: 90, borderRadius: 10, border: `2px dashed rgba(232,121,78,.35)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', color: BRAND, background: 'rgba(232,121,78,.04)' }}
-                  onClick={() => setShowCapture(true)}>
-                  <span style={{ fontSize: 22 }}>+</span>
-                  <span style={{ fontSize: 10, fontWeight: 700 }}>Ajouter</span>
+              {/* ─── 2. Photos actuelles & documents reçus ─── */}
+              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 10px' }}>
+                  <SubLabel>Photos actuelles & documents reçus</SubLabel>
+                  {(media.length > 0 || (project.documents || []).length > 0) && (
+                    <span style={{ fontSize: 10, color: '#C4C8CE' }}>{media.length + (project.documents || []).length} fichier{media.length + (project.documents || []).length !== 1 ? 's' : ''}</span>
+                  )}
+                  <button onClick={() => setShowCapture(true)}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: BRAND, fontWeight: 700, background: 'rgba(232,121,78,.06)', border: `1px dashed rgba(232,121,78,.3)`, borderRadius: 7, padding: '4px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Camera size={12}/> Ajouter
+                  </button>
                 </div>
+                {(media.length > 0 || (project.documents || []).length > 0) ? (
+                  <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
+                    {media.map(m => (
+                      <div key={m.id} style={{ flexShrink: 0, width: 130, height: 96, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
+                        onClick={() => setLightboxItem(m)}>
+                        {m.type === 'photo' && m.url
+                          ? <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                          : m.type === 'video'
+                            ? <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
+                            : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>}
+                        {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
+                      </div>
+                    ))}
+                    {(project.documents || []).map(d => (
+                      <div key={d.id} style={{ flexShrink: 0, width: 130, height: 96, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
+                        onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
+                        <span style={{ fontSize: 28 }}>📄</span>
+                        <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: '#B0B3BA', margin: '4px 0 0' }}>Aucune photo ou document reçu du client pour l'instant.</p>
+                )}
               </div>
+
+              {/* ─── 3. Vision ─── */}
+              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 12px' }}>
+                  <SubLabel>Vision</SubLabel>
+                  <span style={{ fontSize: 10.5, color: '#9CA3AF', fontStyle: 'italic' }}>Images d'inspiration · Plans d'architecte</span>
+                </div>
+
+                {/* Inspirations */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 8 }}>Images d'inspiration</p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <input value={visionInspirationInput} onChange={e => setVisionInspirationInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addInspiration(visionInspirationInput); }}
+                    placeholder="Colle une URL Pinterest, Houzz, Instagram… ou décris le style"
+                    style={{ flex: 1, padding: '7px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', color: '#15171C' }}/>
+                  <button onClick={() => addInspiration(visionInspirationInput)} disabled={!visionInspirationInput.trim()}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: visionInspirationInput.trim() ? 1 : 0.4 }}>
+                    Ajouter
+                  </button>
+                </div>
+                {inspirations.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                    {inspirations.map((url, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F3F4F6', borderRadius: 20, padding: '4px 10px 4px 12px', fontSize: 11, color: '#374151', maxWidth: 320 }}>
+                        {url.startsWith('http') ? (
+                          <a href={url} target="_blank" rel="noreferrer" style={{ color: BRAND, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>🔗 {url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}</a>
+                        ) : (
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>💬 {url}</span>
+                        )}
+                        <button onClick={() => removeInspiration(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {inspirations.length === 0 && (
+                  <p style={{ fontSize: 11.5, color: '#C4C8CE', margin: '0 0 14px', fontStyle: 'italic' }}>Aucune inspiration ajoutée — colle des URLs ou décris le style souhaité.</p>
+                )}
+
+                {/* Plans d'architecte */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '18px 0 8px' }}>Plans d'architecte</p>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input ref={planUploadRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) analyzePlan(f); e.target.value = ''; }}/>
+                  <button onClick={() => planUploadRef.current?.click()}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: `1.5px dashed #D1D5DB`, background: '#F9FAFB', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    📐 {planUrl ? 'Remplacer le plan' : 'Uploader un plan (image ou PDF)'}
+                  </button>
+                  {planAnalysisLoading && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: BRAND }}>
+                      <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }}/> Flo analyse le plan…
+                    </div>
+                  )}
+                  {planUrl && !planAnalysisLoading && (
+                    <a href={planUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: BRAND, textDecoration: 'none', fontWeight: 600 }}>Voir plan ↗</a>
+                  )}
+                </div>
+
+                {/* Tableau d'analyse du plan */}
+                {storedAnalysis && (
+                  <div style={{ marginTop: 16 }}>
+                    {/* Infos générales */}
+                    {storedAnalysis.general && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                        {[
+                          ['Superficie', storedAnalysis.general.superficie_totale],
+                          ['Pièces', storedAnalysis.general.nb_pieces],
+                          ['Style', storedAnalysis.general.style],
+                          ['Contraintes', storedAnalysis.general.contraintes_particulieres],
+                        ].filter(([, v]) => v).map(([label, val]) => (
+                          <div key={label} style={{ background: '#F8F9FA', borderRadius: 8, padding: '5px 12px', border: '1px solid #E8EAED' }}>
+                            <span style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block' }}>{label}</span>
+                            <span style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Tableau par spécialisation */}
+                    {(storedAnalysis.specialisations || []).filter(s => s.items?.length > 0).map(spec => (
+                      <div key={spec.metier} style={{ marginBottom: 16 }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: BRAND }}/>
+                          {spec.metier}
+                        </p>
+                        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #E8EAED' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                            <thead>
+                              <tr style={{ background: '#F8F9FA' }}>
+                                {['Élément', 'Détail', 'Quantité / mesure', 'Notes chantier'].map(h => (
+                                  <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {spec.items.map((it, i) => (
+                                <tr key={i} style={{ borderBottom: i < spec.items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+                                  <td style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, color: '#111827' }}>{it.element}</td>
+                                  <td style={{ padding: '6px 10px', fontSize: 12, color: '#374151' }}>{it.detail}</td>
+                                  <td style={{ padding: '6px 10px', fontSize: 11.5, color: '#6B7280', whiteSpace: 'nowrap' }}>{it.quantite || '—'}</td>
+                                  <td style={{ padding: '6px 10px', fontSize: 11, color: '#9CA3AF' }}>{it.notes_chantier || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ─── 4. Génération IA — prévisualisation ─── */}
+              <div style={{ padding: '0 56px 26px', borderTop: '1px solid #F4F5F6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 12px' }}>
+                  <SubLabel>Prévisualisation IA</SubLabel>
+                  <span style={{ fontSize: 10.5, color: '#9CA3AF', fontStyle: 'italic' }}>Génère des rendus du résultat final</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <textarea value={floGenPrompt} onChange={e => setFloGenPrompt(e.target.value)}
+                    rows={2}
+                    placeholder={`Décris la pièce après rénovation : "cuisine moderne scandinave avec îlot de quartz blanc, armoires gris anthracite, plancher de chêne naturel"…`}
+                    style={{ flex: 1, padding: '9px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', resize: 'vertical', color: '#15171C', lineHeight: 1.5 }}/>
+                  <button onClick={generatePreview} disabled={floGenLoading || !floGenPrompt.trim()}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: floGenLoading || !floGenPrompt.trim() ? 'default' : 'pointer', opacity: !floGenPrompt.trim() ? 0.45 : 1, flexShrink: 0, alignSelf: 'stretch' }}>
+                    {floGenLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={13}/>}
+                    {floGenLoading ? 'Génération…' : 'Générer'}
+                  </button>
+                </div>
+                <p style={{ fontSize: 10.5, color: '#B0B3BA', margin: '6px 0 14px', lineHeight: 1.5 }}>
+                  Flo optimise ta description puis génère un rendu photoréaliste. Le contexte du projet (adresse, type de travaux, inspirations) est inclus automatiquement.
+                </p>
+                {generatedPreviews.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+                    {generatedPreviews.map(prev => (
+                      <div key={prev.id} style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA' }}>
+                        <img src={prev.url} alt={prev.prompt} loading="lazy"
+                          style={{ width: '100%', height: 180, objectFit: 'cover', display: 'block' }}
+                          onError={e => { e.target.style.display = 'none'; }}/>
+                        <div style={{ padding: '8px 12px 10px' }}>
+                          <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4 }}>{prev.prompt}</p>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <a href={prev.url} target="_blank" rel="noreferrer"
+                              style={{ fontSize: 10, color: BRAND, fontWeight: 700, textDecoration: 'none' }}>Voir grand ↗</a>
+                            <button onClick={() => {
+                              const next = generatedPreviews.filter(p => p.id !== prev.id);
+                              setGeneratedPreviews(next);
+                              localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(next));
+                            }}
+                              style={{ fontSize: 10, color: '#D1D5DB', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Supprimer</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {generatedPreviews.length === 0 && !floGenLoading && (
+                  <p style={{ fontSize: 11.5, color: '#C4C8CE', fontStyle: 'italic' }}>Aucun rendu généré. Décris le résultat souhaité et clique "Générer".</p>
+                )}
+              </div>
+
             </div>
-          )}
-          {/* Ajouter le premier média si aucun */}
-          {media.length === 0 && (project.documents || []).length === 0 && (
-            <div style={{ padding: '0 56px 16px' }}>
-              <button onClick={() => setShowCapture(true)}
-                style={{ fontSize: 11.5, color: BRAND, fontWeight: 700, background: 'rgba(232,121,78,.06)', border: `1px dashed rgba(232,121,78,.3)`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Camera size={13}/> Ajouter photos ou documents du client
-              </button>
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         {/* ── Estimation approximative ── */}
@@ -7052,6 +7406,167 @@ Règles :
 
         </div>{/* fin s-equipe */}
 
+        {/* ── Recherche de matériaux ── */}
+        <div id="s-materiaux" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          {(() => {
+            const warnings = (() => { try { return JSON.parse(localStorage.getItem(`monflux-mat-warnings-${id}`) || '[]'); } catch { return []; } })();
+            const displayed = matFilter === 'wishlist' ? matSearchResults.filter(it => matWishlist.includes(it.id)) : matSearchResults;
+            const byCategory = {};
+            displayed.forEach(it => { if (!byCategory[it.categorie]) byCategory[it.categorie] = []; byCategory[it.categorie].push(it); });
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+                  <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔍</div>
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', margin: '0 0 3px' }}>Recherche de matériaux</h2>
+                    <p style={{ fontSize: 12.5, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
+                      Flo analyse le projet et cherche les matériaux adaptés chez tes fournisseurs. Ajoute à la wishlist, compare, puis importe dans le devis.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Barre de recherche */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+                  <input value={matSearchQuery} onChange={e => setMatSearchQuery(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') fetchMaterialSearch(matSearchQuery); }}
+                    placeholder='ex: "plancher de bois", "robinetterie matte noire"… ou laisse vide pour une proposition complète'
+                    style={{ flex: 1, minWidth: 260, padding: '9px 14px', border: '1px solid #E0E4E8', borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', color: '#15171C' }}/>
+                  <button onClick={() => fetchMaterialSearch(matSearchQuery)} disabled={matSearchLoading}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: 'none', background: BRAND, color: '#fff', fontSize: 13, fontWeight: 700, cursor: matSearchLoading ? 'wait' : 'pointer', flexShrink: 0 }}>
+                    {matSearchLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={14}/>}
+                    {matSearchLoading ? 'Recherche…' : 'Rechercher avec Flo'}
+                  </button>
+                  {matSearchResults.length > 0 && (
+                    <div style={{ display: 'flex', gap: 3, background: '#F3F4F6', borderRadius: 8, padding: 3, alignSelf: 'center' }}>
+                      {[['all', 'Tout'], ['wishlist', `⭐ Wishlist${matWishlist.length > 0 ? ` (${matWishlist.length})` : ''}`]].map(([val, label]) => (
+                        <button key={val} onClick={() => setMatFilter(val)}
+                          style={{ padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', background: matFilter === val ? '#fff' : 'transparent', color: matFilter === val ? '#111827' : '#9CA3AF', boxShadow: matFilter === val ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Warnings Flo */}
+                {warnings.length > 0 && (
+                  <div style={{ marginBottom: 18 }}>
+                    {warnings.map((w, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 14px', background: '#FFFBEB', borderRadius: 9, border: '1px solid #FCD34D', marginBottom: 8 }}>
+                        <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                        <p style={{ fontSize: 12, color: '#92400E', margin: 0, lineHeight: 1.5 }}>{w.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Résultats */}
+                {matSearchLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', padding: '48px 0', color: '#9CA3AF' }}>
+                    <Loader2 size={26} style={{ animation: 'spin 1s linear infinite', color: BRAND }}/>
+                    <p style={{ fontSize: 13, margin: 0 }}>Flo recherche les meilleures options chez tes fournisseurs…</p>
+                  </div>
+                ) : Object.keys(byCategory).length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                    {Object.entries(byCategory).map(([cat, items]) => (
+                      <div key={cat}>
+                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#6B7280', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: BRAND, display: 'inline-block' }}/>
+                          {cat} · {items.length} option{items.length !== 1 ? 's' : ''}
+                        </p>
+                        <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #E8EAED' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+                            <thead>
+                              <tr style={{ background: '#F8F9FA' }}>
+                                {['', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist'].map((h, hi) => (
+                                  <th key={hi} style={{ padding: '8px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: (hi === 3 || hi === 7) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED', whiteSpace: 'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {items.map((it, i) => {
+                                const inWishlist = matWishlist.includes(it.id);
+                                return (
+                                  <tr key={it.id || i} style={{ borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none', background: inWishlist ? '#FFFDF5' : 'transparent' }}>
+                                    <td style={{ padding: '7px 8px', width: 52 }}>
+                                      {it.url_image ? (
+                                        <img src={it.url_image} alt={it.nom}
+                                          style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 7, border: '1px solid #E8EAED' }}
+                                          onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'grid'; }}/>
+                                      ) : null}
+                                      <div style={{ width: 44, height: 44, borderRadius: 7, background: '#F3F4F6', display: it.url_image ? 'none' : 'grid', placeItems: 'center', fontSize: 20 }}>🪵</div>
+                                    </td>
+                                    <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600, color: '#111827', maxWidth: 220 }}>{it.nom}</td>
+                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        <span style={{ display: 'inline-block', background: '#F3F4F6', borderRadius: 5, padding: '2px 9px', fontSize: 11, fontWeight: 600, color: '#374151' }}>{it.fournisseur}</span>
+                                        {it.source_verified === false ? (
+                                          <span style={{ fontSize: 9.5, color: '#D97706', fontWeight: 600 }}>⚠ Estimation Flo</span>
+                                        ) : it.source_type === 'apify' || it.source_type === 'api' ? (
+                                          <span style={{ fontSize: 9.5, color: '#16A34A', fontWeight: 600 }}>✓ Prix réel</span>
+                                        ) : null}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '7px 10px', fontSize: 14, fontWeight: 700, color: '#111827', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                      {it.prix_unitaire ? `${Number(it.prix_unitaire).toFixed(2)} $` : '—'}
+                                    </td>
+                                    <td style={{ padding: '7px 10px', fontSize: 11.5, color: '#9CA3AF' }}>{it.unite || '—'}</td>
+                                    <td style={{ padding: '7px 10px', fontSize: 11.5, color: '#6B7280', maxWidth: 200 }}>
+                                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.note_flo || it.note || '—'}</span>
+                                    </td>
+                                    <td style={{ padding: '7px 10px' }}>
+                                      {it.url_source ? (
+                                        <a href={it.url_source} target="_blank" rel="noreferrer"
+                                          style={{ fontSize: 11.5, color: BRAND, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Voir ↗</a>
+                                      ) : '—'}
+                                    </td>
+                                    <td style={{ padding: '7px 10px', textAlign: 'right' }}>
+                                      <button onClick={() => toggleMatWishlist(it.id)}
+                                        style={{ background: inWishlist ? '#FEF3C7' : '#F3F4F6', border: inWishlist ? '1.5px solid #FCD34D' : '1.5px solid #E5E7EB', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', fontSize: 14, color: inWishlist ? '#D97706' : '#9CA3AF', fontWeight: 700, transition: 'all .15s' }}>
+                                        {inWishlist ? '⭐' : '☆'}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Import wishlist dans devis */}
+                    {matWishlist.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, color: BRAND, fontWeight: 700 }}>{matWishlist.length} article{matWishlist.length !== 1 ? 's' : ''} dans la wishlist</span>
+                        <button onClick={async () => {
+                          const wishItems = matSearchResults.filter(it => matWishlist.includes(it.id));
+                          const q = await ensureQuote(); if (!q) return;
+                          const newItems = [...quoteBuilderItems, ...wishItems.map(it => ({
+                            type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
+                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo',
+                          }))];
+                          setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
+                        }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          → Importer dans le devis
+                        </button>
+                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>Ajoutés dans la section Matériaux du devis détaillé.</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '52px 0', color: '#9CA3AF' }}>
+                    <div style={{ fontSize: 44, marginBottom: 14 }}>🔍</div>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: '#6B7280', margin: '0 0 6px' }}>Aucun résultat pour l'instant</p>
+                    <p style={{ fontSize: 12.5, margin: '0 auto', maxWidth: 420, color: '#9CA3AF', lineHeight: 1.6 }}>
+                      Écris ce que tu cherches ou laisse vide — Flo analyse le projet et propose tout ce qui est nécessaire, en tenant compte des éléments conservés et des contraintes.
+                    </p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
 
         {/* ── Devis détaillé ── */}
         <div id="s-soumission" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -7106,17 +7621,35 @@ Règles :
             </div>
           )}
 
-          {/* Barre multi-select */}
+          {/* Barre multi-select + mass-markup */}
           {quoteSelected.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: BRAND }}>{quoteSelected.size} sélectionné(s)</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: BRAND }}>{quoteSelected.size} ligne(s)</span>
+              {/* Mass markup */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#EDE9FE', borderRadius: 7, padding: '3px 10px' }}>
+                <span style={{ fontSize: 11, color: BRAND }}>Markup</span>
+                <input type="number" min="0" max="300" step="1" value={quoteMassMarkup}
+                  onChange={e => setQuoteMassMarkup(e.target.value)}
+                  placeholder="0"
+                  style={{ width: 38, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
+                <span style={{ fontSize: 11, color: BRAND }}>%</span>
+                <button onClick={() => {
+                  if (quoteMassMarkup === '') return;
+                  const v = Number(quoteMassMarkup);
+                  const next = quoteBuilderItems.map((it, i) => quoteSelected.has(i) ? { ...it, markup: v } : it);
+                  setQuoteBuilderItems(next); scheduleQuoteSave(next); setQuoteMassMarkup('');
+                }}
+                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, border: 'none', background: BRAND, color: '#fff', fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>
+                  Appliquer
+                </button>
+              </div>
               <button onClick={() => { [...quoteSelected].sort((a, b) => b - a).forEach(i => removeQuoteItem(i)); setQuoteSelected(new Set()); }}
                 style={{ fontSize: 11, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: 'pointer' }}>
                 Supprimer
               </button>
               <button onClick={() => setQuoteSelected(new Set())}
                 style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid #E0E4E8', background: '#fff', color: '#8B919A', cursor: 'pointer', marginLeft: 'auto' }}>
-                ✕ Désélectionner
+                ✕
               </button>
             </div>
           )}
@@ -7127,146 +7660,167 @@ Règles :
             const typeIcons   = { material: '🪵', labor: '🔨', subcontractor: '🏗️', other: '📦' };
             const typeUnits   = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
             const hasUrl      = (t) => t === 'material' || t === 'subcontractor';
-            const iS = { fontSize: 11, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '3px 2px' };
+            const iS = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '4px 3px' };
+            const TH = { padding: '5px 4px', fontSize: 9.5, fontWeight: 700, color: '#4B5563', textTransform: 'uppercase', letterSpacing: '.05em' };
             return ['material', 'labor', 'subcontractor', 'other'].map(type => {
               const items = quoteBuilderItems.map((it, i) => ({ ...it, _i: i })).filter(it => it.type === type);
-              const nd = quoteNewRow[type] || {};
-              const sectionTotal = items.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
+              const nd    = quoteNewRow[type] || {};
+              const isCollapsed = quoteCollapsed[type];
+              const sectionTotal = items.reduce((s, it) => {
+                const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
+                return s + base * (1 + (Number(it.markup) || 0) / 100);
+              }, 0);
               return (
-                <div key={type} style={{ marginBottom: 24 }}>
-                  {/* Section header */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '2px solid #F1F3F5', paddingBottom: 6, marginBottom: 0 }}>
-                    <span style={{ fontSize: 14 }}>{typeIcons[type]}</span>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.07em' }}>{typeLabels[type]}</span>
-                    {items.length > 0 && <span style={{ fontSize: 10, color: '#C4C8CE' }}>{items.length} poste{items.length > 1 ? 's' : ''}</span>}
-                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#15171C' }}>
+                <div key={type} style={{ marginBottom: 20, border: '1px solid #E8EAED', borderRadius: 10, overflow: 'hidden' }}>
+                  {/* Section header cliquable */}
+                  <div onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#F8F9FA', cursor: 'pointer', borderBottom: isCollapsed ? 'none' : '1px solid #F1F3F5' }}>
+                    <span style={{ fontSize: 8, color: '#9CA3AF', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                    <span style={{ fontSize: 13 }}>{typeIcons[type]}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em' }}>{typeLabels[type]}</span>
+                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>{items.length} poste{items.length !== 1 ? 's' : ''}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#15171C' }}>
                       {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
                     </span>
                   </div>
-                  {/* Tableau */}
-                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: hasUrl(type) ? 780 : 600 }}>
-                      <colgroup>
-                        <col style={{ width: 28 }}/>
-                        <col style={{ minWidth: 200 }}/>
-                        <col style={{ width: 58 }}/>
-                        <col style={{ width: 54 }}/>
-                        <col style={{ width: 88 }}/>
-                        <col style={{ width: 90 }}/>
-                        {hasUrl(type) && <col style={{ width: 110 }}/>}
-                        <col style={{ width: 26 }}/>
-                      </colgroup>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #F1F3F5' }}>
-                          <th style={{ padding: '4px 4px', textAlign: 'center' }}>
-                            <input type="checkbox"
-                              checked={items.length > 0 && items.every(it => quoteSelected.has(it._i))}
-                              onChange={e => setQuoteSelected(prev => {
-                                const n = new Set(prev);
-                                items.forEach(it => e.target.checked ? n.add(it._i) : n.delete(it._i));
-                                return n;
-                              })}
-                              style={{ accentColor: BRAND, cursor: 'pointer' }}/>
-                          </th>
-                          {['Description', 'Qté', 'Unité', 'Prix unit.', 'Total', hasUrl(type) ? 'Source' : null, null].filter(Boolean).map((h, hi) => (
-                            <th key={hi} style={{ padding: '4px 4px', fontSize: 9.5, fontWeight: 700, color: '#B0B4BB', textAlign: hi >= 2 && hi <= 4 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
-                          ))}
-                          <th/>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map(it => {
-                          const isSel = quoteSelected.has(it._i);
-                          const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
-                          return (
-                            <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#FAFFF5' : 'transparent', borderBottom: '1px solid #F9FAFB' }}>
-                              <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                <input type="checkbox" checked={isSel}
-                                  onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
-                                  style={{ accentColor: BRAND, cursor: 'pointer' }}/>
-                              </td>
-                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
-                                  placeholder="Description"
-                                  style={{ ...iS, fontSize: 12, color: '#15171C' }}/>
-                              </td>
-                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
-                                  style={{ ...iS, fontSize: 11, color: '#5A5E6A', textAlign: 'right' }}/>
-                              </td>
-                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
-                                  placeholder={typeUnits[type]}
-                                  style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                              </td>
-                              <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
-                                  placeholder="0,00"
-                                  style={{ ...iS, fontSize: 11, color: '#5A5E6A', textAlign: 'right' }}/>
-                              </td>
-                              <td style={{ padding: '1px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#15171C', whiteSpace: 'nowrap' }}>
-                                {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                                {it.source === 'flo' && <span style={{ fontSize: 8, color: BRAND, marginLeft: 3 }}>✦</span>}
-                              </td>
-                              {hasUrl(type) && (
-                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                  {it.url ? (
-                                    <a href={it.url} target="_blank" rel="noreferrer"
-                                      style={{ fontSize: 10, color: BRAND, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 2 }}>
-                                      🔗 Source
-                                    </a>
-                                  ) : (
-                                    <input value={it.url || ''} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
-                                      placeholder="URL source"
-                                      style={{ ...iS, fontSize: 10, color: '#C4C8CE' }}/>
-                                  )}
+                  {/* Tableau (masqué si collapsed) */}
+                  {!isCollapsed && (
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: hasUrl(type) ? 860 : 660 }}>
+                        <colgroup>
+                          <col style={{ width: 28 }}/>
+                          <col style={{ minWidth: 180 }}/>
+                          <col style={{ width: 54 }}/>
+                          <col style={{ width: 50 }}/>
+                          <col style={{ width: 82 }}/>
+                          <col style={{ width: 68 }}/>{/* markup % */}
+                          <col style={{ width: 96 }}/>{/* total ligne */}
+                          {hasUrl(type) && <col style={{ width: 100 }}/>}
+                          <col style={{ width: 24 }}/>
+                        </colgroup>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #E5E7EB', background: '#FAFAFA' }}>
+                            <th style={{ ...TH, textAlign: 'center' }}>
+                              <input type="checkbox"
+                                checked={items.length > 0 && items.every(it => quoteSelected.has(it._i))}
+                                onChange={e => setQuoteSelected(prev => {
+                                  const n = new Set(prev);
+                                  items.forEach(it => e.target.checked ? n.add(it._i) : n.delete(it._i));
+                                  return n;
+                                })}
+                                style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                            </th>
+                            <th style={{ ...TH, textAlign: 'left' }}>Description</th>
+                            <th style={{ ...TH, textAlign: 'right' }}>Qté</th>
+                            <th style={{ ...TH, textAlign: 'left' }}>Unité</th>
+                            <th style={{ ...TH, textAlign: 'right' }}>Prix unit.</th>
+                            <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
+                            <th style={{ ...TH, textAlign: 'right' }}>Total</th>
+                            {hasUrl(type) && <th style={{ ...TH, textAlign: 'left' }}>Source</th>}
+                            <th/>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map(it => {
+                            const isSel = quoteSelected.has(it._i);
+                            const mu = Number(it.markup) || 0;
+                            const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
+                            return (
+                              <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'transparent', borderBottom: '1px solid #F3F4F6' }}>
+                                <td style={{ padding: '3px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <input type="checkbox" checked={isSel}
+                                    onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
+                                    style={{ accentColor: BRAND, cursor: 'pointer' }}/>
                                 </td>
-                              )}
-                              <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                <button onClick={() => removeQuoteItem(it._i)}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {/* Nouvelle ligne vide */}
-                        <tr style={{ borderBottom: '1px solid #F9FAFB', opacity: 0.55 }}>
-                          <td/>
-                          <td style={{ padding: '2px 4px' }}>
-                            <input value={nd.name || ''} placeholder={`+ ${typeLabels[type]}…`}
-                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
-                              onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
-                              onBlur={() => commitNewRow(type, nd)}
-                              style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
-                          </td>
-                          <td style={{ padding: '2px 4px' }}>
-                            <input type="number" value={nd.qty || ''} placeholder="1"
-                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
-                              style={{ ...iS, fontSize: 11, color: '#C4C8CE', textAlign: 'right' }}/>
-                          </td>
-                          <td style={{ padding: '2px 4px' }}>
-                            <input value={nd.unit || ''} placeholder={typeUnits[type]}
-                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
-                              style={{ ...iS, fontSize: 11, color: '#C4C8CE' }}/>
-                          </td>
-                          <td style={{ padding: '2px 4px' }}>
-                            <input type="number" value={nd.unit_price || ''} placeholder="0,00"
-                              onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
-                              style={{ ...iS, fontSize: 11, color: '#C4C8CE', textAlign: 'right' }}/>
-                          </td>
-                          <td/>
-                          {hasUrl(type) && (
-                            <td style={{ padding: '2px 4px' }}>
-                              <input value={nd.url || ''} placeholder="URL source"
-                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
-                                style={{ ...iS, fontSize: 10, color: '#C4C8CE' }}/>
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
+                                    placeholder="Description"
+                                    style={{ ...iS, fontSize: 12, color: '#111827', fontWeight: it.name ? 500 : 400 }}/>
+                                </td>
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                                    style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
+                                </td>
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
+                                    placeholder={typeUnits[type]}
+                                    style={{ ...iS, fontSize: 11, color: '#6B7280' }}/>
+                                </td>
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
+                                    placeholder="0"
+                                    style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
+                                </td>
+                                <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
+                                    <input type="number" value={it.markup || ''} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
+                                      placeholder="0"
+                                      style={{ ...iS, fontSize: 11, color: BRAND, textAlign: 'right', width: 38, fontWeight: 600 }}/>
+                                    <span style={{ fontSize: 10, color: BRAND, flexShrink: 0 }}>%</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '2px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                                  {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                                  {it.source === 'flo' && <span style={{ fontSize: 8, color: '#16A34A', marginLeft: 3 }}>✦</span>}
+                                </td>
+                                {hasUrl(type) && (
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
+                                    {it.url ? (
+                                      <a href={it.url} target="_blank" rel="noreferrer"
+                                        style={{ fontSize: 10, color: BRAND, textDecoration: 'none' }}>🔗 Source</a>
+                                    ) : (
+                                      <input value={it.url || ''} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
+                                        placeholder="URL"
+                                        style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
+                                    )}
+                                  </td>
+                                )}
+                                <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                  <button onClick={() => removeQuoteItem(it._i)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {/* Nouvelle ligne */}
+                          <tr style={{ background: '#FAFAFA' }}>
+                            <td/>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input value={nd.name || ''} placeholder={`+ ${typeLabels[type]}…`}
+                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
+                                onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
+                                onBlur={() => commitNewRow(type, nd)}
+                                style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
                             </td>
-                          )}
-                          <td/>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input type="number" value={nd.qty || ''} placeholder="1"
+                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
+                                style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input value={nd.unit || ''} placeholder={typeUnits[type]}
+                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
+                                style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input type="number" value={nd.unit_price || ''} placeholder="0"
+                                onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
+                                style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
+                            </td>
+                            <td/><td/>
+                            {hasUrl(type) && (
+                              <td style={{ padding: '4px 4px' }}>
+                                <input value={nd.url || ''} placeholder="URL"
+                                  onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
+                                  style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
+                              </td>
+                            )}
+                            <td/>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             });
@@ -7274,34 +7828,50 @@ Règles :
 
           {/* Totaux */}
           {quoteBuilderItems.length > 0 && (() => {
-            const costTotal = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
-            const markupAmt = costTotal * (quoteMarkup / 100);
-            const subtotal  = costTotal + markupAmt;
+            const costRaw   = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
+            const costTotal = quoteBuilderItems.reduce((s, it) => {
+              const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
+              return s + base * (1 + (Number(it.markup) || 0) / 100);
+            }, 0);
+            const globalMarkupAmt = costTotal * (quoteMarkup / 100);
+            const subtotal  = costTotal + globalMarkupAmt;
             const tps  = subtotal * 0.05;
             const tvq  = subtotal * 0.09975;
             const total = subtotal + tps + tvq;
             const fmt = v => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
+            const hasPerLineMarkup = quoteBuilderItems.some(it => Number(it.markup) > 0);
             return (
               <div style={{ marginTop: 8, paddingTop: 16, borderTop: '2px solid #E8EAED', display: 'flex', justifyContent: 'flex-end' }}>
-                <div style={{ width: 320 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: '#6B7280' }}>
-                    <span>Coût total</span><span>{fmt(costTotal)}</span>
-                  </div>
-                  {quoteMarkup > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: BRAND, fontWeight: 600 }}>
-                      <span>Markup ({quoteMarkup}%)</span><span>+ {fmt(markupAmt)}</span>
+                <div style={{ width: 340 }}>
+                  {hasPerLineMarkup && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 11, color: '#6B7280' }}>
+                      <span>Coût brut</span><span>{fmt(costRaw)}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 3px', fontSize: 13, fontWeight: 700, color: '#15171C', borderTop: '1px solid #E8EAED', marginTop: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: '#374151' }}>
+                    <span>Coût total{hasPerLineMarkup ? ' (avec markups lignes)' : ''}</span><span>{fmt(costTotal)}</span>
+                  </div>
+                  {/* Global markup */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderTop: '1px dashed #E8EAED', marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: '#6B7280', flex: 1 }}>Markup global</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${BRAND}10`, borderRadius: 6, padding: '2px 8px' }}>
+                      <input type="number" min="0" max="300" step="1" value={quoteMarkup}
+                        onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); }}
+                        style={{ width: 40, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: BRAND, fontFamily: 'inherit' }}/>
+                      <span style={{ fontSize: 11, color: BRAND }}>%</span>
+                    </div>
+                    {globalMarkupAmt > 0 && <span style={{ fontSize: 12, color: BRAND, fontWeight: 600 }}>+ {fmt(globalMarkupAmt)}</span>}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0 3px', fontSize: 13, fontWeight: 700, color: '#111827', borderTop: '1px solid #E8EAED', marginTop: 2 }}>
                     <span>Sous-total</span><span>{fmt(subtotal)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#9CA3AF' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#6B7280' }}>
                     <span>TPS (5%)</span><span>{fmt(tps)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#9CA3AF' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#6B7280' }}>
                     <span>TVQ (9,975%)</span><span>{fmt(tvq)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 3px', fontSize: 16, fontWeight: 900, color: '#15171C', borderTop: '2px solid #E8EAED', marginTop: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0 3px', fontSize: 17, fontWeight: 900, color: '#111827', borderTop: '2px solid #E8EAED', marginTop: 6 }}>
                     <span>Total</span><span style={{ color: BRAND }}>{fmt(total)}</span>
                   </div>
                 </div>
