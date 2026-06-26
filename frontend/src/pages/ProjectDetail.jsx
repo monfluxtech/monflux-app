@@ -3500,8 +3500,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
     const container = stickyContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const scrollTop = window.scrollY;
-    longPressPosRef.current = { top: e.clientY - rect.top + scrollTop, left: e.clientX - rect.left };
+    longPressPosRef.current = { top: e.clientY - rect.top, left: e.clientX - rect.left };
     longPressTimerRef.current = setTimeout(() => {
       setStickyDraft({ ...longPressPosRef.current, color: 'yellow', text: '' });
     }, 650);
@@ -3519,7 +3518,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       const container = stickyContainerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const newTop = e.clientY - rect.top + window.scrollY - stickyDragging.offsetY;
+      const newTop = e.clientY - rect.top - stickyDragging.offsetY;
       const newLeft = e.clientX - rect.left - stickyDragging.offsetX;
       setStickyNotes(prev => prev.map(n =>
         n.id === stickyDragging.id ? { ...n, top: Math.max(0, newTop), left: Math.max(0, newLeft) } : n
@@ -5504,6 +5503,16 @@ Règles :
         </button>
       </div>
 
+      {/* ── Zone sticky notes — couvre hero + toutes sections ── */}
+      <div
+        ref={stickyContainerRef}
+        style={{ position: 'relative' }}
+        onMouseDown={handleDetailMouseDown}
+        onMouseUp={handleDetailMouseUpGlobal}
+        onMouseLeave={handleDetailMouseUp}
+        onMouseMove={handleDetailMouseMove}
+      >
+
       {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
       <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff', display: activeTab === 'detail' ? undefined : 'none' }}>
         <button onClick={() => setShowCapture(true)}
@@ -5867,14 +5876,7 @@ Règles :
       )}
 
       {/* ── Doc sections (detail tab only) ── */}
-      <div
-        ref={stickyContainerRef}
-        style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column', position: 'relative' }}
-        onMouseDown={handleDetailMouseDown}
-        onMouseUp={handleDetailMouseUpGlobal}
-        onMouseLeave={handleDetailMouseUp}
-        onMouseMove={handleDetailMouseMove}
-      >
+      <div style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column' }}>
 
         {/* ── Descriptif de la demande ── */}
         {(() => {
@@ -8873,139 +8875,6 @@ Règles :
 
         {/* s-comms est maintenant dans son propre onglet */}
 
-        {/* ── Post-its flottants ── */}
-        {stickyNotes.filter(n => !n.archived).map(note => {
-          const col = STICKY_COLORS.find(c => c.key === note.color) || STICKY_COLORS[0];
-          return (
-            <div
-              key={note.id}
-              style={{
-                position: 'absolute',
-                top: note.top || 120,
-                left: Math.min(note.left || 40, (stickyContainerRef.current?.offsetWidth || 900) - 220),
-                width: 210,
-                background: col.bg,
-                border: `1.5px solid ${col.border}`,
-                borderRadius: 12,
-                padding: '10px 12px 10px',
-                boxShadow: '0 6px 24px rgba(0,0,0,.13), 0 1px 4px rgba(0,0,0,.07)',
-                zIndex: 30,
-                userSelect: 'none',
-              }}
-              onMouseDown={e => {
-                if (e.target.closest('button, textarea')) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const rect = e.currentTarget.getBoundingClientRect();
-                setStickyDragging({ id: note.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
-              }}
-            >
-              {/* Handle drag */}
-              <div style={{ cursor: 'grab', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 10, color: col.text, opacity: 0.55 }}>⋮⋮</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 9.5, fontWeight: 700, color: col.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {note.author_name}
-                  </p>
-                  <p style={{ fontSize: 9, color: col.text, opacity: 0.55, margin: 0, whiteSpace: 'nowrap' }}>
-                    {new Date(note.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })} · {new Date(note.created_at).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-                <button
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, archived: true } : n))}
-                  style={{ width: 18, height: 18, borderRadius: 5, background: 'transparent', border: 'none', color: col.text, opacity: 0.5, fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, flexShrink: 0 }}
-                  title="Archiver"
-                >×</button>
-              </div>
-              {/* Texte */}
-              <textarea
-                value={note.text}
-                placeholder="Votre note…"
-                onChange={e => setStickyNotes(prev => prev.map(n => n.id === note.id ? { ...n, text: e.target.value } : n))}
-                onBlur={() => saveStickyNotes(stickyNotes)}
-                onMouseDown={e => e.stopPropagation()}
-                style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: col.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 65, cursor: 'text', padding: 0, boxSizing: 'border-box' }}
-              />
-              {/* Sélecteur couleur */}
-              <div style={{ display: 'flex', gap: 5, marginTop: 8, paddingTop: 7, borderTop: `1px solid ${col.border}50` }}>
-                {STICKY_COLORS.map(c => (
-                  <button
-                    key={c.key}
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, color: c.key } : n))}
-                    style={{ width: 13, height: 13, borderRadius: '50%', background: c.bg, border: `2px solid ${c.key === note.color ? c.border : 'transparent'}`, cursor: 'pointer', padding: 0, flexShrink: 0, outline: c.key === note.color ? `1px solid ${c.border}` : 'none', outlineOffset: 1 }}
-                    title={c.key}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* ── Draft post-it (en cours de création) ── */}
-        {stickyDraft && (
-          <div
-            style={{
-              position: 'absolute',
-              top: stickyDraft.top,
-              left: Math.min(stickyDraft.left, (stickyContainerRef.current?.offsetWidth || 900) - 240),
-              width: 230,
-              background: (STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0]).bg,
-              border: `2px solid ${(STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0]).border}`,
-              borderRadius: 13,
-              padding: '12px 14px 12px',
-              boxShadow: '0 8px 32px rgba(0,0,0,.18)',
-              zIndex: 50,
-            }}
-            onMouseDown={e => e.stopPropagation()}
-          >
-            {(() => {
-              const dCol = STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0];
-              return (
-                <>
-                  <p style={{ fontSize: 10, fontWeight: 800, color: dCol.text, margin: '0 0 8px', opacity: 0.7 }}>Nouveau post-it</p>
-                  <textarea
-                    autoFocus
-                    value={stickyDraft.text}
-                    onChange={e => setStickyDraft(d => ({ ...d, text: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) addStickyNote(stickyDraft); if (e.key === 'Escape') setStickyDraft(null); }}
-                    placeholder="Tapez votre note… (⌘↵ pour sauvegarder)"
-                    style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: dCol.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 70, padding: 0, boxSizing: 'border-box' }}
-                  />
-                  {/* Couleurs */}
-                  <div style={{ display: 'flex', gap: 6, margin: '8px 0' }}>
-                    {STICKY_COLORS.map(c => (
-                      <button
-                        key={c.key}
-                        onClick={() => setStickyDraft(d => ({ ...d, color: c.key }))}
-                        style={{ width: 16, height: 16, borderRadius: '50%', background: c.bg, border: `2.5px solid ${c.key === stickyDraft.color ? c.border : 'transparent'}`, cursor: 'pointer', padding: 0, outline: c.key === stickyDraft.color ? `1.5px solid ${c.border}` : 'none', outlineOffset: 1 }}
-                      />
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: 7, marginTop: 4 }}>
-                    <button
-                      onClick={() => addStickyNote(stickyDraft)}
-                      style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 0', borderRadius: 8, border: 'none', background: dCol.border, color: '#fff', cursor: 'pointer' }}
-                    >Épingler</button>
-                    <button
-                      onClick={() => setStickyDraft(null)}
-                      style={{ fontSize: 11.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: `1px solid ${dCol.border}50`, background: 'transparent', color: dCol.text, cursor: 'pointer', opacity: 0.7 }}
-                    >Annuler</button>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Hint long-press — visible seulement sur la vue detail */}
-        {activeTab === 'detail' && stickyNotes.filter(n => !n.archived).length === 0 && !stickyDraft && (
-          <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(21,23,28,.78)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: 11.5, padding: '8px 14px', borderRadius: 10, pointerEvents: 'none', zIndex: 100, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <span>📌</span> Maintenir le clic pour ajouter un post-it
-          </div>
-        )}
-
         {/* Portal Messages */}
         {portalMessages.length > 0 && (
           <div className="card mt-4">
@@ -9478,6 +9347,136 @@ Règles :
           </div>
         </div>
       )}
+
+        {/* ══ POST-ITS FLOTTANTS — couvrent tout (hero + sections) ══ */}
+        {stickyNotes.filter(n => !n.archived).map(note => {
+          const col = STICKY_COLORS.find(c => c.key === note.color) || STICKY_COLORS[0];
+          return (
+            <div
+              key={note.id}
+              style={{
+                position: 'absolute',
+                top: note.top || 120,
+                left: Math.min(note.left || 40, (stickyContainerRef.current?.offsetWidth || 900) - 224),
+                width: 212,
+                background: col.bg,
+                borderRadius: 2,
+                padding: '30px 13px 12px',
+                boxShadow: '2px 4px 14px rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.08)',
+                zIndex: 30,
+                userSelect: 'none',
+                overflow: 'hidden',
+              }}
+              onMouseDown={e => {
+                if (e.target.closest('button, textarea')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setStickyDragging({ id: note.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
+              }}
+            >
+              {/* Bande adhésive (haut) */}
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, background: col.border + '55', cursor: 'grab' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 8px 0', height: '100%' }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, color: col.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, opacity: 0.75 }}>
+                    {note.author_name}
+                  </p>
+                  <p style={{ fontSize: 8.5, color: col.text, opacity: 0.5, margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {new Date(note.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })} {new Date(note.created_at).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  <button
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, archived: true } : n))}
+                    style={{ width: 16, height: 16, borderRadius: 3, background: 'transparent', border: 'none', color: col.text, opacity: 0.55, fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, flexShrink: 0, marginLeft: 5 }}
+                    title="Archiver"
+                  >×</button>
+                </div>
+              </div>
+              {/* Texte */}
+              <textarea
+                value={note.text}
+                placeholder="Votre note…"
+                onChange={e => setStickyNotes(prev => prev.map(n => n.id === note.id ? { ...n, text: e.target.value } : n))}
+                onBlur={() => saveStickyNotes(stickyNotes)}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: col.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 72, cursor: 'text', padding: 0, boxSizing: 'border-box' }}
+              />
+              {/* Cercles couleurs */}
+              <div style={{ display: 'flex', gap: 5, marginTop: 9 }}>
+                {STICKY_COLORS.map(c => (
+                  <button
+                    key={c.key}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={() => saveStickyNotes(stickyNotes.map(n => n.id === note.id ? { ...n, color: c.key } : n))}
+                    style={{ width: 12, height: 12, borderRadius: '50%', background: c.bg, border: `2.5px solid ${c.key === note.color ? c.border : c.border + '50'}`, cursor: 'pointer', padding: 0, flexShrink: 0 }}
+                    title={c.key}
+                  />
+                ))}
+              </div>
+              {/* Coin plié bas-droite */}
+              <div style={{ position: 'absolute', bottom: 0, right: 0, width: 0, height: 0, borderStyle: 'solid', borderWidth: '0 0 18px 18px', borderColor: `transparent transparent rgba(0,0,0,.13) transparent` }} />
+            </div>
+          );
+        })}
+
+        {/* ── Draft post-it ── */}
+        {stickyDraft && (() => {
+          const dCol = STICKY_COLORS.find(c => c.key === stickyDraft.color) || STICKY_COLORS[0];
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                top: stickyDraft.top,
+                left: Math.min(stickyDraft.left, (stickyContainerRef.current?.offsetWidth || 900) - 244),
+                width: 232,
+                background: dCol.bg,
+                borderRadius: 2,
+                padding: '10px 13px 13px',
+                boxShadow: '3px 5px 22px rgba(0,0,0,.22)',
+                zIndex: 50,
+              }}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <p style={{ fontSize: 10, fontWeight: 800, color: dCol.text, margin: '0 0 8px', opacity: 0.65 }}>Nouveau post-it</p>
+              <textarea
+                autoFocus
+                value={stickyDraft.text}
+                onChange={e => setStickyDraft(d => ({ ...d, text: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) addStickyNote(stickyDraft); if (e.key === 'Escape') setStickyDraft(null); }}
+                placeholder="Tapez votre note… (⌘↵)"
+                style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: dCol.text, lineHeight: 1.55, resize: 'none', fontFamily: 'inherit', minHeight: 70, padding: 0, boxSizing: 'border-box' }}
+              />
+              <div style={{ display: 'flex', gap: 6, margin: '9px 0 10px' }}>
+                {STICKY_COLORS.map(c => (
+                  <button
+                    key={c.key}
+                    onClick={() => setStickyDraft(d => ({ ...d, color: c.key }))}
+                    style={{ width: 15, height: 15, borderRadius: '50%', background: c.bg, border: `2.5px solid ${c.key === stickyDraft.color ? c.border : c.border + '45'}`, cursor: 'pointer', padding: 0 }}
+                  />
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 7 }}>
+                <button
+                  onClick={() => addStickyNote(stickyDraft)}
+                  style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 0', borderRadius: 4, border: 'none', background: dCol.border, color: '#fff', cursor: 'pointer' }}
+                >Épingler</button>
+                <button
+                  onClick={() => setStickyDraft(null)}
+                  style={{ fontSize: 11.5, fontWeight: 600, padding: '6px 12px', borderRadius: 4, border: `1px solid ${dCol.border}60`, background: 'transparent', color: dCol.text, cursor: 'pointer', opacity: 0.7 }}
+                >Annuler</button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Hint long-press */}
+        {stickyNotes.filter(n => !n.archived).length === 0 && !stickyDraft && (
+          <div style={{ position: 'fixed', bottom: 24, right: 28, background: 'rgba(21,23,28,.80)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: 11.5, padding: '8px 14px', borderRadius: 10, pointerEvents: 'none', zIndex: 200, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span>📌</span> Maintenir le clic pour ajouter un post-it
+          </div>
+        )}
+
+      </div>{/* fin zone sticky notes */}
 
       <DocPreview doc={preview} onClose={() => setPreview(null)} />
       {showInfo && (
