@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { onboarding } from '../api';
 import { useAuthStore } from '../store';
-import { Send, Loader2, CheckCircle, Check, ArrowRight } from 'lucide-react';
+import { Send, Loader2, CheckCircle, Check, ArrowRight, X } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
 
@@ -37,6 +37,19 @@ export default function Onboarding() {
   const bottomRef = useRef(null);
   const { setCompany, user } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isTourMode = searchParams.get('tour') === '1';
+
+  // Fermeture via Échap
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape' && !loading && !completing) {
+        navigate(-1);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [loading, completing, navigate]);
 
   useEffect(() => {
     onboarding.session().then(({ data }) => setSessionId(data.session_id)).catch(() => {});
@@ -137,9 +150,30 @@ export default function Onboarding() {
           <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{background:'#F26522'}}>
             <span className="text-white font-bold text-sm">M</span>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-900">Assistant MONFLUX</p>
-            <p className="text-xs text-gray-400">Configuration de votre compte</p>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-gray-900">
+              {isTourMode ? 'Visite guidée' : profile ? 'Mise à jour du profil' : 'Configuration du compte'}
+            </p>
+            <p className="text-xs text-gray-400">{isTourMode ? 'Redécouvrez les fonctionnalités MONFLUX' : 'Appuyez sur Échap ou cliquez × pour continuer plus tard'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isTourMode && (
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="text-xs text-gray-400 hover:text-gray-600 underline"
+              >
+                Reprendre plus tard
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard')}
+              title="Fermer"
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={15} />
+            </button>
           </div>
         </div>
 

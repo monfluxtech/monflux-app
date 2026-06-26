@@ -69,7 +69,8 @@ function ActionCard({ action, result, navigate }) {
   );
 }
 
-export default function FloatingChat() {
+// Contexte optionnel passé depuis la fiche projet : { section, projectStatus, phases, recommendations }
+export default function FloatingChat({ context = null }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -78,9 +79,13 @@ export default function FloatingChat() {
   const inputRef = useRef(null);
   const navigate = useNavigate();
 
+  const greeting = context?.section
+    ? `Bonjour ! Je suis Florence. Vous êtes dans la section « ${context.section} » du projet « ${context.projectName || ''} ». Comment puis-je vous aider ?`
+    : 'Bonjour ! Je suis Florence (Flo), votre chargée de projet IA pour MONFLUX. Je peux répondre à vos questions, créer des éléments ou analyser vos données.';
+
   useEffect(() => {
     if (open && messages.length === 0) {
-      setMessages([{ role: 'assistant', content: 'Bonjour! Je suis votre assistant MONFLUX. Je peux répondre à vos questions ou créer des leads, projets et rappels directement.' }]);
+      setMessages([{ role: 'assistant', content: greeting }]);
     }
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
@@ -107,7 +112,17 @@ export default function FloatingChat() {
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({
+          messages: next,
+          ...(context?.section   && { active_section: context.section }),
+          ...(context            && { project_context: {
+            name:           context.projectName,
+            status:         context.projectStatus,
+            phases:         context.phases,
+            recommendations: context.recommendations,
+            activeSection:  context.section,
+          }}),
+        }),
       });
 
       const reader = res.body.getReader();

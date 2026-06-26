@@ -2,6 +2,7 @@ import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { query, getClient } from '../db.js';
 import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware/auth.js';
+import { FLO_BASE_PERSONA, detectPersona, getSystemPrompt } from '../prompts.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
@@ -220,7 +221,7 @@ async function buildBusinessSnapshot(company_id) {
 
 // POST /api/chat — general AI chat (streaming + tool use)
 router.post('/', enforceAiQuota, async (req, res) => {
-  const { messages, context_type = 'general', project_id, conversation_id } = req.body;
+  const { messages, context_type = 'general', project_id, conversation_id, active_section, project_context } = req.body;
   if (!messages?.length) return res.status(400).json({ error: 'Messages requis' });
 
   const { rows: [company] } = await query(
@@ -230,18 +231,30 @@ router.post('/', enforceAiQuota, async (req, res) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const snapshot = await buildBusinessSnapshot(req.company_id);
-  const systemPrompt = `Tu es l'assistant IA de MONFLUX pour ${company?.name || 'cette entreprise'} (secteur: ${company?.sector || 'construction'}).
-Tu aides les entrepreneurs en construction québécois à gérer leurs projets, leads, soumissions et facturations.
-Tu parles en français québécois. Tu es direct, pratique et efficace. Au Québec on dit "punch" (pas "pointage").
-Date d'aujourd'hui: ${today}
-Contexte: ${context_type}${project_id ? ` / Projet: ${project_id}` : ''}
 
-ÉTAT ACTUEL DE L'ENTREPRISE (en temps réel): ${snapshot}
+  // Détecter la persona selon la dernière question de l'utilisateur
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  const persona = detectPersona(lastUserMsg);
 
-Tu peux À LA FOIS créer des éléments ET consulter les données existantes:
-- Pour CRÉER un lead, projet, ou planifier une relance → utilise create_lead / create_project / schedule_followup.
-- Pour VOIR, RÉSUMER, COMPTER, ou LISTER des données existantes (projets, leads, factures, soumissions) → utilise list_records.
-Ne dis JAMAIS que tu ne peux pas consulter les données — tu as l'outil list_records pour ça. Utilise-le proactivement.`;
+  // Contexte de projet enrichi avec la section active
+  const projCtx = {
+    ...(project_context || {}),
+    activeSection: active_section || null,
+  };
+
+  const floContext = getSystemPrompt(persona, projCtx);
+  const systemPrompt = `${floContext}
+
+ENTREPRISE : ${company?.name || 'N/A'} · Secteur : ${company?.sector || 'construction'} · Québec
+Date : ${today}
+Au Québec on dit « punch » (pas « pointage »).
+
+ÉTAT EN TEMPS RÉEL : ${snapshot}
+
+ACTIONS DISPONIBLES :
+- Créer un lead, projet, relance → create_lead / create_project / schedule_followup
+- Voir, résumer, lister des données → list_records (utilise proactivement, ne dis jamais que tu ne peux pas consulter)
+- Rédiger ou envoyer un courriel → tu peux rédiger un brouillon, l'utilisateur valide avant envoi`;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

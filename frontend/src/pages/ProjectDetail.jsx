@@ -330,7 +330,11 @@ function ProjectAIChat({ projectId, projectName, projectContext, onClose }) {
       const res = await fetch(`${PROJ_API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ messages: next, context_type: 'project', project_id: projectId }),
+        body: JSON.stringify({
+          messages: next, context_type: 'project', project_id: projectId,
+          ...(projectContext?.activeSection && { active_section: projectContext.activeSection }),
+          ...(projectContext && { project_context: projectContext }),
+        }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -5921,6 +5925,15 @@ Règles :
         <ProjectAIChat
           projectId={id}
           projectName={project.name}
+          projectContext={{
+            activeSection: activeSection,
+            name: project.name,
+            status: project.status,
+            phases: project.phases,
+            recommendations: project.flo_recommendations,
+            estimated_value: project.contract_value || project.budget,
+            type_of_work: project.type_of_work,
+          }}
           onClose={() => setShowAIChat(false)}
         />
       )}
@@ -9490,57 +9503,64 @@ Règles :
             })()}
           </div>
 
-          {/* ── Documents & Liens rapides ── */}
-          <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 20 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4f46e5', display: 'inline-block' }} />
-              Documents & liens rapides
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {project.portal_token && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE' }}>
-                  <span style={{ fontSize: 16 }}>🌐</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#5B21B6', margin: 0 }}>Portail client</p>
-                    <p style={{ fontSize: 11, color: '#7C3AED', margin: 0, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
-                  </div>
-                  <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`)} style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', background: '#EDE9FE', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}>Copier</button>
-                </div>
-              )}
-              {project.supplier_portal_token && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#F0F9FF', borderRadius: 10, border: '1px solid #BAE6FD' }}>
-                  <span style={{ fontSize: 16 }}>🏢</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#0369A1', margin: 0 }}>Portail fournisseur</p>
-                    <p style={{ fontSize: 11, color: '#0284C7', margin: 0, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
-                  </div>
-                  <button onClick={() => navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)} style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}>Copier</button>
-                </div>
-              )}
-              {media.length > 0 && (
-                <div style={{ marginTop: 6 }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos & médias ({media.length})</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
-                    {media.slice(0, 8).map(m => (
-                      <div key={m.id} style={{ borderRadius: 9, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
-                        {m.file_url ? (
-                          <img src={m.file_url} alt={m.caption || 'Media'} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} />
-                        ) : (
-                          <div style={{ height: 80, display: 'grid', placeItems: 'center', fontSize: 24 }}>
-                            {m.type === 'voice' ? '🎙' : '📌'}
-                          </div>
-                        )}
-                        <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, padding: '4px 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.author_name || m.type}</p>
+          {/* ── Documents & Liens rapides ── (agrège les URLs saisies dans le projet, pas les portails) */}
+          {(() => {
+            const urlRegex = /https?:\/\/[^\s,;"'<>]+/g;
+            const allLinks = [];
+            const addLinks = (src, label, url) => { if (url && typeof url === 'string') { const m = url.match(urlRegex); if (m) m.forEach(u => allLinks.push({ label, url: u })); } };
+
+            // Champs URL directs
+            addLinks(null, 'Lien projet', project.url);
+            addLinks(null, 'Lien client', project.client_website);
+            // Matériaux
+            (matSearchResults || []).forEach(m => { if (m.product_url) allLinks.push({ label: m.name || 'Matériau', url: m.product_url }); });
+            // Commandes
+            (materialOrders || []).forEach(o => { if (o.supplier_url) allLinks.push({ label: `Commande — ${o.supplier || 'fournisseur'}`, url: o.supplier_url }); });
+            // Notes (extraction URLs du texte libre)
+            if (notes) { const m = notes.match(urlRegex); if (m) m.forEach(u => allLinks.push({ label: 'Lien (note)', url: u })); }
+
+            return (
+              <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 20 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4f46e5', display: 'inline-block' }} />
+                  Documents & liens du projet
+                </h2>
+                {allLinks.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {allLinks.map((l, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 13px', background: '#F9FAFB', borderRadius: 9, border: '1px solid #E5E7EB' }}>
+                        <Link2 size={13} style={{ color: '#4f46e5', flexShrink: 0 }}/>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', margin: 0 }}>{l.label}</p>
+                          <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#4f46e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%' }}>{l.url}</a>
+                        </div>
+                        <button onClick={() => navigator.clipboard.writeText(l.url)} style={{ fontSize: 10, fontWeight: 700, color: '#4f46e5', background: '#EEF1FD', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', flexShrink: 0 }}>Copier</button>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-              {media.length === 0 && !project.portal_token && !project.supplier_portal_token && (
-                <p style={{ fontSize: 13, color: '#C4C8CE', textAlign: 'center', padding: '20px 0', margin: 0 }}>Aucun document ou lien pour l'instant.</p>
-              )}
-            </div>
-          </div>
+                ) : (
+                  <p style={{ fontSize: 13, color: '#C4C8CE', textAlign: 'center', padding: '20px 0', margin: 0 }}>Aucun lien URL saisi dans ce projet pour l'instant.</p>
+                )}
+                {media.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos & médias ({media.length})</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+                      {media.slice(0, 8).map(m => (
+                        <div key={m.id} style={{ borderRadius: 9, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
+                          {m.file_url ? (
+                            <img src={m.file_url} alt={m.caption || 'Media'} style={{ width: '100%', height: 80, objectFit: 'cover', display: 'block' }} />
+                          ) : (
+                            <div style={{ height: 80, display: 'grid', placeItems: 'center', fontSize: 24 }}>{m.type === 'voice' ? '🎙' : '📌'}</div>
+                          )}
+                          <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, padding: '4px 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.author_name || m.type}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Post-its du projet ── */}
           {stickyNotes.length > 0 && (
