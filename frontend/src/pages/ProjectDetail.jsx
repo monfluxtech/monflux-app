@@ -3,7 +3,7 @@ import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import Layout from '../components/Layout';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, contacts as contactsApi, documents as documentsApi } from '../api';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
@@ -32,6 +32,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-punch', icon: '⏱️', label: 'Punch et dépenses' },
   { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
   { id: 's-invoices', icon: '🧾', label: 'Factures client' },
+  { id: 's-extras', icon: '⚡', label: 'Extras & avenants' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
@@ -2983,6 +2984,11 @@ export default function ProjectDetail() {
   const [showExtraForm, setShowExtraForm] = useState(false);
   const [extraForm, setExtraForm] = useState({ title: '', description: '', amount: '', notes: '' });
   const [savingExtra, setSavingExtra] = useState(false);
+  // Envoi facture courriel
+  const [sendingInvoiceId, setSendingInvoiceId] = useState(null);
+  const [invoiceSentId, setInvoiceSentId] = useState(null);
+  // Statut facture
+  const [updatingInvoiceId, setUpdatingInvoiceId] = useState(null);
   const [photoDragOver, setPhotoDragOver] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
@@ -4438,6 +4444,28 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       setNewInvoiceItems([{ description: '', qty: 1, unit_price: '' }]);
     } catch (err) { console.error(err); }
     finally { setSavingInvoice(false); }
+  };
+
+  const sendInvoiceEmail = async (inv) => {
+    const to = inv.client_email || project.client_email;
+    if (!to) { alert('Aucun courriel client enregistré pour cette facture.'); return; }
+    setSendingInvoiceId(inv.id);
+    try {
+      await emailApi.sendInvoice(inv.id, { to });
+      setProjectInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: i.status === 'draft' ? 'sent' : i.status } : i));
+      setInvoiceSentId(inv.id);
+      setTimeout(() => setInvoiceSentId(null), 3000);
+    } catch (err) { alert(err?.response?.data?.error || 'Erreur envoi courriel'); }
+    finally { setSendingInvoiceId(null); }
+  };
+
+  const updateInvoiceStatus = async (inv, newStatus) => {
+    setUpdatingInvoiceId(inv.id);
+    try {
+      const { data } = await invoicesApi.update(inv.id, { status: newStatus });
+      setProjectInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: data.status || newStatus } : i));
+    } catch (err) { console.error(err); }
+    finally { setUpdatingInvoiceId(null); }
   };
 
   const createExtraInline = async (e) => {
@@ -6264,7 +6292,6 @@ Règles :
                   <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
                   <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4, maxWidth: 560 }}>Qualifiez le projet sans perdre de temps. Envoyez un message au client, visitez sur place ou laissez Florence estimer les coûts — dans l'ordre qui vous convient, aucune étape obligatoire.</div>
                 </div>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Je travaille sur le projet "${project.name}". Aide-moi à estimer les coûts approximatifs : matériaux, main-d'œuvre, et délai probable. Type de projet : ${project.project_type || 'construction résidentielle'}.`); setShowCapture(true); }}>✨ Demander à Flo</button>
               </div>
 
               {/* Bannière profil métier */}
@@ -6851,7 +6878,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, Gantt et dépendances</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}". Propose-moi un découpage en phases réalistes avec durées estimées (fondations, structure, finitions, etc.). Indique les dépendances clés entre phases.`); setShowCapture(true); }}>✨ Demander à Flo</button>
           </div>
 
           {(showPhase || editPhase) && (
@@ -7017,7 +7043,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}". Quels corps de métier sont nécessaires pour ce projet ? Y a-t-il des exigences RBQ ou CCQ au Québec dont je dois m'assurer ?`); setShowCapture(true); }}>✨ Demander à Flo</button>
             <button onClick={() => { setShowFloPanel(v => !v); if (!showFloPanel && !tradeRecos) fetchTradeRecos(null); }}
               style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:`1.5px solid ${BRAND}`, background: showFloPanel ? `${BRAND}15` : '#fff', color:BRAND, fontSize:12, fontWeight:800, cursor:'pointer', flexShrink:0 }}>
               <Sparkles size={13}/>
@@ -7956,7 +7981,6 @@ Règles :
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Matériaux · Main d'œuvre · Sous-traitants · Génération contrat</div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — devis & contrat. Aide-moi à optimiser ma soumission : y a-t-il des postes que j'oublie souvent, des clauses contractuelles importantes au Québec, ou des conseils pour éviter les litiges ?`); setShowCapture(true); }}>✨ Flo</button>
               {/* Markup */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
@@ -8539,7 +8563,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures fournisseurs</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures et dépenses fournisseurs · coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — dépenses fournisseurs. Aide-moi à vérifier si mes dépenses sont cohérentes avec un projet de ce type. Des bons de commande manquent-ils ? Comment minimiser les litiges fournisseurs ?`); setShowCapture(true); }}>✨ Flo</button>
             <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
@@ -8607,7 +8630,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch et dépenses</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps · Dépenses de chantier{timesheets.length > 0 ? ` · ${timesheets.length} punch(es) · ${activeTs.length} en cours` : ''}</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — punch et présences. Y a-t-il des anomalies dans les heures travaillées ? Comment optimiser la gestion des feuilles de temps pour ce type de chantier au Québec ?`); setShowCapture(true); }}>✨ Flo</button>
           </div>
           {timesheets.length > 0 ? (
             <>
@@ -8769,14 +8791,9 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures client</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures émises au client · {projectInvoices.length} facture(s)</div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost text-xs" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#E8794E', fontWeight: 700 }} onClick={() => { setFloContext(`Aide-moi à rédiger une facture pour le projet "${project.name}". Le client est ${project.client_name || 'à préciser'}. Quels éléments dois-je inclure ?`); setShowCapture(true); }}>
-                ✨ Flo
-              </button>
-              <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(v => !v)}>
-                <Plus size={13}/> Nouvelle facture
-              </button>
-            </div>
+            <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(v => !v)}>
+              <Plus size={13}/> Nouvelle facture
+            </button>
           </div>
 
           {/* ── Formulaire nouvelle facture ── */}
@@ -8861,7 +8878,7 @@ Règles :
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#F0FDF4' }}>
-                    {['N°', 'Titre', 'Client', 'Échéance', 'Total', 'Statut', ''].map((h, i) => (
+                    {['N°', 'Titre', 'Client', 'Échéance', 'Total', 'Statut', 'Actions'].map((h, i) => (
                       <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #D1FAE5' }}>{h}</th>
                     ))}
                   </tr>
@@ -8871,6 +8888,9 @@ Règles :
                     const SB = { draft:'#9CA3AF', sent:'#3B82F6', viewed:'#F59E0B', partial:'#F97316', paid:'#22C55E', overdue:'#EF4444', cancelled:'#9CA3AF' };
                     const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
                     const overdue = inv.status === 'overdue' || (inv.due_date && new Date(inv.due_date) < new Date() && !['paid','cancelled'].includes(inv.status));
+                    const isSending = sendingInvoiceId === inv.id;
+                    const justSent = invoiceSentId === inv.id;
+                    const isUpdating = updatingInvoiceId === inv.id;
                     return (
                       <tr key={inv.id} style={{ borderBottom: '1px solid #F0FDF4' }}>
                         <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{inv.number}</td>
@@ -8884,12 +8904,24 @@ Règles :
                         </td>
                         <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#15171C' }}>{money(inv.total || 0)}</td>
                         <td style={{ padding: '12px 14px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: (SB[inv.status]||'#9CA3AF') + '20', color: SB[inv.status]||'#9CA3AF', border: `1px solid ${(SB[inv.status]||'#9CA3AF')}40` }}>
-                            {SL[inv.status] || inv.status}
-                          </span>
+                          <select
+                            value={inv.status || 'draft'}
+                            disabled={isUpdating}
+                            onChange={e => updateInvoiceStatus(inv, e.target.value)}
+                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, border: `1px solid ${(SB[inv.status]||'#9CA3AF')}60`, background: (SB[inv.status]||'#9CA3AF') + '15', color: SB[inv.status]||'#9CA3AF', cursor: 'pointer', outline: 'none', appearance: 'none' }}
+                          >
+                            {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                          </select>
                         </td>
                         <td style={{ padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            {justSent ? (
+                              <span style={{ fontSize: 11, color: '#22C55E', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircle size={12}/> Envoyée</span>
+                            ) : (
+                              <button className="btn-ghost p-1" title={`Envoyer à ${inv.client_email || project.client_email || 'client'}`} onClick={() => sendInvoiceEmail(inv)} disabled={isSending} style={{ color: '#3B82F6' }}>
+                                {isSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+                              </button>
+                            )}
                             <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
                             <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="PDF" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Download size={13}/></a>
                           </div>
@@ -8911,6 +8943,87 @@ Règles :
               <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(true)}><Plus size={13}/> Créer la première facture</button>
             </div>
           )}
+
+          {/* ── Barre Flo ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 20, padding: '10px 16px', background: `${BRAND}08`, borderRadius: 12, border: `1px solid ${BRAND_BORDER}` }}>
+            <Sparkles size={14} color={BRAND}/>
+            <span style={{ fontSize: 12, fontWeight: 700, color: BRAND, flex: 1 }}>Flo</span>
+            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => { setFloContext(`Projet "${project.name}" — factures client. Analyse les ${projectInvoices.length} facture(s) : y a-t-il des montants en retard ? Que suggères-tu pour accélérer les paiements ?`); setShowCapture(true); }}>Analyser les factures</button>
+            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => setShowNewInvoice(true)}>Aide à facturer</button>
+          </div>
+        </div>
+
+        {/* ── Extras & avenants ── */}
+        <div id="s-extras" style={{ background: '#FFF7ED', borderTop: '1px solid #FED7AA', padding: '36px 56px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #FED7AA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⚡</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Extras & avenants</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Travaux hors contrat · demandes de modification · {changeOrdersList.length} avenant(s)</div>
+            </div>
+            <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}>
+              <Plus size={13}/> Nouvel extra
+            </button>
+          </div>
+
+          {changeOrdersList.length > 0 ? (
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #FED7AA', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#FFF7ED' }}>
+                    {['N°', 'Titre', 'Montant', 'Statut', 'Date'].map((h, i) => (
+                      <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FED7AA' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {changeOrdersList.map(co => {
+                    const CS = { draft:'#9CA3AF', pending_approval:'#F59E0B', approved:'#22C55E', rejected:'#EF4444', completed:'#3B82F6' };
+                    const CL = { draft:'Brouillon', pending_approval:'En attente', approved:'Approuvé', rejected:'Refusé', completed:'Complété' };
+                    return (
+                      <tr key={co.id} style={{ borderBottom: '1px solid #FFF7ED' }}>
+                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{co.number || '—'}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#15171C' }}>{co.title}</p>
+                          {co.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>{co.description}</p>}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: co.amount > 0 ? '#15171C' : '#9CA3AF' }}>
+                          {co.amount > 0 ? money(co.amount) : '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: (CS[co.status]||'#9CA3AF') + '20', color: CS[co.status]||'#9CA3AF', border: `1px solid ${(CS[co.status]||'#9CA3AF')}40` }}>
+                            {CL[co.status] || co.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF' }}>
+                          {co.created_at ? new Date(co.created_at).toLocaleDateString('fr-CA') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {changeOrdersList.some(co => co.amount > 0) && (
+                <div style={{ padding: '10px 14px', background: '#FFFBF5', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
+                  <span style={{ fontSize: 12, color: '#92400E' }}>Total extras</span>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: '#F97316' }}>{money(changeOrdersList.reduce((s, co) => s + Number(co.amount || 0), 0))}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '28px 0' }}>
+              <GitBranch size={28} style={{ color: '#FED7AA', margin: '0 auto 10px' }} />
+              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 14 }}>Aucun extra ou avenant pour ce projet.</p>
+              <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}><Plus size={13}/> Créer le premier extra</button>
+            </div>
+          )}
+
+          {/* ── Barre Flo ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 20, padding: '10px 16px', background: `${BRAND}08`, borderRadius: 12, border: `1px solid ${BRAND_BORDER}` }}>
+            <Sparkles size={14} color={BRAND}/>
+            <span style={{ fontSize: 12, fontWeight: 700, color: BRAND, flex: 1 }}>Flo</span>
+            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => { setFloContext(`Projet "${project.name}" — extras et avenants (${changeOrdersList.length} au total, ${money(changeOrdersList.reduce((s,co)=>s+Number(co.amount||0),0))} au total). Ces montants sont-ils raisonnables ? Comment bien documenter un extra pour éviter les litiges au Québec ?`); setShowCapture(true); }}>Analyser les extras</button>
+          </div>
         </div>
 
         {/* ── Quittance ── (mint) */}
@@ -8921,7 +9034,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Quittances</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Certificat de satisfaction client · clôture du projet (Québec)</div>
             </div>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — quittance et clôture. Aide-moi à formuler une quittance solide légalement au Québec. Quelles clauses inclure pour protéger l'entrepreneur ?`); setShowCapture(true); }}>✨ Flo</button>
           </div>
 
           {!quittance && !showQuittanceForm && (
