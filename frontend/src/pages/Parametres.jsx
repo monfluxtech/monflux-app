@@ -7,6 +7,16 @@ import { useUiPrefs } from '../hooks/useUiPrefs';
 import { SECONDARY_MODULES } from '../config/modules';
 import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot } from 'lucide-react';
 
+const Row = ({ label, value, mono }) => (
+  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+    <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 130, flexShrink: 0, paddingTop: 1 }}>{label}</span>
+    <span style={{ fontSize: 12.5, color: '#374151', fontFamily: mono ? 'monospace' : undefined }}>{value}</span>
+  </div>
+);
+const Chip = ({ label, color, bg }) => (
+  <span style={{ fontSize: 11, background: bg, color, borderRadius: 5, padding: '3px 9px', fontWeight: 600 }}>{label}</span>
+);
+
 const LEAD_SOURCES = [
   { key: 'soumissions_reno', label: 'SoumissionsRenovations.ca', desc: 'Scraping des leads publics sur le site (nécessite accord avec le site)' },
   { key: 'facebook_ads',     label: 'Facebook Lead Ads',          desc: 'Leads depuis vos campagnes Meta (compte Business connecté requis)' },
@@ -88,83 +98,113 @@ function ProfileTab() {
       </button>
     </form>
 
-    {/* ── Réponses de l'onboarding ── */}
+    {/* ── Onboarding ── */}
     {onboardingData && (
       <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 12, padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Profil de configuration</p>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>Réponses saisies lors de la configuration initiale</p>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Onboarding</p>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>Informations collectées lors de la configuration initiale de l'application</p>
           </div>
-          <button onClick={() => navigate('/onboarding')} style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', background: '#FFF0E8', border: '1.5px solid #E8794E33', borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>
-            Refaire l'onboarding
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={() => navigate('/onboarding')} style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', background: '#FFF0E8', border: '1.5px solid #E8794E33', borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>
+              Refaire l'onboarding
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {onboardingData.company_name && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Entreprise</span>
-              <span style={{ fontSize: 12, color: '#374151' }}>{onboardingData.company_name}</span>
-            </div>
-          )}
-          {onboardingData.sector && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Secteur</span>
-              <span style={{ fontSize: 12, color: '#374151' }}>{{ residential: 'Résidentiel', commercial: 'Commercial', industrial: 'Industriel', mixed: 'Mixte' }[onboardingData.sector] || onboardingData.sector}</span>
-            </div>
-          )}
-          {onboardingData.size && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Taille équipe</span>
-              <span style={{ fontSize: 12, color: '#374151' }}>{{ solo: '1 personne', '2_5': '2–5', '6_10': '6–10', '11_25': '11–25', '26_50': '26–50', '50_plus': '50+' }[onboardingData.size] || onboardingData.size}</span>
-            </div>
-          )}
-          {onboardingData.rbq_number && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Licence RBQ</span>
-              <span style={{ fontSize: 12, color: '#374151', fontFamily: 'monospace' }}>{onboardingData.rbq_number}</span>
-            </div>
-          )}
-          {Array.isArray(onboardingData.trades) && onboardingData.trades.length > 0 && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Métiers</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {onboardingData.trades.map(t => (
-                  <span key={t} style={{ fontSize: 11, background: '#EEF2FF', color: '#4f46e5', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
-                    {TRADE_LABELS[t] || t}
-                  </span>
-                ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Identité */}
+          {(onboardingData.company_name || onboardingData.profile_type) && (
+            <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 8, padding: '10px 14px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Identité</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {onboardingData.company_name && <Row label="Entreprise" value={onboardingData.company_name} />}
+                {onboardingData.profile_type && <Row label="Type de profil" value={{ company: 'Entreprise', individual: 'Individuel / Travailleur autonome', new_contractor: 'Nouvel entrepreneur' }[onboardingData.profile_type] || onboardingData.profile_type} />}
+                {onboardingData.sector && <Row label="Secteur" value={{ residential: 'Résidentiel', commercial: 'Commercial', industrial: 'Industriel', mixed: 'Mixte' }[onboardingData.sector] || onboardingData.sector} />}
+                {onboardingData.size && <Row label="Taille équipe" value={{ solo: '1 personne', '2_5': '2–5 personnes', '6_10': '6–10 personnes', '11_25': '11–25 personnes', '26_50': '26–50 personnes', '50_plus': '50+ personnes' }[onboardingData.size] || onboardingData.size} />}
+                {onboardingData.rbq_number && <Row label="Licence RBQ" value={onboardingData.rbq_number} mono />}
               </div>
             </div>
           )}
-          {Array.isArray(onboardingData.responsibilities) && onboardingData.responsibilities.length > 0 && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Responsabilités</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {onboardingData.responsibilities.map(r => (
-                  <span key={r} style={{ fontSize: 11, background: '#F0FDF4', color: '#16A34A', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
-                    {RESP_LABELS[r] || r}
-                  </span>
-                ))}
+
+          {/* Métiers & responsabilités */}
+          {(Array.isArray(onboardingData.trades) && onboardingData.trades.length > 0) || (Array.isArray(onboardingData.responsibilities) && onboardingData.responsibilities.length > 0) ? (
+            <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 8, padding: '10px 14px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Métiers & responsabilités</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Array.isArray(onboardingData.trades) && onboardingData.trades.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0, paddingTop: 2 }}>Métiers</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {onboardingData.trades.map(t => <Chip key={t} label={TRADE_LABELS[t] || t} color="#4f46e5" bg="#EEF2FF" />)}
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(onboardingData.responsibilities) && onboardingData.responsibilities.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0, paddingTop: 2 }}>Responsabilités</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {onboardingData.responsibilities.map(r => <Chip key={r} label={RESP_LABELS[r] || r} color="#16A34A" bg="#F0FDF4" />)}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
+          ) : null}
+
+          {/* Modules actifs */}
           {Array.isArray(onboardingData.modules) && onboardingData.modules.length > 0 && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Modules actifs</span>
+            <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 8, padding: '10px 14px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Modules activés</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {onboardingData.modules.map(m => (
-                  <span key={m} style={{ fontSize: 11, background: '#FFF0E8', color: '#E8794E', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
-                    {m}
-                  </span>
-                ))}
+                {onboardingData.modules.map(m => <Chip key={m} label={m} color="#E8794E" bg="#FFF0E8" />)}
+              </div>
+            </div>
+          )}
+
+          {/* Types de projets & usage */}
+          {(onboardingData.onboarding_profile?.project_types || onboardingData.onboarding_profile?.usage_type || onboardingData.project_types || onboardingData.usage_type) && (
+            <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 8, padding: '10px 14px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Contexte d'utilisation</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(onboardingData.onboarding_profile?.usage_type || onboardingData.usage_type) && (
+                  <Row label="Type d'usage" value={onboardingData.onboarding_profile?.usage_type || onboardingData.usage_type} />
+                )}
+                {(onboardingData.onboarding_profile?.project_types || onboardingData.project_types) && (
+                  <Row label="Types de projets" value={onboardingData.onboarding_profile?.project_types || onboardingData.project_types} />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Fournisseurs */}
+          {Array.isArray(onboardingData.preferred_suppliers) && onboardingData.preferred_suppliers.length > 0 && (
+            <div style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 8, padding: '10px 14px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Fournisseurs préférés</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {onboardingData.preferred_suppliers.map((s, i) => <Chip key={i} label={typeof s === 'string' ? s : s.name || JSON.stringify(s)} color="#374151" bg="#F3F4F6" />)}
               </div>
             </div>
           )}
         </div>
       </div>
     )}
+
+    {/* ── Visite guidée ── */}
+    <div style={{ background: '#F0F4FF', border: '1px solid #C7D2FE', borderRadius: 12, padding: 18, display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ fontSize: 24 }}>🗺️</div>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: '#3730A3', margin: '0 0 3px' }}>Visite guidée</p>
+        <p style={{ fontSize: 12, color: '#6366F1', margin: 0 }}>Un tour rapide qui te montre comment naviguer dans l'application, section par section.</p>
+      </div>
+      <button
+        onClick={() => { localStorage.setItem('mf_tour_step', '0'); window.dispatchEvent(new Event('mf:start-tour')); }}
+        style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#6366F1', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', flexShrink: 0 }}
+      >
+        Lancer la visite
+      </button>
+    </div>
     </div>
   );
 }

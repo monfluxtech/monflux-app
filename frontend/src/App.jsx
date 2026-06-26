@@ -25,6 +25,7 @@ import Parametres    from './pages/Parametres';
 import ComingSoon    from './pages/ComingSoon';
 import Contrats      from './pages/Contrats';
 import Commandes     from './pages/Commandes';
+import GuidedTour   from './components/GuidedTour';
 
 function Guard({ children }) {
   const { isAuthenticated } = useAuthStore();
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/project/:id"  element={<Navigate to="/projets" replace />} />
         <Route path="*"             element={<Navigate to="/" replace />} />
       </Routes>
+      <GuidedTour />
     </BrowserRouter>
   );
 }

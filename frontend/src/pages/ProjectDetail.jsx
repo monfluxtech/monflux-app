@@ -5688,14 +5688,6 @@ Règles :
             </>
           )}
         </div>
-        <div className="app-sidebar-bottom pt-3">
-          <button
-            className="btn-ghost w-full text-xs"
-            onClick={() => setShowExtraForm(true)}
-          >
-            <GitBranch size={12}/> {t('create_change_order')}
-          </button>
-        </div>
       </>
     );
   };

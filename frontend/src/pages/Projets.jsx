@@ -803,7 +803,12 @@ export default function Projets() {
 
     // Titre composé : type travaux · adresse · dates
     const workType = p.field_assessment?.work_type || p.type || null;
-    const fmtDate = (d) => d ? new Date(d + 'T00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : null;
+    const fmtDate = (d) => {
+      if (!d) return null;
+      // slice to YYYY-MM-DD to avoid double T00:00 on DB timestamps
+      const parsed = new Date(String(d).slice(0, 10) + 'T00:00');
+      return isNaN(parsed) ? null : parsed.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+    };
     const dateStr = p.start_date && p.end_date
       ? `${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}`
       : fmtDate(p.start_date) || fmtDate(p.end_date);
@@ -828,7 +833,7 @@ export default function Projets() {
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
               {isAutoTitle && p.name && <span className="text-gray-300 italic truncate max-w-[180px]">{p.name}</span>}
               {!isAutoTitle && p.address && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
-              {!isAutoTitle && p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(p.start_date).toLocaleDateString('fr-CA')}</span>}
+              {!isAutoTitle && p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(String(p.start_date).slice(0,10)+'T00:00').toLocaleDateString('fr-CA')}</span>}
               {p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
               {(() => {
                 const hasReal = num(p.invoiced_real) > 0;
