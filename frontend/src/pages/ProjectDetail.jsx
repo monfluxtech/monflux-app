@@ -43,6 +43,125 @@ const DETAIL_TOC_SECTIONS = [
 // SectionStub kept for DOM presence (section is hidden via CSS, not removed)
 function SectionStub() { return null; }
 
+// Parse flexible date input → ISO YYYY-MM-DD or null
+function parseFlexDate(v) {
+  if (!v) return null;
+  const s = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const mDMY = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (mDMY) return `${mDMY[3]}-${mDMY[2].padStart(2,'0')}-${mDMY[1].padStart(2,'0')}`;
+  const MONTHS = { jan:1, fév:2, 'fev':2, mar:3, avr:4, mai:5, juin:6, juil:7, 'aou':8, 'aoû':8, sep:9, oct:10, nov:11, déc:12, 'dec':12 };
+  const mFR = s.match(/^(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})$/i);
+  if (mFR) {
+    const mKey = mFR[2].toLowerCase().slice(0,3).replace('é','e').replace('û','u').replace('ô','o');
+    const month = MONTHS[mFR[2].toLowerCase().slice(0,4)] || MONTHS[mKey];
+    if (month) return `${mFR[3]}-${String(month).padStart(2,'0')}-${mFR[1].padStart(2,'0')}`;
+  }
+  return null;
+}
+
+// Address autocomplete using Nominatim (free, no API key)
+function AddressAutocomplete({ value, onSave, onCity, onPostal, placeholder = 'Adresse', style = {}, displayStyle = {} }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || '');
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const inputRef = useRef(null);
+  const timerRef = useRef(null);
+  const skipBlur = useRef(false);
+
+  useEffect(() => { if (!editing) setVal(value || ''); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
+
+  const search = (q) => {
+    clearTimeout(timerRef.current);
+    if (q.length < 4) { setSuggestions([]); return; }
+    timerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&countrycodes=ca&q=${encodeURIComponent(q)}`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (monflux.tech)' } });
+        const data = await resp.json();
+        setSuggestions(data || []);
+      } catch { setSuggestions([]); } finally { setSearching(false); }
+    }, 420);
+  };
+
+  const selectSuggestion = (s) => {
+    skipBlur.current = true;
+    const a = s.address || {};
+    const street = [a.house_number, a.road].filter(Boolean).join(' ');
+    const formatted = street || s.display_name.split(',')[0].trim();
+    const city = a.city || a.town || a.village || a.municipality || '';
+    const postal = a.postcode || '';
+    setVal(formatted);
+    onSave(formatted);
+    if (onCity && city) onCity(city);
+    if (onPostal && postal) onPostal(postal);
+    setSuggestions([]);
+    setEditing(false);
+    setTimeout(() => { skipBlur.current = false; }, 200);
+  };
+
+  const commit = () => {
+    setSuggestions([]);
+    setEditing(false);
+    if (val.trim() !== (value || '').trim()) onSave(val.trim());
+  };
+
+  const base = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', padding: 0, ...style };
+
+  if (editing) return (
+    <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+      <input
+        ref={inputRef}
+        value={val}
+        onChange={e => { setVal(e.target.value); search(e.target.value); }}
+        onBlur={() => { if (!skipBlur.current) commit(); }}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { setSuggestions([]); setEditing(false); setVal(value || ''); } }}
+        style={{ ...base, minWidth: 160 }}
+        autoComplete="off"
+      />
+      {(suggestions.length > 0 || searching) && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, background: '#fff', borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,.16)', zIndex: 200, minWidth: 320, maxWidth: 480, overflow: 'hidden', border: '1px solid #E8EAED' }}>
+          {searching && <div style={{ padding: '10px 14px', fontSize: 12, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', border: '2px solid #E8794E', borderTopColor: 'transparent', animation: 'spin 0.6s linear infinite' }}/>Recherche…</div>}
+          {suggestions.map((s, i) => {
+            const a = s.address || {};
+            const street = [a.house_number, a.road].filter(Boolean).join(' ');
+            const city = a.city || a.town || a.village || a.municipality || '';
+            const postal = a.postcode || '';
+            const line1 = street || s.display_name.split(',')[0].trim();
+            const line2 = [city, postal].filter(Boolean).join(', ');
+            return (
+              <div key={i} onMouseDown={() => selectSuggestion(s)}
+                style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: i < suggestions.length - 1 ? '1px solid #F5F7F9' : 'none', display: 'flex', flexDirection: 'column', gap: 2, background: '#fff', transition: 'background .1s' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#FFF4EE'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#15171C' }}>{line1}</span>
+                {line2 && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{line2}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <span
+      tabIndex={0} onClick={start} onFocus={start}
+      title="Cliquer pour modifier l'adresse"
+      style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', outline: 'none', ...displayStyle }}
+      onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
+      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+    >
+      {val || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
+    </span>
+  );
+}
+
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value || '');
@@ -3172,9 +3291,13 @@ export default function ProjectDetail() {
 
   const saveAssessmentField = async (key, value) => {
     const next = { ...(project.field_assessment || {}), [key]: value };
+    // Mirror date labels to actual date columns so calendar & Gantt pick them up
+    const extra = {};
+    if (key === 'start_label') { const d = parseFlexDate(value); if (d) extra.start_date = d; }
+    if (key === 'end_label')   { const d = parseFlexDate(value); if (d) extra.end_date   = d; }
     try {
-      await projectsApi.update(id, { field_assessment: next });
-      setProject(p => ({ ...p, field_assessment: next }));
+      await projectsApi.update(id, { field_assessment: next, ...extra });
+      setProject(p => ({ ...p, field_assessment: next, ...extra }));
     } catch {}
   };
 
@@ -5666,7 +5789,10 @@ Règles :
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
               {addr && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
-              <InlineField value={addr} onSave={v => saveField('address', v)} placeholder="Adresse"
+              <AddressAutocomplete value={addr}
+                onSave={v => saveField('address', v)}
+                onCity={city => saveField('city', city)}
+                placeholder="Adresse"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
                 displayStyle={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }} />
               {(startLabel || endLabel) && <span style={{ color: '#C8CACD', fontWeight: 300, padding: '0 4px' }}>|</span>}
@@ -5830,7 +5956,7 @@ Règles :
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))', gap: '12px 28px' }}>
                 {[
                   { label: 'Type de travaux', fn: null, value: workType, isWorkType: true },
-                  { label: 'Adresse',               fn: v => saveField('address', v),               value: addr },
+                  { label: 'Adresse',               fn: v => saveField('address', v),               value: addr, isAddress: true },
                   { label: 'Date début',            fn: v => saveAssessmentField('start_label', v), value: startLabel },
                   { label: 'Date fin',              fn: v => saveAssessmentField('end_label', v),   value: endLabel },
                   { label: 'Termes paiement',       fn: v => saveField('payment_terms', v),         value: project.payment_terms },
@@ -5838,7 +5964,7 @@ Règles :
                   { label: 'Acheteur matériaux',    fn: v => saveField('materials_buyer', v),       value: project.materials_buyer },
                   { label: 'Approbateurs',          fn: v => saveField('approvers', v),             value: (project.approvers || []).join(', ') },
                   { label: 'Machines / équipements',fn: v => saveField('machines', v),              value: (project.machines || []).join(', ') },
-                ].map(({ label, fn, value, isWorkType }) => (
+                ].map(({ label, fn, value, isWorkType, isAddress }) => (
                   <div key={label}>
                     <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'rgba(21,23,28,.42)', margin: 0 }}>{label}</p>
                     {isWorkType ? (
@@ -5857,6 +5983,10 @@ Règles :
                         ))}
                         <option value="Autre">Autre…</option>
                       </select>
+                    ) : isAddress ? (
+                      <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
+                        <AddressAutocomplete value={value} onSave={fn} onCity={city => saveField('city', city)} placeholder="—" style={IFS} displayStyle={IFD} />
+                      </p>
                     ) : (
                       <p style={{ fontSize: 13.5, color: '#15171C', marginTop: 3, fontWeight: 500 }}>
                         <InlineField value={value} onSave={fn} placeholder="—" style={IFS} displayStyle={IFD} />

@@ -8,6 +8,76 @@ import { useT } from '../hooks/useT';
 import { DEFAULT_PIPELINE } from '../config/modules';
 import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, ChevronLeft, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
 
+// Address autocomplete input with Nominatim suggestions (free, no API key)
+function AddressInput({ value, onChange, onCityChange, placeholder, className }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const timerRef = useRef(null);
+  const skipBlur = useRef(false);
+
+  const search = (q) => {
+    clearTimeout(timerRef.current);
+    if (q.length < 4) { setSuggestions([]); return; }
+    timerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&countrycodes=ca&q=${encodeURIComponent(q)}`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (monflux.tech)' } });
+        const data = await resp.json();
+        setSuggestions(data || []);
+      } catch { setSuggestions([]); } finally { setSearching(false); }
+    }, 420);
+  };
+
+  const selectSuggestion = (s) => {
+    skipBlur.current = true;
+    const a = s.address || {};
+    const street = [a.house_number, a.road].filter(Boolean).join(' ');
+    const formatted = street || s.display_name.split(',')[0].trim();
+    const city = a.city || a.town || a.village || a.municipality || '';
+    onChange(formatted);
+    if (onCityChange && city) onCityChange(city);
+    setSuggestions([]);
+    setTimeout(() => { skipBlur.current = false; }, 200);
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        className={className}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => { onChange(e.target.value); search(e.target.value); }}
+        onBlur={() => { if (!skipBlur.current) setSuggestions([]); }}
+        autoComplete="off"
+      />
+      {(suggestions.length > 0 || searching) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.16)', zIndex: 200, overflow: 'hidden', border: '1px solid #E8EAED' }}>
+          {searching && <div style={{ padding: '8px 12px', fontSize: 12, color: '#9CA3AF' }}>Recherche…</div>}
+          {suggestions.map((s, i) => {
+            const a = s.address || {};
+            const street = [a.house_number, a.road].filter(Boolean).join(' ');
+            const city = a.city || a.town || a.village || a.municipality || '';
+            const postal = a.postcode || '';
+            const line1 = street || s.display_name.split(',')[0].trim();
+            const line2 = [city, postal].filter(Boolean).join(', ');
+            return (
+              <div key={i} onMouseDown={() => selectSuggestion(s)}
+                style={{ padding: '8px 12px', cursor: 'pointer', borderTop: i > 0 ? '1px solid #F5F7F9' : 'none', background: '#fff', transition: 'background .1s' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#FFF4EE'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#15171C' }}>{line1}</div>
+                {line2 && <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>{line2}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const num = (v) => Number(v) || 0;
 const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
 // Marge théorique = commande − (budgets + coûts métiers estimés). Réelle = facturé − (punch + dépenses).
@@ -591,7 +661,16 @@ function ProjectModal({ project, onClose, onSave }) {
           </label>
           <textarea className="input resize-none" rows={3} placeholder={t('project_desc') + '…'} value={form.description} onChange={f('description')} />
         </div>
-        <div><label className="label">{t('address')}</label><input className="input" placeholder="123 rue Principale" value={form.address} onChange={f('address')} /></div>
+        <div>
+          <label className="label">{t('address')}</label>
+          <AddressInput
+            className="input"
+            placeholder="123 rue Principale"
+            value={form.address}
+            onChange={v => setForm(p => ({ ...p, address: v }))}
+            onCityChange={city => setForm(p => ({ ...p, city }))}
+          />
+        </div>
         <div><label className="label">{t('city')}</label><input className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label">{t('start_date')}</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
