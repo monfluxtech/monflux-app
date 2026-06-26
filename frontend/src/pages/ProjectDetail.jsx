@@ -9643,7 +9643,7 @@ Règles :
 
       {/* ════════════ VUE : MÉMOIRE ════════════ */}
       {activeTab === 'memoire' && (
-        <div style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div className="pd-tab-content" style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 28 }}>
 
           {/* En-tête */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -9948,7 +9948,7 @@ Règles :
 
       {/* ════════════ VUE : COMMUNICATIONS ════════════ */}
       {activeTab === 'communication' && (
-        <div style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className="pd-tab-content" style={{ padding: '32px 48px 60px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           {/* En-tête */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

@@ -503,3 +503,79 @@
 @media (max-width: 768px) {
   .ai-float-btn { bottom: 20px; right: 20px; }
 }
+
+/* ── Responsive: sidebar icon-only mode at < 1280px ── */
+@media (max-width: 1280px) {
+  :root { --sb: 60px; }
+
+  /* Sidebar: masquer les labels, centrer les icônes */
+  .app-sidebar { width: 60px; }
+  .app-sidebar-app                          { display: none; }
+  .app-sidebar-section-label                { display: none; }
+  .app-sidebar-section-title                { display: none; }
+  .app-sidebar-status-text                  { display: none; }
+  .app-sidebar-status                       { justify-content: center; padding: 6px 0 8px; }
+  .app-sidebar-status-dot                   { margin: 0 auto; }
+  .app-sidebar-user-meta                    { display: none; }
+  .app-sidebar-user-row                     { justify-content: center; }
+  .app-sidebar-header                       { justify-content: center; padding: 14px 8px; }
+  .app-sidebar-bottom                       { padding: 8px 6px 12px; }
+  .app-sidebar-mini-actions                 { flex-direction: column; align-items: center; gap: 6px; }
+
+  .app-sidebar-link                         { justify-content: center; padding: 9px 0; }
+  .app-sidebar-link span.truncate           { display: none; }
+  .app-sidebar-link-icon                    { width: 22px; flex: 0 0 22px; }
+
+  .project-toc-item                         { justify-content: center; padding: 9px 0; }
+  .project-toc-label                        { display: none; }
+  .project-toc-badge                        { display: none; }
+  .project-toc-icon                         { width: 22px; flex: 0 0 22px; }
+
+  .app-topbar                               { padding: 0 20px; }
+}
+
+/* ── Responsive: paddings réduits sur le contenu ProjectDetail ── */
+@media (max-width: 1280px) {
+  /* Sections de la fiche projet (id="s-*") */
+  [id^="s-"] {
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+  }
+  /* Hero section */
+  #s-hero {
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+  }
+  /* Onglets Mémoire et Communications */
+  .pd-tab-content {
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  [id^="s-"] {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+  #s-hero {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+  .pd-tab-content {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+}
+
+/* Sécurité: empêcher le scroll horizontal sur la zone de contenu principale */
+.app-shell > div {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Tables scrollables horizontalement à l'intérieur de leur conteneur */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
