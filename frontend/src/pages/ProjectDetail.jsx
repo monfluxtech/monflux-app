@@ -7038,8 +7038,9 @@ Règles :
               );
             })()}
 
-          {/* ── Section "Étapes recommandées" — sous le Gantt, visible si étapes disponibles ── */}
+          {/* ── Section "Étapes recommandées" — sous le Gantt, seulement si des phases existent déjà ── */}
           {(() => {
+            if (!project.phases?.length) return null; // L'état vide les montre déjà
             const existing = new Set((project.phases || []).map(p => p.name?.toLowerCase()));
             const available = recommendedPhaseTemplates.map(tpl => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) })).filter(tpl => !existing.has(tpl.name.toLowerCase()));
             const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
