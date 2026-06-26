@@ -443,6 +443,7 @@ export default function Projets() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showNew, setShowNew] = useState(searchParams.get('new') === '1');
   const [editItem, setEditItem] = useState(null);
   const [search, setSearch] = useState('');
@@ -465,8 +466,10 @@ export default function Projets() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try { const {data} = await projectsApi.list(); setItems(data); }
-    catch {} finally { setLoading(false); }
+    catch (err) { setLoadError(err?.response?.data?.error || 'Impossible de charger les projets. Vérifiez votre connexion.'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); loadCfg(); }, []);
@@ -720,6 +723,12 @@ export default function Projets() {
           />
         ) : view === 'gantt' ? (
           <GanttPortfolio projects={filtered} stageMap={stageMap} />
+        ) : loadError ? (
+          <div className="text-center py-12">
+            <p className="text-sm text-red-500 font-medium mb-2">Erreur de chargement</p>
+            <p className="text-xs text-gray-400 mb-4">{loadError}</p>
+            <button className="btn-primary text-xs" onClick={load}>Réessayer</button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">{items.length === 0 ? 'Aucun projet. Créez-en un!' : 'Aucun projet ne correspond à votre recherche.'}</div>
         ) : (

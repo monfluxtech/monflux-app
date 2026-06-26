@@ -40,28 +40,8 @@ const DETAIL_TOC_SECTIONS = [
 ];
 
 // Stub affiché dans le corps quand une section est désactivée (par état ou par module).
-function SectionStub({ sectionId, reason, onActivate }) {
-  const [open, setOpen] = useState(false);
-  const isByStatus = reason?.startsWith('Disponible après');
-  return (
-    <div style={{ background: '#F9FAFB', border: '1px dashed #D1D5DB', borderRadius: 12, padding: '18px 28px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
-        <span style={{ fontSize: 18, opacity: 0.4 }}>🔒</span>
-        <span style={{ color: '#6B7280', fontSize: 13, fontWeight: 500, flex: 1 }}>{reason}</span>
-        {!isByStatus && (
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); onActivate && onActivate(); }}
-            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#E8794E', border: 'none', borderRadius: 6, padding: '3px 12px', cursor: 'pointer' }}
-          >
-            Réactiver
-          </button>
-        )}
-        <span style={{ color: '#9CA3AF', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
-      </div>
-    </div>
-  );
-}
+// SectionStub kept for DOM presence (section is hidden via CSS, not removed)
+function SectionStub() { return null; }
 
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
   const [editing, setEditing] = useState(false);
@@ -5436,72 +5416,83 @@ Règles :
     localStorage.setItem(`monflux-toc-order-${id}`, JSON.stringify(tocSections));
   };
 
-  const ProjectTOC = () => (
-    <>
-      <div className="app-sidebar-section-label">Fiche projet</div>
-      <div className="app-sidebar-section-title">{project.name}</div>
-      <div className="project-toc-list">
-        {tocSections.map((s, idx) => {
-          const isHidden = hiddenSections.includes(s.id);
-          const unavail = unavailableReason(s.id, project.status, activePipeline, configModules);
-          const isUnavailable = !!unavail;
-          const rowOpacity = isHidden || isUnavailable ? 0.45 : 1;
-          return (
-            <div
-              key={s.id}
-              draggable={!isUnavailable}
-              onDragStart={e => !isUnavailable && onTocDragStart(e, idx)}
-              onDragOver={e => !isUnavailable && onTocDragOver(e, idx)}
-              onDrop={onTocDrop}
-              style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: rowOpacity }}
-              title={isUnavailable ? unavail : undefined}
-            >
-              <span style={{ cursor: isUnavailable ? 'default' : 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}>
-                <GripVertical size={12} />
-              </span>
-              <button
-                type="button"
-                className={`project-toc-item ${activeSection === s.id && !isHidden && !isUnavailable ? 'active' : ''}`}
-                style={{ flex: 1 }}
-                onClick={() => !isHidden && !isUnavailable && scrollToSection(s.id)}
-                disabled={isUnavailable}
-              >
-                <span className="project-toc-icon">{s.icon}</span>
-                <span className="project-toc-label">{s.label}</span>
-                {s.badge && <span className="project-toc-badge">{s.badge}</span>}
-                {isUnavailable && <span style={{ fontSize: 9, background: '#FEE2E2', color: '#991B1B', borderRadius: 4, padding: '1px 5px', marginLeft: 4 }}>inactif</span>}
-              </button>
-              {!isUnavailable && (
-                <button
-                  type="button"
-                  title={isHidden ? 'Afficher la section' : 'Masquer la section'}
-                  onClick={() => toggleSectionVisibility(s.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
-                  className="toc-eye-btn"
-                >
-                  {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="app-sidebar-bottom pt-3">
-        <button
-          className="btn-ghost w-full text-xs"
-          onClick={() => setShowExtraForm(true)}
+  const ProjectTOC = () => {
+    // Split active vs inactive sections
+    const availableSections  = tocSections.filter(s => !unavailableReason(s.id, project.status, activePipeline, configModules));
+    const unavailableSections = tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules));
+
+    const renderRow = (s, idx, isUnavailable) => {
+      const isHidden = hiddenSections.includes(s.id);
+      return (
+        <div
+          key={s.id}
+          draggable={!isUnavailable}
+          onDragStart={e => !isUnavailable && onTocDragStart(e, idx)}
+          onDragOver={e => !isUnavailable && onTocDragOver(e, idx)}
+          onDrop={onTocDrop}
+          style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isUnavailable ? 0.5 : 1 }}
+          title={isUnavailable ? unavailableReason(s.id, project.status, activePipeline, configModules) : undefined}
         >
-          <GitBranch size={12}/> {t('create_change_order')}
-        </button>
-      </div>
-    </>
-  );
+          <span style={{ cursor: isUnavailable ? 'default' : 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}>
+            {isUnavailable ? <EyeOff size={11} style={{ color: '#9CA3AF' }} /> : <GripVertical size={12} />}
+          </span>
+          <button
+            type="button"
+            className={`project-toc-item ${activeSection === s.id && !isHidden && !isUnavailable ? 'active' : ''}`}
+            style={{ flex: 1, textDecoration: isUnavailable ? 'none' : undefined }}
+            onClick={() => !isHidden && !isUnavailable && scrollToSection(s.id)}
+            disabled={isUnavailable}
+          >
+            <span className="project-toc-icon" style={{ opacity: isUnavailable ? 0.5 : 1 }}>{s.icon}</span>
+            <span className="project-toc-label" style={{ color: isUnavailable ? '#9CA3AF' : undefined }}>{s.label}</span>
+            {s.badge && !isUnavailable && <span className="project-toc-badge">{s.badge}</span>}
+          </button>
+          {!isUnavailable && (
+            <button
+              type="button"
+              title={isHidden ? 'Afficher la section' : 'Masquer la section'}
+              onClick={() => toggleSectionVisibility(s.id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
+              className="toc-eye-btn"
+            >
+              {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <>
+        <div className="app-sidebar-section-label">Fiche projet</div>
+        <div className="app-sidebar-section-title">{project.name}</div>
+        <div className="project-toc-list">
+          {availableSections.map((s, idx) => renderRow(s, idx, false))}
+          {unavailableSections.length > 0 && (
+            <>
+              <div style={{ height: 1, background: '#F0F2F4', margin: '6px 8px' }} />
+              {unavailableSections.map((s, idx) => renderRow(s, idx, true))}
+            </>
+          )}
+        </div>
+        <div className="app-sidebar-bottom pt-3">
+          <button
+            className="btn-ghost w-full text-xs"
+            onClick={() => setShowExtraForm(true)}
+          >
+            <GitBranch size={12}/> {t('create_change_order')}
+          </button>
+        </div>
+      </>
+    );
+  };
 
   return (
     <Layout toc={<ProjectTOC />} noTopbar>
       <style>{
         tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
+        (project ? tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules)).map(s => `#${s.id}{display:none!important}`).join('') : '') +
         `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
       }</style>
       {/* ── Project Topbar — 2 lignes ── */}
