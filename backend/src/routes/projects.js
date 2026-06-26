@@ -350,21 +350,50 @@ router.delete('/:id/phases/:phaseId', async (req, res) => {
   }
 });
 
+// Normalize French-Canadian address abbreviations for Nominatim
+function normalizeAddress(addr) {
+  if (!addr) return addr;
+  return addr
+    .replace(/\bboul\.?\s*/gi, 'boulevard ')
+    .replace(/\bblvd\.?\s*/gi, 'boulevard ')
+    .replace(/\bav\.?\s+/gi, 'avenue ')
+    .replace(/\bche\.?\s*/gi, 'chemin ')
+    .replace(/\bch\.?\s+(?=[A-Za-z])/gi, 'chemin ')
+    .replace(/\bpl\.?\s+(?=[A-Za-z])/gi, 'place ')
+    .replace(/\bst\.?\s+/gi, 'saint-')
+    .replace(/\bSte\.?\s+/gi, 'sainte-')
+    .replace(/\bst-/gi, 'saint-')
+    .replace(/\bSte-/gi, 'sainte-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Geocode an address via OpenStreetMap Nominatim (free, no API key). Best-effort.
 async function geocodeAddress(parts) {
-  const q = parts.filter(Boolean).join(', ');
-  if (!q.trim()) return null;
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;
-    const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (construction SaaS)' } });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (!data?.length) return null;
-    return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
-  } catch (err) {
-    console.warn('geocode error:', err.message);
-    return null;
+  const raw = parts.filter(Boolean).join(', ');
+  if (!raw.trim()) return null;
+
+  const normalized = normalizeAddress(raw);
+  const queries = [normalized];
+  // Also try without house number as fallback
+  const withoutNumber = normalized.replace(/^\d+\s*,?\s*/, '');
+  if (withoutNumber !== normalized) queries.push(withoutNumber);
+  // Try raw address as last resort
+  if (raw !== normalized) queries.push(raw);
+
+  for (const q of queries) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (monflux.tech)' } });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data?.length) return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+      await new Promise(r => setTimeout(r, 600)); // respect Nominatim rate limit
+    } catch (err) {
+      console.warn('geocode error:', err.message);
+    }
   }
+  return null;
 }
 
 // POST /api/projects/:id/geocode — resolve the project address to map coordinates

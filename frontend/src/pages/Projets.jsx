@@ -69,7 +69,8 @@ function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
         iconSize: [18, 18], iconAnchor: [9, 9],
       });
       const m = L.marker([lat, lng], { icon });
-      m.bindTooltip(`${p.name}${p.contract_value ? ` · ${Number(p.contract_value).toLocaleString('fr-CA')}$` : ''}`, { direction: 'top', offset: [0, -8] });
+      const label = p.field_assessment?.work_type || p.type || p.name || '—';
+      m.bindTooltip(`<b>${label}</b>${p.address ? '<br>' + p.address : ''}${p.contract_value ? '<br>' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`, { direction: 'top', offset: [0, -8] });
       m.on('click', () => navigate(`/projets/${p.id}`));
       m.addTo(layerRef.current);
       bounds.push([lat, lng]);
@@ -91,10 +92,17 @@ function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
           </button>
         )}
       </div>
-      <div ref={mapEl} style={{ height: 520, borderRadius: 16, overflow: 'hidden', zIndex: 0 }} className="border border-gray-100" />
-      {located === 0 && (
+      <div style={{ position: 'relative' }}>
+        <div ref={mapEl} style={{ height: 520, borderRadius: 16, overflow: 'hidden', zIndex: 0 }} className="border border-gray-100" />
+        {geocoding && (
+          <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,.92)', borderRadius: 20, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#374151', boxShadow: '0 2px 8px rgba(0,0,0,.12)', zIndex: 999, backdropFilter: 'blur(4px)' }}>
+            <Loader2 size={12} className="animate-spin" style={{ color: '#E8794E' }}/> Géolocalisation en cours…
+          </div>
+        )}
+      </div>
+      {located === 0 && !geocoding && (
         <p className="text-center text-sm text-gray-400 mt-3">
-          Aucun chantier localisé. Ajoutez une adresse aux projets puis cliquez « Localiser ».
+          {missing > 0 ? 'Géolocalisation en cours — rechargez dans quelques secondes si aucun point n\'apparaît.' : 'Ajoutez une adresse aux projets pour les voir sur la carte.'}
         </p>
       )}
     </div>
