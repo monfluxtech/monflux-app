@@ -3154,6 +3154,8 @@ export default function ProjectDetail() {
   const [aiRecommendations, setAiRecommendations] = useState([]);
   const [activeSection, setActiveSection] = useState('s-ai');
   const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'memoire' | 'communication'
+  const [proactiveTip, setProactiveTip] = useState(null); // { text, type: 'regulatory'|'deadline'|'tip' }
+  const [proactiveDismissedSections, setProactiveDismissedSections] = useState(new Set());
   const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -3340,6 +3342,40 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  // Reload when Flo modifies the project via tool use (update_project_field, add_sticky_note)
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener('monflux:data-changed', handler);
+    return () => window.removeEventListener('monflux:data-changed', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Orbe contextuel proactif ─────────────────────────────────────────────
+  // Map section → [{ type, text }] par ordre de priorité (regulatory > deadline > tip)
+  const SECTION_TIPS = {
+    's-phases':       [{ type: 'regulatory', text: '⚠️ RBQ : tout entrepreneur général superviseur de travaux doit détenir une licence valide (Loi sur le bâtiment, R.Q. B-1.1). Vérifiez chaque corps de métier.' }],
+    's-equipe':       [{ type: 'regulatory', text: '⚠️ CCQ : les travailleurs de la construction sont soumis aux décrets de conventions collectives CCQ. Exigez la preuve de certificat de compétence avant d\'embaucher.' }],
+    's-conformite':   [{ type: 'regulatory', text: '⚠️ CNESST : le programme de prévention doit être affiché sur le chantier (RSST, art. 58). Conservez les preuves d\'assurance de tous les sous-traitants.' }],
+    's-devis':        [{ type: 'tip', text: '💡 Flo peut compléter le devis automatiquement à partir de tes phases et des prix du marché. Clique sur « Flo complète le devis » dans la section.' }],
+    's-contrat':      [{ type: 'regulatory', text: '⚠️ Un contrat écrit est obligatoire pour tout travail > 2 000 $ avec un consommateur (L.R.Q. c. P-40.1, art. 23). Inclus le délai d\'exécution et le prix total.' }],
+    's-invoices':     [{ type: 'tip', text: '💡 Pour la facturation progressive, un état d\'avancement signé est requis à chaque tranche. Garde les courriels de confirmation comme preuve.' }],
+    's-punch':        [{ type: 'regulatory', text: '⚠️ CNESST : le registre des présences sur le chantier doit être tenu à jour et accessible en tout temps (LSST, art. 62).' }],
+    's-materiaux':    [{ type: 'tip', text: '💡 Flo peut rechercher les meilleurs prix en temps réel chez RONA, Home Depot, BMR, Canac et plusieurs autres distributeurs.' }],
+    's-photos':       [{ type: 'tip', text: '💡 Les photos horodatées géolocalisées constituent une preuve légale solide en cas de litige, réclamation ou vice caché.' }],
+    's-denonciations':[{ type: 'regulatory', text: '⚠️ Dénonciation : obligatoire pour bénéficier de l\'hypothèque légale de la construction (C.c.Q., art. 2728). Délai : 30 jours après la fin des travaux.' }],
+    's-extras':       [{ type: 'regulatory', text: '⚠️ Tout extra doit être autorisé par écrit avant exécution pour être récupérable (C.c.Q., art. 2109). Un courriel de confirmation suffit.' }],
+  };
+
+  useEffect(() => {
+    if (!activeSection || showAIChat || proactiveDismissedSections.has(activeSection)) return;
+    const tips = SECTION_TIPS[activeSection];
+    if (!tips?.length) { setProactiveTip(null); return; }
+    // Pick highest priority: regulatory > deadline > tip
+    const pick = tips.find(t => t.type === 'regulatory') || tips.find(t => t.type === 'deadline') || tips[0];
+    setProactiveTip({ ...pick, section: activeSection });
+    const timer = setTimeout(() => setProactiveTip(null), 12000);
+    return () => clearTimeout(timer);
+  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers DB-sync pour données per-projet ──────────────────────────────
   // Chaque helper écrit en localStorage (réactivité immédiate) ET en field_assessment (DB).
@@ -5698,7 +5734,8 @@ Règles :
         tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
         (project ? tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules) && !overriddenSections.includes(s.id)).map(s => `#${s.id}{display:none!important}`).join('') : '') +
-        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
+        `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}` +
+        `@keyframes slideUpFade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`
       }</style>
       {/* ── Project Topbar — 2 lignes ── */}
       <div style={{
@@ -6144,10 +6181,45 @@ Règles :
         />
       )}
 
+      {/* ── Bulle proactive Flo (contextuelle par section) ── */}
+      {!showAIChat && proactiveTip && (
+        <div style={{
+          position: 'fixed', bottom: 90, right: 20, zIndex: 60,
+          maxWidth: 300, background: '#fff',
+          border: `1.5px solid ${proactiveTip.type === 'regulatory' ? '#FCA5A5' : '#E8EAED'}`,
+          borderRadius: 14, padding: '12px 14px',
+          boxShadow: '0 8px 32px rgba(0,0,0,.14)',
+          animation: 'slideUpFade .3s ease',
+        }}>
+          <button onClick={() => {
+            setProactiveDismissedSections(s => new Set([...s, proactiveTip.section]));
+            setProactiveTip(null);
+          }} style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', padding: 2, lineHeight: 1 }}>
+            <X size={13}/>
+          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>{proactiveTip.type === 'regulatory' ? '⚠️' : '💡'}</span>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 800, color: proactiveTip.type === 'regulatory' ? '#DC2626' : BRAND, margin: '0 0 4px' }}>
+                {proactiveTip.type === 'regulatory' ? 'Point réglementaire' : 'Conseil Flo'}
+              </p>
+              <p style={{ fontSize: 11.5, color: '#374151', margin: '0 0 8px', lineHeight: 1.5 }}>{proactiveTip.text}</p>
+              <button onClick={() => { setShowAIChat(true); setProactiveTip(null); }}
+                style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                Demander à Flo →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Bouton flottant Chat IA ── */}
       {!showAIChat && (
         <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à Florence — assistante IA">
           <Sparkles size={22} />
+          {proactiveTip?.type === 'regulatory' && (
+            <span style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: '#DC2626', border: '2px solid #fff' }}/>
+          )}
         </button>
       )}
 
@@ -9619,15 +9691,36 @@ Règles :
             {aiRecommendations.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {aiRecommendations.map((rec, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10, padding: '11px 14px', background: '#fff', borderRadius: 10, border: '1px solid #F0F2F4' }}>
-                    <Sparkles size={13} style={{ color: BRAND, flexShrink: 0, marginTop: 2 }} />
-                    <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{rec}</p>
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '11px 14px', background: '#fff', borderRadius: 10, border: '1px solid #F0F2F4', alignItems: 'flex-start' }}>
+                    <Sparkles size={13} style={{ color: BRAND, flexShrink: 0, marginTop: 3 }} />
+                    <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6, flex: 1 }}>{rec}</p>
+                    <div style={{ display: 'flex', gap: 5, flexShrink: 0, marginTop: 1 }}>
+                      {/* Garder → convertit en post-it */}
+                      <button onClick={() => {
+                        const note = { id: `flo-${Date.now()}-${i}`, text: rec, author_name: 'Flo ✦', color: 'yellow', created_at: new Date().toISOString(), archived: false, source: 'flo' };
+                        const next = [...stickyNotes, note];
+                        saveStickyNotes(next);
+                        const nextRecs = aiRecommendations.filter((_, j) => j !== i);
+                        setAiRecommendations(nextRecs);
+                        projectsApi.update(id, { flo_recommendations: nextRecs }).catch(() => {});
+                      }} style={{ fontSize: 10, fontWeight: 700, color: '#16A34A', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        📌 Garder
+                      </button>
+                      {/* Écarter → retire de flo_recommendations */}
+                      <button onClick={() => {
+                        const nextRecs = aiRecommendations.filter((_, j) => j !== i);
+                        setAiRecommendations(nextRecs);
+                        projectsApi.update(id, { flo_recommendations: nextRecs }).catch(() => {});
+                      }} style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '20px 0', color: '#C4C8CE' }}>
-                <p style={{ fontSize: 13 }}>Aucun insight pour l'instant — utilisez le bouton Flo sur la fiche projet pour générer une analyse.</p>
+                <p style={{ fontSize: 13 }}>Aucun insight pour l'instant. Discute avec Flo sur la fiche projet — ses notes apparaissent ici.</p>
               </div>
             )}
           </div>

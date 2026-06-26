@@ -81,6 +81,32 @@ const TOOLS = [
       required: ['entity'],
     },
   },
+  {
+    name: 'update_project_field',
+    description: "Met à jour un champ spécifique du projet courant — utilise quand l'utilisateur demande à Flo de remplir, corriger ou modifier une donnée du projet (nom, adresse, dates, montant, statut, notes, etc.).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'UUID du projet à modifier (utilise le project_id fourni dans le contexte)' },
+        field:       { type: 'string', enum: ['name','address','client_name','client_email','client_phone','contract_value','start_date','end_date','status','notes'], description: 'Champ à mettre à jour' },
+        value:       { type: 'string', description: 'Nouvelle valeur (convertir en string, ex: "2026-08-15" pour une date)' },
+      },
+      required: ['project_id', 'field', 'value'],
+    },
+  },
+  {
+    name: 'add_sticky_note',
+    description: "Ajoute un post-it (note de chantier) au projet courant — utilise quand Flo veut laisser une note mémo, un rappel ou une observation importante sur le projet.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'UUID du projet' },
+        text:       { type: 'string', description: 'Contenu du post-it (phrase courte, actionnable)' },
+        color:      { type: 'string', enum: ['yellow','pink','blue','green','purple'], description: 'Couleur du post-it (défaut: yellow)' },
+      },
+      required: ['project_id', 'text'],
+    },
+  },
 ];
 
 async function executeTool(name, input, company_id) {
@@ -189,6 +215,37 @@ async function executeTool(name, input, company_id) {
       }
       return { success: false, error: 'Entité inconnue' };
     }
+    if (name === 'update_project_field') {
+      const { project_id, field, value } = input;
+      const ALLOWED = ['name','address','client_name','client_email','client_phone','contract_value','start_date','end_date','status','notes'];
+      if (!ALLOWED.includes(field)) return { success: false, error: 'Champ non autorisé' };
+      const numFields = ['contract_value'];
+      const castValue = numFields.includes(field) ? (isNaN(Number(value)) ? null : Number(value)) : value || null;
+      const { rows: [proj] } = await query(
+        `UPDATE projects SET "${field}" = $1, updated_at = NOW() WHERE id = $2 AND company_id = $3 RETURNING id, name`,
+        [castValue, project_id, company_id]
+      );
+      return { success: !!proj, type: 'project_field_update', field, value: castValue, project: proj || null };
+    }
+
+    if (name === 'add_sticky_note') {
+      const { project_id, text, color = 'yellow' } = input;
+      const { rows: [proj] } = await query(
+        `SELECT field_assessment FROM projects WHERE id = $1 AND company_id = $2`,
+        [project_id, company_id]
+      );
+      if (!proj) return { success: false, error: 'Projet introuvable' };
+      const fa = proj.field_assessment || {};
+      const existingNotes = Array.isArray(fa.sticky_notes) ? fa.sticky_notes : [];
+      const newNote = { id: `flo-${Date.now()}`, text, author_name: 'Flo ✦', color, created_at: new Date().toISOString(), archived: false, source: 'flo' };
+      const nextNotes = [...existingNotes, newNote];
+      await query(
+        `UPDATE projects SET field_assessment = COALESCE(field_assessment, '{}') || $1 WHERE id = $2 AND company_id = $3`,
+        [JSON.stringify({ sticky_notes: nextNotes }), project_id, company_id]
+      );
+      return { success: true, type: 'sticky_note_added', note: newNote };
+    }
+
   } catch (err) {
     console.error('Tool execution error:', err);
     return { success: false, error: err.message };
@@ -253,8 +310,12 @@ Au Québec on dit « punch » (pas « pointage »).
 
 ACTIONS DISPONIBLES :
 - Créer un lead, projet, relance → create_lead / create_project / schedule_followup
-- Voir, résumer, lister des données → list_records (utilise proactivement, ne dis jamais que tu ne peux pas consulter)
-- Rédiger ou envoyer un courriel → tu peux rédiger un brouillon, l'utilisateur valide avant envoi`;
+- Voir, résumer, lister des données → list_records (utilise proactivement)
+- Modifier un champ du projet courant → update_project_field (project_id=${project_id || 'non fourni'})
+- Ajouter un post-it au projet → add_sticky_note
+- Rédiger un brouillon de courriel → rédige le texte directement dans ta réponse, l'utilisateur copie/envoie
+
+RÈGLE ACTIONS : pour update_project_field et add_sticky_note, utilise toujours le project_id fourni ci-dessus. Confirme l'action dans ta réponse ("J'ai mis à jour X ✓").`;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -292,8 +353,8 @@ ACTIONS DISPONIBLES :
       const toolResults = [];
       for (const tb of toolBlocks) {
         const result = await executeTool(tb.name, tb.input, req.company_id);
-        // Only surface a creation card for write actions
-        if (['create_lead','create_project','schedule_followup'].includes(tb.name)) {
+        // Surface action card for all write tools
+        if (['create_lead','create_project','schedule_followup','update_project_field','add_sticky_note'].includes(tb.name)) {
           send({ type: 'action', action: tb.name, result });
         }
         toolResults.push({ type: 'tool_result', tool_use_id: tb.id, content: JSON.stringify(result) });
