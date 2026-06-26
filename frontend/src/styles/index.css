@@ -574,6 +574,18 @@
   overflow-x: hidden;
 }
 
+/* ── Impression : fiche projet sans sidebar ── */
+@media print {
+  .app-sidebar         { display: none !important; }
+  .app-shell           { grid-template-columns: 1fr !important; }
+  .ai-float-btn        { display: none !important; }
+  .ai-chat-drawer      { display: none !important; }
+  .print-hide          { display: none !important; }
+  /* Retirer les sticky pour éviter les répétitions en impression */
+  [class*="sticky"]    { position: relative !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 /* Tables scrollables horizontalement à l'intérieur de leur conteneur */
 .table-scroll {
   overflow-x: auto;

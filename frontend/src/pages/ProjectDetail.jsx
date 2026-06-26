@@ -37,7 +37,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-extras', icon: '⚡', label: 'Extras & avenants' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
-  { id: 's-media', icon: '📷', label: 'Photos & médias' },
+  { id: 's-media', icon: '📷', label: 'Photos pendant et post chantier' },
 ];
 
 // Stub affiché dans le corps quand une section est désactivée (par état ou par module).
@@ -3156,6 +3156,8 @@ export default function ProjectDetail() {
   const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'memoire' | 'communication'
   const [proactiveTip, setProactiveTip] = useState(null); // { text, type: 'regulatory'|'deadline'|'tip' }
   const [proactiveDismissedSections, setProactiveDismissedSections] = useState(new Set());
+  const [showTopMenu, setShowTopMenu] = useState(false);
+  const topMenuRef = useRef(null);
   const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -5738,7 +5740,7 @@ Règles :
         `@keyframes slideUpFade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`
       }</style>
       {/* ── Project Topbar — 2 lignes ── */}
-      <div style={{
+      <div className="print-hide" style={{
         position: 'sticky', top: 0,
         background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid #E8EAED', zIndex: 15,
@@ -5761,16 +5763,37 @@ Règles :
           {portalCopyTarget && (
             <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
           )}
-          <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
-            📥 Exporter PDF
-          </button>
-          <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
-            if (project.portal_token) {
-              navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
-            }
-          }}>
-            Envoyer →
-          </button>
+          {/* ── Menu "..." ── */}
+          <div ref={topMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
+            {showTopMenu && <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setShowTopMenu(false)} />}
+            <button
+              onClick={() => setShowTopMenu(s => !s)}
+              style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid #E8EAED', background: showTopMenu ? '#F4F5F6' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#3A3D44', fontWeight: 700, letterSpacing: 1, lineHeight: 1 }}
+              title="Plus d'options"
+            >
+              ···
+            </button>
+            {showTopMenu && (
+              <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', borderRadius: 12, border: '1px solid #E8EAED', boxShadow: '0 8px 32px rgba(0,0,0,.12)', zIndex: 50, minWidth: 200, padding: '6px 0', overflow: 'hidden' }}>
+                <button
+                  onClick={() => { setShowTopMenu(false); window.print(); }}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#15171C', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 500 }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <span style={{ fontSize: 15 }}>📥</span> Exporter PDF
+                </button>
+                <button
+                  onClick={() => { setShowTopMenu(false); if (project.portal_token) navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); }}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#15171C', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 500 }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <span style={{ fontSize: 15 }}>🔗</span> Copier lien portail client
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         {/* Ligne 2 : onglets */}
         <div style={{ display: 'flex', gap: 2, padding: '0 20px' }}>
@@ -6360,12 +6383,6 @@ Règles :
               <div style={{ padding: '22px 56px 18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                   <SubLabel>Descriptif de la demande</SubLabel>
-                  <button
-                    onClick={() => { setShowClientReply(s => !s); setClientReplyText(''); }}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: BRAND, background: 'rgba(232,121,78,.08)', border: `1px solid rgba(232,121,78,.25)`, borderRadius: 20, padding: '3px 11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {showClientReply ? <X size={11}/> : <MessageSquare size={11}/>}
-                    {showClientReply ? 'Annuler' : 'Coller réponse client'}
-                  </button>
                 </div>
                 <InlineField
                   value={project.description || ''}
@@ -8760,7 +8777,7 @@ Règles :
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Photos & Médias</h2>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Photos pendant et post chantier</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Photos, notes et mémos — L'IA détecte non-conformités (RBQ) et risques CNESST</div>
             </div>
             <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
@@ -9860,7 +9877,7 @@ Règles :
                 )}
                 {media.length > 0 && (
                   <div style={{ marginTop: 14 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos & médias ({media.length})</p>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos pendant et post chantier ({media.length})</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
                       {media.slice(0, 8).map(m => (
                         <div key={m.id} style={{ borderRadius: 9, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
