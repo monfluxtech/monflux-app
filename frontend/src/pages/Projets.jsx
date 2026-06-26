@@ -119,66 +119,108 @@ function GanttPortfolio({ projects, stageMap }) {
   }
 
   const allDates = withDates.flatMap(p => [p.start_date, p.end_date].filter(Boolean)).map(d => new Date(d));
-  const refStart = new Date(Math.min(...allDates)); refStart.setDate(refStart.getDate() - 7);
-  const refEnd = new Date(Math.max(...allDates)); refEnd.setDate(refEnd.getDate() + 14);
-  const totalMs = refEnd - refStart || 1;
-  const pct = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const barWidth = (s, e) => Math.max(1, pct(e) - pct(s));
+  const minD = new Date(Math.min(...allDates));
+  const maxD = new Date(Math.max(...allDates));
+  // Extend range to full months for a cleaner view
+  const refStart = new Date(minD.getFullYear(), minD.getMonth(), 1);
+  const refEnd   = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0);
+  const totalMs  = Math.max(refEnd - refStart, 1);
+  const pct      = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
+  const barWidth = (s, e) => Math.max(0.8, pct(e) - pct(s));
   const todayPct = pct(new Date());
 
   const months = [];
-  const cur = new Date(refStart.getFullYear(), refStart.getMonth(), 1);
+  const cur = new Date(refStart);
   while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
 
+  const ROW_H = 44;
+  const LABEL_W = 200;
+
   return (
-    <div className="card overflow-x-auto">
-      <div style={{ minWidth: 560 }}>
-        {/* Month headers */}
-        <div className="flex mb-2 ml-52">
-          {months.map((m, i) => {
-            const left = pct(m);
-            const nextM = new Date(m.getFullYear(), m.getMonth() + 1, 1);
-            const w = Math.min(pct(nextM), 100) - left;
-            return (
-              <div key={i} className="text-[11px] text-gray-300 border-l border-gray-100 pl-1 flex-shrink-0" style={{ width: `${Math.max(w, 0)}%`, minWidth: 28 }}>
-                {m.toLocaleDateString('fr-CA', { month: 'short', year: '2-digit' })}
-              </div>
-            );
-          })}
-        </div>
-        {/* Project rows */}
-        <div className="relative ml-52">
-          <div className="absolute top-0 bottom-0 w-px bg-brand/60 z-10" style={{ left: `${todayPct}%` }} title="Aujourd'hui"/>
-          {withDates.map(p => {
-            const start = p.start_date ? new Date(p.start_date) : new Date();
-            const end = p.end_date ? new Date(p.end_date) : new Date(start.getTime() + 30 * 86400000);
-            const color = stageMap[p.status]?.color || '#94a3b8';
-            const pLeft = pct(start);
-            const pW = barWidth(start, end);
-            const prog = p.progress_pct || 0;
-            return (
-              <div key={p.id} className="flex items-center mb-2 gap-2 -ml-52 group cursor-pointer" onClick={() => navigate(`/projets/${p.id}`)}>
-                <div className="w-52 text-xs font-medium text-gray-700 truncate pr-3 text-right flex-shrink-0 group-hover:text-brand transition-colors">{p.name}</div>
-                <div className="flex-1 relative h-7">
-                  <div
-                    className="absolute h-full rounded-full overflow-hidden flex items-center"
-                    style={{ left: `${pLeft}%`, width: `${pW}%`, minWidth: 4, background: color + '22', border: `1.5px solid ${color}` }}
-                    title={`${p.name} · ${stageMap[p.status]?.label || p.status}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + '$' : ''}`}
-                  >
-                    <div className="h-full rounded-full absolute left-0 top-0" style={{ width: `${prog}%`, background: color + '55' }}/>
-                    {pW > 6 && prog > 0 && (
-                      <span className="relative text-xs font-semibold z-10 px-2 truncate" style={{ color }}>{prog}%</span>
-                    )}
+    <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 640, padding: '0 0 16px' }}>
+
+          {/* ── Header months ── */}
+          <div style={{ display: 'flex', marginLeft: LABEL_W, borderBottom: '1px solid #F0F2F4', background: '#FAFAFA' }}>
+            {months.map((m, i) => {
+              const nextM = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+              const w = Math.min(pct(nextM), 100) - pct(m);
+              return (
+                <div key={i} style={{ width: `${Math.max(w, 0)}%`, minWidth: 36, padding: '7px 0 7px 10px', borderLeft: '1px solid #E8EAED', flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    {m.toLocaleDateString('fr-CA', { month: 'short' })} <span style={{ fontWeight: 400, opacity: 0.6 }}>{m.getFullYear()}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Project rows ── */}
+          <div style={{ position: 'relative' }}>
+            {/* Month grid lines */}
+            {months.map((m, i) => (
+              <div key={i} style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LABEL_W}px + ${pct(m)}%)`, width: 1, background: i === 0 ? 'transparent' : '#F0F2F4', pointerEvents: 'none' }} />
+            ))}
+            {/* Today line */}
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LABEL_W}px + ${todayPct}%)`, width: 2, background: '#F26522', opacity: 0.7, pointerEvents: 'none', zIndex: 4 }}>
+              <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 9, fontWeight: 800, color: '#F26522', background: '#FFF0E8', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap' }}>Aujourd'hui</span>
+            </div>
+
+            {withDates.map((p, rowIdx) => {
+              const start = p.start_date ? new Date(p.start_date) : new Date();
+              const end   = p.end_date   ? new Date(p.end_date)   : new Date(start.getTime() + 30 * 86400000);
+              const color = stageMap[p.status]?.color || '#6366f1';
+              const pLeft = pct(start);
+              const pW    = barWidth(start, end);
+              const prog  = p.progress_pct || 0;
+              const isEven = rowIdx % 2 === 0;
+
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => navigate(`/projets/${p.id}`)}
+                  style={{ display: 'flex', alignItems: 'center', height: ROW_H, cursor: 'pointer', background: isEven ? '#FAFAFA' : '#fff', borderBottom: '1px solid #F5F7F9', transition: 'background .1s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FFF4EE'}
+                  onMouseLeave={e => e.currentTarget.style.background = isEven ? '#FAFAFA' : '#fff'}
+                >
+                  {/* Project label */}
+                  <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, borderRight: '1px solid #E8EAED' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>{stageMap[p.status]?.label || p.status}</span>
+                  </div>
+
+                  {/* Gantt track */}
+                  <div style={{ flex: 1, position: 'relative', height: '100%', padding: '10px 0' }}>
+                    <div
+                      style={{ position: 'absolute', top: 10, bottom: 10, left: `${pLeft}%`, width: `${pW}%`, minWidth: 6, borderRadius: 6, background: color + '18', border: `2px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
+                      title={`${p.name} · du ${new Date(start).toLocaleDateString('fr-CA')} au ${new Date(end).toLocaleDateString('fr-CA')}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`}
+                    >
+                      {/* Progress fill */}
+                      {prog > 0 && <div style={{ position: 'absolute', inset: 0, width: `${prog}%`, background: color + '45', borderRadius: 4 }} />}
+                      {/* Label inside bar */}
+                      {pW > 8 && (
+                        <span style={{ position: 'relative', fontSize: 10, fontWeight: 700, color, paddingLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+                          {p.client_name || p.name}
+                          {prog > 0 && <span style={{ opacity: 0.7 }}> · {prog}%</span>}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <span className="text-[11px] text-gray-400 flex-shrink-0 w-16 text-right truncate">{stageMap[p.status]?.label || ''}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px 0', borderTop: '1px solid #F0F2F4' }}>
+            <span style={{ fontSize: 11, color: '#C4C8CE' }}>
+              {withDates.length}/{projects.length} projet{projects.length > 1 ? 's' : ''} avec dates
+            </span>
+            <span style={{ fontSize: 11, color: '#C4C8CE' }}>
+              {new Date(refStart).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' })} — {new Date(refEnd).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' })}
+            </span>
+          </div>
         </div>
-        <p className="text-[11px] text-gray-300 text-right mt-2">
-          {withDates.length}/{projects.length} projets avec dates
-        </p>
       </div>
     </div>
   );
@@ -523,7 +565,7 @@ export default function Projets() {
     try { await projectsApi.update(id, { progress_pct: pct }); } catch {}
   }, []);
 
-  // Geocode all projects that have an address but no coordinates (rate-limited for Nominatim)
+  // Geocode all projects that have an address but no coordinates
   const geocodeAll = useCallback(async () => {
     const missing = items.filter(p => p.address && (!p.latitude || !p.longitude));
     if (!missing.length) return;
@@ -532,11 +574,20 @@ export default function Projets() {
       try {
         const { data } = await projectsApi.geocode(p.id);
         setItems(i => i.map(pr => pr.id === p.id ? { ...pr, latitude: data.latitude, longitude: data.longitude } : pr));
-      } catch {}
-      await new Promise(r => setTimeout(r, 1100)); // respect Nominatim ~1 req/s
+      } catch (err) {
+        console.warn(`Géocodage échoué pour "${p.name}":`, err?.response?.data?.error || err.message);
+      }
+      await new Promise(r => setTimeout(r, 1100)); // respect Nominatim 1 req/s
     }
     setGeocoding(false);
   }, [items]);
+
+  // Auto-géocode quand on arrive sur la vue carte
+  useEffect(() => {
+    if (view === 'carte' && items.some(p => p.address && !p.latitude)) {
+      geocodeAll();
+    }
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ProjectCard = ({ p }) => {
     const pct = p.progress_pct || 0;

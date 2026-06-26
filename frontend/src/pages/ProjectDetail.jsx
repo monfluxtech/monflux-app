@@ -3144,7 +3144,7 @@ export default function ProjectDetail() {
         : { [field]: value || null };
       const { data } = await projectsApi.update(id, payload);
       setProject(p => ({ ...p, ...data }));
-      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), ...payload } }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id, ...payload } }));
     } catch {}
   };
 

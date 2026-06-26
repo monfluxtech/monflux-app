@@ -17,10 +17,21 @@ const FREQ_OPTIONS = [6, 12, 24, 48, 72];
 
 function ProfileTab() {
   const { user, company, plan, token, setAuth } = useAuthStore();
+  const navigate = useNavigate();
   const [form, setForm] = useState({ name: user?.name || '', phone: user?.phone || '', language: user?.language || 'fr' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [onboardingData, setOnboardingData] = useState(null);
   const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    companies.get().then(({ data }) => {
+      if (data.onboarding_profile) setOnboardingData(data.onboarding_profile);
+    }).catch(() => {});
+  }, []);
+
+  const TRADE_LABELS = { general: 'Entrepreneur général', charpenterie: 'Charpenterie', plomberie: 'Plomberie', electricite: 'Électricité', demolition: 'Démolition', excavation: 'Excavation', toiture: 'Toiture', peinture: 'Peinture', gypse: 'Gypse', beton_fondation: 'Béton/Fondation', ceramique: 'Céramique', hvac: 'HVAC' };
+  const RESP_LABELS = { estimation: 'Estimation', achats: 'Achats', supervision: 'Supervision chantier', facturation: 'Facturation', approbation: 'Approbation', sous_traitants: 'Sous-traitants', sst: 'SST', planification: 'Planification' };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -34,7 +45,8 @@ function ProfileTab() {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-5 max-w-lg">
+    <div className="space-y-8 max-w-lg">
+    <form onSubmit={submit} className="space-y-5">
       <div className="flex items-center gap-4 mb-2">
         <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white flex-shrink-0" style={{ background: '#F26522' }}>
           {(form.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
@@ -74,6 +86,85 @@ function ProfileTab() {
         {saved ? 'Enregistré!' : 'Enregistrer'}
       </button>
     </form>
+
+    {/* ── Réponses de l'onboarding ── */}
+    {onboardingData && (
+      <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 12, padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: 0 }}>Profil de configuration</p>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>Réponses saisies lors de la configuration initiale</p>
+          </div>
+          <button onClick={() => navigate('/onboarding')} style={{ fontSize: 11, fontWeight: 700, color: '#E8794E', background: '#FFF0E8', border: '1.5px solid #E8794E33', borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>
+            Refaire l'onboarding
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {onboardingData.company_name && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Entreprise</span>
+              <span style={{ fontSize: 12, color: '#374151' }}>{onboardingData.company_name}</span>
+            </div>
+          )}
+          {onboardingData.sector && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Secteur</span>
+              <span style={{ fontSize: 12, color: '#374151' }}>{{ residential: 'Résidentiel', commercial: 'Commercial', industrial: 'Industriel', mixed: 'Mixte' }[onboardingData.sector] || onboardingData.sector}</span>
+            </div>
+          )}
+          {onboardingData.size && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Taille équipe</span>
+              <span style={{ fontSize: 12, color: '#374151' }}>{{ solo: '1 personne', '2_5': '2–5', '6_10': '6–10', '11_25': '11–25', '26_50': '26–50', '50_plus': '50+' }[onboardingData.size] || onboardingData.size}</span>
+            </div>
+          )}
+          {onboardingData.rbq_number && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Licence RBQ</span>
+              <span style={{ fontSize: 12, color: '#374151', fontFamily: 'monospace' }}>{onboardingData.rbq_number}</span>
+            </div>
+          )}
+          {Array.isArray(onboardingData.trades) && onboardingData.trades.length > 0 && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Métiers</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {onboardingData.trades.map(t => (
+                  <span key={t} style={{ fontSize: 11, background: '#EEF2FF', color: '#4f46e5', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
+                    {TRADE_LABELS[t] || t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {Array.isArray(onboardingData.responsibilities) && onboardingData.responsibilities.length > 0 && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Responsabilités</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {onboardingData.responsibilities.map(r => (
+                  <span key={r} style={{ fontSize: 11, background: '#F0FDF4', color: '#16A34A', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
+                    {RESP_LABELS[r] || r}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {Array.isArray(onboardingData.modules) && onboardingData.modules.length > 0 && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', width: 110, flexShrink: 0 }}>Modules actifs</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {onboardingData.modules.map(m => (
+                  <span key={m} style={{ fontSize: 11, background: '#FFF0E8', color: '#E8794E', borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+    </div>
   );
 }
 
