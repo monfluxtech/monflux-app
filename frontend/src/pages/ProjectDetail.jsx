@@ -5392,99 +5392,30 @@ Règles :
           Projets
         </button>
         <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
-        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700, flexShrink: 0, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</b>
+        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700, flexShrink: 0, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {project.field_assessment?.work_type || WORK_TYPE_LABELS[project.type] || project.name}
+          {project.address ? ` · ${project.address}` : ''}
+        </b>
 
         {/* ── Onglets centrés ── */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 2 }}>
           {[
-            { key: 'detail', label: 'Fiche projet', icon: '📋' },
-            { key: 'memoire',        label: 'Mémoire', icon: '🧠' },
-            { key: 'communication',  label: 'Communications', icon: '💬' },
+            { key: 'detail', label: 'Fiche projet' },
+            { key: 'memoire', label: 'Mémoire' },
+            { key: 'communication', label: 'Communications' },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               fontSize: 12.5, fontWeight: activeTab === tab.key ? 700 : 500,
               color: activeTab === tab.key ? BRAND : '#7C8089',
               background: activeTab === tab.key ? `${BRAND}12` : 'transparent',
               border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 5,
               borderBottom: activeTab === tab.key ? `2px solid ${BRAND}` : '2px solid transparent',
               transition: 'all .15s',
             }}>
-              <span style={{ fontSize: 13 }}>{tab.icon}</span> {tab.label}
+              {tab.label}
             </button>
           ))}
         </div>
-
-        {/* ── Portails — icônes rapides ── */}
-        {project.portal_token && (
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
-            {/* Portail client */}
-            <div style={{ position: 'relative' }}>
-              <button
-                title="Portail client"
-                onClick={() => setPortalCopyTarget(portalCopyTarget === 'client' ? null : 'client')}
-                style={{ width: 32, height: 32, borderRadius: 8, background: '#F0EBFD', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}
-              >🌐</button>
-              {portalCopyTarget === 'client' && (
-                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail client</p>
-                  <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); setPortalCopyTarget(null); }}
-                      style={{ flex: 1, fontSize: 11.5, fontWeight: 600, background: BRAND, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
-                      Copier le lien
-                    </button>
-                    <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre lien pour suivre l'avancement de vos travaux en temps réel :\n${FRONTEND_URL}/portal/${project.portal_token}`)}`}
-                      target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                      style={{ width: 30, height: 30, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 15, textDecoration: 'none' }}
-                      title="WhatsApp">💬</a>
-                    <a href={`${FRONTEND_URL}/portal/${project.portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                      style={{ width: 30, height: 30, background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 13, textDecoration: 'none' }}
-                      title="Aperçu">↗</a>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Portail fournisseur */}
-            <div style={{ position: 'relative' }}>
-              <button
-                title="Portail fournisseur"
-                onClick={() => setPortalCopyTarget(portalCopyTarget === 'supplier' ? null : 'supplier')}
-                style={{ width: 32, height: 32, borderRadius: 8, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}
-              >🏢</button>
-              {portalCopyTarget === 'supplier' && (
-                <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
-                  {project.supplier_portal_token ? (
-                    <>
-                      <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`); setPortalCopyTarget(null); }}
-                          style={{ flex: 1, fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
-                          Copier le lien
-                        </button>
-                        <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre lien pour suivre l'avancement du projet :\n${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}`}
-                          target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                          style={{ width: 32, display: 'grid', placeItems: 'center', background: '#22c55e', color: '#fff', borderRadius: 7, textDecoration: 'none', fontSize: 14 }} title="Envoyer par WhatsApp">💬</a>
-                        <a href={`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                          style={{ width: 32, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151', borderRadius: 7, textDecoration: 'none', fontSize: 14, border: '1px solid #E5E7EB' }} title="Aperçu">↗</a>
-                      </div>
-                      <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
-                        style={{ marginTop: 8, fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
-                        🔄 Générer un nouveau lien
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
-                      style={{ width: '100%', fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', cursor: 'pointer', marginTop: 4 }}>
-                      Activer le portail fournisseur
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Fermer popover portail au clic à l'extérieur */}
         {portalCopyTarget && (
@@ -5555,7 +5486,7 @@ Règles :
         const IFD = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
 
         return (
-          <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED' }}>
+          <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED', display: activeTab !== 'detail' ? 'none' : undefined }}>
 
             {/* Statut */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px', marginBottom: 16 }}>
@@ -5651,11 +5582,77 @@ Règles :
                   {kvChips.map((chip, ci) => (
                     <KvTooltipChip key={ci} chip={chip} />
                   ))}
-                  {qrData && (
-                    <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
-                      style={{ marginLeft: 'auto', background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)', flexShrink: 0 }}>
-                      <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
-                    </button>
+                  {/* Colonne droite : QR + portails */}
+                  {(qrData || project.portal_token) && (
+                    <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                      {qrData && (
+                        <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
+                          style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
+                          <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
+                        </button>
+                      )}
+                      {project.portal_token && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {/* Portail client */}
+                          <div style={{ position: 'relative' }}>
+                            <button title="Portail client" onClick={() => setPortalCopyTarget(portalCopyTarget === 'client' ? null : 'client')}
+                              style={{ width: 32, height: 32, borderRadius: 8, background: '#F0EBFD', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}>🌐</button>
+                            {portalCopyTarget === 'client' && (
+                              <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail client</p>
+                                <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); setPortalCopyTarget(null); }}
+                                    style={{ flex: 1, fontSize: 11.5, fontWeight: 600, background: BRAND, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
+                                    Copier le lien
+                                  </button>
+                                  <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre lien pour suivre l'avancement de vos travaux en temps réel :\n${FRONTEND_URL}/portal/${project.portal_token}`)}`}
+                                    target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                                    style={{ width: 30, height: 30, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 15, textDecoration: 'none' }} title="WhatsApp">💬</a>
+                                  <a href={`${FRONTEND_URL}/portal/${project.portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                                    style={{ width: 30, height: 30, background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 13, textDecoration: 'none' }} title="Aperçu">↗</a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Portail fournisseur */}
+                          <div style={{ position: 'relative' }}>
+                            <button title="Portail fournisseur" onClick={() => setPortalCopyTarget(portalCopyTarget === 'supplier' ? null : 'supplier')}
+                              style={{ width: 32, height: 32, borderRadius: 8, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}>🏢</button>
+                            {portalCopyTarget === 'supplier' && (
+                              <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
+                                {project.supplier_portal_token ? (
+                                  <>
+                                    <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`); setPortalCopyTarget(null); }}
+                                        style={{ flex: 1, fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
+                                        Copier le lien
+                                      </button>
+                                      <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre lien pour suivre l'avancement du projet :\n${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}`}
+                                        target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                                        style={{ width: 32, display: 'grid', placeItems: 'center', background: '#22c55e', color: '#fff', borderRadius: 7, textDecoration: 'none', fontSize: 14 }} title="Envoyer par WhatsApp">💬</a>
+                                      <a href={`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
+                                        style={{ width: 32, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151', borderRadius: 7, textDecoration: 'none', fontSize: 14, border: '1px solid #E5E7EB' }} title="Aperçu">↗</a>
+                                    </div>
+                                    <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
+                                      style={{ marginTop: 8, fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                                      🔄 Générer un nouveau lien
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
+                                    style={{ width: '100%', fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', cursor: 'pointer', marginTop: 4 }}>
+                                    Activer le portail fournisseur
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -8652,10 +8649,8 @@ Règles :
           </div>
         )}
 
-        {/* ── Contrats ── (white) */}
-        {/* ── Factures ── (mint) */}
-        {projectInvoices.length > 0 && (
-          <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        {/* ── Factures client ── (mint) */}
+        <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
               <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
               <div style={{ flex: 1 }}>
@@ -8682,7 +8677,6 @@ Règles :
               })}
             </div>
           </div>
-        )}
 
         {/* ── Quittance ── (mint) */}
         <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -9513,12 +9507,6 @@ Règles :
           );
         })()}
 
-        {/* Hint long-press */}
-        {stickyNotes.filter(n => !n.archived).length === 0 && !stickyDraft && (
-          <div style={{ position: 'fixed', bottom: 24, right: 28, background: 'rgba(21,23,28,.80)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: 11.5, padding: '8px 14px', borderRadius: 10, pointerEvents: 'none', zIndex: 200, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <span>📌</span> Maintenir le clic pour ajouter un post-it
-          </div>
-        )}
 
       </div>{/* fin zone sticky notes */}
 
