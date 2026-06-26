@@ -2895,6 +2895,7 @@ export default function ProjectDetail() {
     } catch { return {}; }
   });
   const [tradeStatusFilter, setTradeStatusFilter] = useState(null);
+  const [openConformiteBadge, setOpenConformiteBadge] = useState(null);
   const [tradeTypeFilter, setTradeTypeFilter] = useState(null); // null | 'internal' | 'external'
   const [tradeDateFilter, setTradeDateFilter] = useState(''); // ISO date string — deadline <= date
   const [stickyNotes, setStickyNotes] = useState([]);
@@ -7248,55 +7249,65 @@ Règles :
 
             const hS = { fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' };
 
-            // Cert compact (une ligne) pour colonne Conformité
-            const renderCertMini = (certObj, certLabel, color, onChange) => {
-              const c = certObj || {};
-              const expired = c.ok === true && isDateExpired(c.validite);
-              const isFail  = isCertFail(c);
-              const sc = c.ok && !expired ? color : isFail ? '#DC2626' : '#C4C8CE';
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <input type="checkbox" checked={!!c.ok} onChange={e => onChange('ok', e.target.checked)}
-                    style={{ accentColor: sc, width: 12, height: 12, cursor: 'pointer', flexShrink: 0 }}/>
-                  <span style={{ fontSize: 10.5, fontWeight: 700, color: sc, width: 56, flexShrink: 0 }}>{certLabel}</span>
-                  {expired && <span style={{ fontSize: 8, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>EXP</span>}
-                  {c.ok && !expired && <span style={{ fontSize: 9, color, flexShrink: 0 }}>✓</span>}
-                  <input type="date" value={c.validite || ''} onChange={e => onChange('validite', e.target.value)}
-                    title="Expiration" style={{ fontSize: 9, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 5, padding: '2px 4px', color: expired ? '#DC2626' : '#6B7280', background: expired ? '#FFF5F5' : '#fff', width: 92, flexShrink: 0 }}/>
-                  <input type="date" value={c.lastCheck || ''} onChange={e => onChange('lastCheck', e.target.value)}
-                    title="Dernière vérif." style={{ fontSize: 9, border: '1px solid #E8EAED', borderRadius: 5, padding: '2px 4px', color: '#6B7280', background: '#fff', width: 92, flexShrink: 0 }}/>
-                </div>
-              );
-            };
+            // Badge conformité dépliable — vert/ambre/rouge — remplace les 3 checkboxes séparées
+            const renderConformiteBadge = (cert, openKey, setOpenKey, type, pi) => {
+              const certs = [
+                { key: 'rbq',       label: 'RBQ',       color: '#7C3AED' },
+                { key: 'ccq',       label: 'CCQ',       color: '#2563EB' },
+                { key: 'insurance', label: 'Assurance', color: '#059669' },
+              ];
+              const isOpen = openKey === `${type}||${pi}`;
 
-            const renderCertCell = (certObj, certLabel, color, onChange, disabled) => {
-              if (disabled) return (
-                <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ fontSize: 10.5, color: '#D4D6DA', fontStyle: 'italic' }}>—</span>
-                </div>
-              );
-              const c = certObj || {};
-              const expired = c.ok === true && isDateExpired(c.validite);
-              const isFail  = isCertFail(c);
+              // Compute overall status
+              const statuses = certs.map(({ key }) => {
+                const c = cert[key] || {};
+                if (isCertFail(c)) return 'red';
+                if (c.ok === true && !isDateExpired(c.validite)) return 'green';
+                return 'amber';
+              });
+              const overall = statuses.some(s => s === 'red') ? 'red'
+                : statuses.every(s => s === 'green') ? 'green'
+                : 'amber';
+              const badgeColor = overall === 'green' ? '#16A34A' : overall === 'red' ? '#DC2626' : '#D97706';
+              const badgeBg    = overall === 'green' ? '#F0FDF4' : overall === 'red' ? '#FFF5F5' : '#FFFBEB';
+              const badgeLabel = overall === 'green' ? '✓ Conforme' : overall === 'red' ? '✗ Non conforme' : '⚠ À vérifier';
+              const nOk = statuses.filter(s => s === 'green').length;
+
               return (
-                <div style={{ padding: '10px 12px', borderLeft: '1px solid #F1F3F5', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <input type="checkbox" checked={!!c.ok} onChange={e => onChange('ok', e.target.checked)}
-                      style={{ accentColor: c.ok && !expired ? color : isFail ? '#DC2626' : '#C4C8CE', width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}/>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: c.ok && !expired ? color : isFail ? '#DC2626' : '#A8AEB6' }}>{certLabel}</span>
-                    {expired && <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 4, padding: '1px 5px' }}>EXPIRÉ</span>}
-                    {c.ok && !expired && <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}15`, borderRadius: 4, padding: '1px 5px' }}>✓</span>}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 9.5, color: '#B0B4BB', fontWeight: 600, width: 32, flexShrink: 0 }}>Exp.</span>
-                    <input type="date" value={c.validite || ''} onChange={e => onChange('validite', e.target.value)}
-                      style={{ fontSize: 10, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 6, padding: '2px 5px', color: expired ? '#DC2626' : '#3A3D44', background: expired ? '#FFF5F5' : '#fff', width: '100%' }}/>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 9.5, color: '#B0B4BB', fontWeight: 600, width: 32, flexShrink: 0 }}>Vérif.</span>
-                    <input type="date" value={c.lastCheck || ''} onChange={e => onChange('lastCheck', e.target.value)}
-                      style={{ fontSize: 10, border: '1px solid #E8EAED', borderRadius: 6, padding: '2px 5px', color: '#3A3D44', background: '#fff', width: '100%' }}/>
-                  </div>
+                <div>
+                  {/* Pill badge — click to toggle */}
+                  <button
+                    onClick={() => setOpenKey(isOpen ? null : `${type}||${pi}`)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, border: `1.5px solid ${badgeColor}40`, background: badgeBg, color: badgeColor, fontSize: 9.5, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    {badgeLabel}
+                    <span style={{ fontSize: 8.5, opacity: 0.7 }}>{nOk}/3</span>
+                    <span style={{ fontSize: 8 }}>{isOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {/* Expanded detail rows */}
+                  {isOpen && (
+                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {certs.map(({ key, label, color }) => {
+                        const c = cert[key] || {};
+                        const expired = c.ok === true && isDateExpired(c.validite);
+                        const fail = isCertFail(c);
+                        const sc = c.ok && !expired ? color : fail ? '#DC2626' : '#C4C8CE';
+                        return (
+                          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 8px', background: '#FAFAFA', borderRadius: 7, border: `1px solid ${sc}20` }}>
+                            <input type="checkbox" checked={!!c.ok} onChange={e => updateCert(type, pi, key, 'ok', e.target.checked)}
+                              style={{ accentColor: sc, width: 12, height: 12, cursor: 'pointer', flexShrink: 0 }}/>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: sc, width: 52, flexShrink: 0 }}>{label}</span>
+                            {expired && <span style={{ fontSize: 8, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>EXP</span>}
+                            <input type="date" value={c.validite || ''} onChange={e => updateCert(type, pi, key, 'validite', e.target.value)}
+                              title="Expiration" style={{ fontSize: 9, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 5, padding: '2px 4px', color: expired ? '#DC2626' : '#6B7280', background: expired ? '#FFF5F5' : '#fff', flex: 1 }}/>
+                            <input type="date" value={c.lastCheck || ''} onChange={e => updateCert(type, pi, key, 'lastCheck', e.target.value)}
+                              title="Dernière vérif." style={{ fontSize: 9, border: '1px solid #E8EAED', borderRadius: 5, padding: '2px 4px', color: '#6B7280', background: '#fff', flex: 1 }}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             };
@@ -7699,9 +7710,7 @@ Règles :
                                           <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>Après contact</span>
                                         ) : (
                                           <>
-                                            {renderCertMini(cert.rbq,      'RBQ',      '#7C3AED', (f,v) => updateCert(type, pi, 'rbq',      f, v))}
-                                            {renderCertMini(cert.ccq,      'CCQ',      '#2563EB', (f,v) => updateCert(type, pi, 'ccq',      f, v))}
-                                            {renderCertMini(cert.insurance,'Assurance','#059669', (f,v) => updateCert(type, pi, 'insurance',f, v))}
+                                            {renderConformiteBadge(cert, openConformiteBadge, setOpenConformiteBadge, type, pi)}
                                             <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
                                               style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer' }}>
                                               {isLoadingFlo ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
