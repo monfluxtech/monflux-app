@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { auth as authApi, companies, members as membersApi } from '../api';
-import { useAuthStore, useDevStore } from '../store';
-import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield } from 'lucide-react';
+import { useAuthStore, useDevStore, useConfigStore } from '../store';
+import { SECONDARY_MODULES } from '../config/modules';
+import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot } from 'lucide-react';
 
 const LEAD_SOURCES = [
   { key: 'soumissions_reno', label: 'SoumissionsRenovations.ca', desc: 'Scraping des leads publics sur le site (nécessite accord avec le site)' },
@@ -577,12 +578,269 @@ function DevTab() {
   );
 }
 
+// ── Onglet Rôles & permissions ─────────────────────────────────────────────
+const ROLE_LIST = [
+  { key: 'owner',           label: 'Propriétaire' },
+  { key: 'chef_chantier',   label: 'Chef chantier' },
+  { key: 'technicien',      label: 'Technicien' },
+  { key: 'sous_traitant',   label: 'Sous-traitant' },
+  { key: 'client',          label: 'Client' },
+  { key: 'fournisseur',     label: 'Fournisseur' },
+];
+const ACTION_LIST = ['voir', 'éditer', 'créer', 'supprimer'];
+
+function RolesTab() {
+  const [matrix, setMatrix] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-roles-matrix') || 'null') || null; } catch { return null; }
+  });
+
+  const modules = [
+    { key: 'dashboard', label: 'Tableau de bord' },
+    { key: 'projets', label: 'Projets' },
+    { key: 'chat', label: 'Florence / IA' },
+    { key: 'leads', label: 'Leads' },
+    { key: 'soumissions', label: 'Soumissions' },
+    { key: 'contrats', label: 'Contrats' },
+    { key: 'factures', label: 'Factures' },
+    { key: 'commandes', label: 'Commandes' },
+    { key: 'sous_traitants', label: 'Sous-traitants' },
+    { key: 'punch', label: 'Punch' },
+    { key: 'rapport', label: 'Rapport' },
+    { key: 'portail_client', label: 'Portail client' },
+    { key: 'portail_fournisseur', label: 'Portail fournisseur' },
+  ];
+
+  const getDefault = () => {
+    const m = {};
+    ROLE_LIST.forEach(r => {
+      m[r.key] = {};
+      modules.forEach(mod => {
+        m[r.key][mod.key] = {};
+        ACTION_LIST.forEach(a => {
+          m[r.key][mod.key][a] = r.key === 'owner' || r.key === 'chef_chantier';
+        });
+      });
+    });
+    return m;
+  };
+
+  const mat = matrix || getDefault();
+
+  const toggle = (role, mod, action) => {
+    const next = JSON.parse(JSON.stringify(mat));
+    next[role][mod][action] = !next[role][mod][action];
+    setMatrix(next);
+    localStorage.setItem('monflux-roles-matrix', JSON.stringify(next));
+  };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Lock size={16} style={{ color: '#E8794E' }}/>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Rôles & permissions</h2>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Définissez ce que chaque rôle peut voir et faire. Client et fournisseur incluent les portails publics.</p>
+        </div>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '6px 8px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', position: 'sticky', left: 0, zIndex: 1 }}>Module</th>
+            {ROLE_LIST.map(r => (
+              <th key={r.key} colSpan={ACTION_LIST.length} style={{ textAlign: 'center', padding: '6px 4px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>
+                {r.label}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            <th style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', position: 'sticky', left: 0, zIndex: 1 }} />
+            {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => (
+              <th key={`${r.key}-${a}`} style={{ padding: '3px 2px', background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', textAlign: 'center', color: '#9CA3AF', fontWeight: 500, fontSize: 9, whiteSpace: 'nowrap' }}>{a}</th>
+            )))}
+          </tr>
+        </thead>
+        <tbody>
+          {modules.map((mod, mi) => (
+            <tr key={mod.key} style={{ background: mi % 2 === 0 ? '#fff' : '#F9FAFB' }}>
+              <td style={{ padding: '6px 8px', fontWeight: 600, color: '#374151', borderBottom: '1px solid #F3F4F6', position: 'sticky', left: 0, background: mi % 2 === 0 ? '#fff' : '#F9FAFB', zIndex: 1, whiteSpace: 'nowrap' }}>{mod.label}</td>
+              {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => {
+                const checked = mat[r.key]?.[mod.key]?.[a] ?? false;
+                const isOwnerFixed = r.key === 'owner';
+                return (
+                  <td key={`${r.key}-${a}`} style={{ padding: '6px 4px', borderBottom: '1px solid #F3F4F6', textAlign: 'center' }}>
+                    <input type="checkbox" checked={checked} disabled={isOwnerFixed}
+                      onChange={() => !isOwnerFixed && toggle(r.key, mod.key, a)}
+                      style={{ accentColor: '#E8794E', cursor: isOwnerFixed ? 'default' : 'pointer' }}/>
+                  </td>
+                );
+              }))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 12 }}>La matrice est enregistrée localement. L'intégration DB sera disponible dans une prochaine version.</p>
+    </div>
+  );
+}
+
+// ── Onglet Flo ─────────────────────────────────────────────────────────────
+function FloTab() {
+  const navigate = useNavigate();
+  const [settings, setSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-flo-settings') || 'null') || {}; } catch { return {}; }
+  });
+
+  const save = (patch) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    localStorage.setItem('monflux-flo-settings', JSON.stringify(next));
+  };
+
+  const MODELS = [
+    { key: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (défaut)' },
+    { key: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (rapide)' },
+    { key: 'claude-opus-4-8', label: 'Opus 4.8 (puissant)' },
+  ];
+  const INTERVENTION_LEVELS = [
+    { key: 'proactive', label: 'Proactif — Flo propose spontanément des suggestions' },
+    { key: 'on_demand', label: 'Sur demande — Flo répond seulement quand on la consulte' },
+    { key: 'minimal',   label: 'Minimal — Flo est disponible mais ne suggère rien' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 620 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Bot size={18} style={{ color: '#E8794E' }}/>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Configuration de Flo</h2>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Personnalisez la persona, le modèle et le niveau d'intervention.</p>
+        </div>
+      </div>
+
+      <div>
+        <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Modèle IA</label>
+        <select className="input" value={settings.model || 'claude-sonnet-4-6'} onChange={e => save({ model: e.target.value })}>
+          {MODELS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Niveau d'intervention</label>
+        {INTERVENTION_LEVELS.map(l => (
+          <label key={l.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="radio" name="intervention" value={l.key} checked={(settings.intervention || 'proactive') === l.key} onChange={() => save({ intervention: l.key })} style={{ marginTop: 2, accentColor: '#E8794E' }}/>
+            <span style={{ fontSize: 13, color: '#374151' }}>{l.label}</span>
+          </label>
+        ))}
+      </div>
+
+      <div>
+        <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Contexte/prompt additionnel (optionnel)</label>
+        <textarea className="input resize-none" style={{ minHeight: 80 }}
+          placeholder="Ex : On travaille surtout en rénovation résidentielle à Montréal. On facture en fin de projet."
+          value={settings.custom_prompt || ''}
+          onChange={e => save({ custom_prompt: e.target.value })}
+        />
+        <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>Ce contexte s'ajoute à la persona de base de Flo pour toutes les conversations.</p>
+      </div>
+
+      <div style={{ background: '#FFF1EB', border: '1px solid #FDDCCA', borderRadius: 12, padding: 16 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: '#E8794E', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={14}/> Visite guidée
+        </p>
+        <p style={{ fontSize: 12, color: '#7C8089', margin: '0 0 12px' }}>Relancez la visite guidée pour redécouvrir les fonctionnalités MONFLUX.</p>
+        <button className="btn-primary" style={{ fontSize: 12 }} onClick={() => navigate('/onboarding?tour=1')}>
+          <Sparkles size={12}/> Relancer la visite guidée
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Onglet Flow & modules ──────────────────────────────────────────────────
+function FlowTab() {
+  const { modules, toggleModule, loading } = useConfigStore();
+
+  const moduleList = SECONDARY_MODULES.map(m => ({
+    ...m,
+    enabled: modules?.[m.key] !== false,
+  }));
+
+  const FLOW_FLAGS = [
+    { key: 'estimation_flow', label: 'Module Estimation', desc: 'Activer les outils d\'estimation approximative et devis' },
+    { key: 'billing_progress', label: 'Facturation progressive', desc: 'Permettre la facturation par étapes/jalons plutôt qu\'en fin de projet' },
+    { key: 'field_team', label: 'Équipe terrain', desc: 'Activer le punch, les feuilles de temps et le suivi de l\'équipe' },
+    { key: 'materiaux', label: 'Module Matériaux', desc: 'Recherche et commande de matériaux dans les projets' },
+    { key: 'sous_traitants', label: 'Module Sous-traitants', desc: 'Gestion des sous-traitants et dénonciations' },
+  ];
+
+  const [flags, setFlags] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-flow-flags') || '{}'); } catch { return {}; }
+  });
+
+  const toggleFlag = (key) => {
+    const next = { ...flags, [key]: !flags[key] };
+    setFlags(next);
+    localStorage.setItem('monflux-flow-flags', JSON.stringify(next));
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 620 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Layers size={18} style={{ color: '#E8794E' }}/>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Flow & modules</h2>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Activez les modules secondaires et configurez les fonctionnalités disponibles.</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginBottom: 12 }}>Modules de navigation</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {moduleList.map(m => (
+            <div key={m.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#F9FAFB', borderRadius: 10, border: '1px solid #E5E7EB' }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#15171C', margin: 0 }}>{m.label}</p>
+                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{m.path}</p>
+              </div>
+              <button type="button" onClick={() => toggleModule(m.key)} disabled={loading} style={{ background: 'none', border: 'none', cursor: 'pointer', color: m.enabled ? '#E8794E' : '#D1D5DB' }}>
+                {m.enabled ? <ToggleRight size={26}/> : <ToggleLeft size={26}/>}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginBottom: 12 }}>Fonctionnalités de flow</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {FLOW_FLAGS.map(f => (
+            <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#F9FAFB', borderRadius: 10, border: '1px solid #E5E7EB' }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#15171C', margin: 0 }}>{f.label}</p>
+                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{f.desc}</p>
+              </div>
+              <button type="button" onClick={() => toggleFlag(f.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: flags[f.key] ? '#E8794E' : '#D1D5DB' }}>
+                {flags[f.key] ? <ToggleRight size={26}/> : <ToggleLeft size={26}/>}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 8 }}>Les flags de flow sont enregistrés localement. L'intégration DB sera disponible dans une prochaine version.</p>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
-  { id: 'profil',      label: 'Mon profil',         icon: User },
-  { id: 'company',     label: 'Entreprise',          icon: Building2 },
-  { id: 'team',        label: 'Équipe',              icon: Users },
-  { id: 'sources',     label: 'Sources leads',       icon: Settings },
-  { id: 'fournisseurs', label: 'Fournisseurs',       icon: Settings },
+  { id: 'profil',       label: 'Mon profil',           icon: User },
+  { id: 'company',      label: 'Entreprise',            icon: Building2 },
+  { id: 'team',         label: 'Équipe',                icon: Users },
+  { id: 'roles',        label: 'Rôles & permissions',  icon: Lock },
+  { id: 'flo',          label: 'Flo',                   icon: Bot },
+  { id: 'flow',         label: 'Flow & modules',        icon: Layers },
+  { id: 'sources',      label: 'Sources leads',         icon: Settings },
+  { id: 'fournisseurs', label: 'Fournisseurs',          icon: Settings },
 ];
 
 export default function Parametres() {
@@ -627,6 +885,9 @@ export default function Parametres() {
           {activeTab === 'profil'       && <ProfileTab />}
           {activeTab === 'company'      && <CompanyTab />}
           {activeTab === 'team'         && <TeamTab />}
+          {activeTab === 'roles'        && <RolesTab />}
+          {activeTab === 'flo'          && <FloTab />}
+          {activeTab === 'flow'         && <FlowTab />}
           {activeTab === 'sources'      && <LeadSourcesTab />}
           {activeTab === 'fournisseurs' && <SuppliersTab />}
           {activeTab === 'dev'          && devEnabled && <DevTab />}
