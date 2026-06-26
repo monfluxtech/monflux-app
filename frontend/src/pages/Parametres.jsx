@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { auth as authApi, companies, members as membersApi } from '../api';
 import { useAuthStore, useDevStore, useConfigStore } from '../store';
+import { useUiPrefs } from '../hooks/useUiPrefs';
 import { SECONDARY_MODULES } from '../config/modules';
 import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot } from 'lucide-react';
 
@@ -544,12 +545,17 @@ const DEFAULT_SUPPLIERS = [
 ];
 
 function SuppliersTab() {
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const [suppliers, setSuppliers] = useState(() => {
     try { return JSON.parse(localStorage.getItem('monflux-suppliers') || 'null') || DEFAULT_SUPPLIERS; } catch { return DEFAULT_SUPPLIERS; }
   });
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (uiPrefs.suppliers) setSuppliers(uiPrefs.suppliers);
+  }, [uiPrefs.suppliers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (id) => setSuppliers(prev => prev.map(s => s.id === id ? { ...s, active: !s.active } : s));
   const remove = (id) => setSuppliers(prev => prev.filter(s => s.id !== id));
@@ -560,6 +566,7 @@ function SuppliersTab() {
   };
   const save = () => {
     localStorage.setItem('monflux-suppliers', JSON.stringify(suppliers));
+    setUiPref('suppliers', suppliers);
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -681,9 +688,13 @@ const ROLE_LIST = [
 const ACTION_LIST = ['voir', 'éditer', 'créer', 'supprimer'];
 
 function RolesTab() {
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const [matrix, setMatrix] = useState(() => {
     try { return JSON.parse(localStorage.getItem('monflux-roles-matrix') || 'null') || null; } catch { return null; }
   });
+  useEffect(() => {
+    if (uiPrefs.roles_matrix) setMatrix(uiPrefs.roles_matrix);
+  }, [uiPrefs.roles_matrix]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modules = [
     { key: 'dashboard', label: 'Tableau de bord' },
@@ -722,6 +733,7 @@ function RolesTab() {
     next[role][mod][action] = !next[role][mod][action];
     setMatrix(next);
     localStorage.setItem('monflux-roles-matrix', JSON.stringify(next));
+    setUiPref('roles_matrix', next);
   };
 
   return (
@@ -777,14 +789,19 @@ function RolesTab() {
 // ── Onglet Flo ─────────────────────────────────────────────────────────────
 function FloTab() {
   const navigate = useNavigate();
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const [settings, setSettings] = useState(() => {
     try { return JSON.parse(localStorage.getItem('monflux-flo-settings') || 'null') || {}; } catch { return {}; }
   });
+  useEffect(() => {
+    if (uiPrefs.flo_settings && Object.keys(uiPrefs.flo_settings).length > 0) setSettings(uiPrefs.flo_settings);
+  }, [uiPrefs.flo_settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = (patch) => {
     const next = { ...settings, ...patch };
     setSettings(next);
     localStorage.setItem('monflux-flo-settings', JSON.stringify(next));
+    setUiPref('flo_settings', next);
   };
 
   const MODELS = [
@@ -851,6 +868,7 @@ function FloTab() {
 // ── Onglet Flow & modules ──────────────────────────────────────────────────
 function FlowTab() {
   const { modules, toggleModule, loading } = useConfigStore();
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
 
   const moduleList = SECONDARY_MODULES.map(m => ({
     ...m,
@@ -868,11 +886,15 @@ function FlowTab() {
   const [flags, setFlags] = useState(() => {
     try { return JSON.parse(localStorage.getItem('monflux-flow-flags') || '{}'); } catch { return {}; }
   });
+  useEffect(() => {
+    if (uiPrefs.flow_flags && Object.keys(uiPrefs.flow_flags).length > 0) setFlags(uiPrefs.flow_flags);
+  }, [uiPrefs.flow_flags]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleFlag = (key) => {
     const next = { ...flags, [key]: !flags[key] };
     setFlags(next);
     localStorage.setItem('monflux-flow-flags', JSON.stringify(next));
+    setUiPref('flow_flags', next);
   };
 
   return (
@@ -937,6 +959,7 @@ const TABS = [
 export default function Parametres() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { enabled: devEnabled } = useDevStore();
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const initialTab = searchParams.get('tab') || 'profil';
   const [activeTab, setActiveTab] = useState(initialTab);
 

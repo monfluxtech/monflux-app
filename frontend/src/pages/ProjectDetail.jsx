@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { useT } from '../hooks/useT';
+import { useUiPrefs } from '../hooks/useUiPrefs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
@@ -2975,6 +2976,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuthStore();
   const { pipeline: configPipeline, modules: configModules } = useConfigStore();
+  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
@@ -3086,7 +3088,7 @@ export default function ProjectDetail() {
   const [quoteSaving, setQuoteSaving] = useState(false);
   const [quoteSending, setQuoteSending] = useState(false);
   const [quoteSelected, setQuoteSelected] = useState(new Set());
-  const [quoteMarkup, setQuoteMarkup] = useState(() => Number(localStorage.getItem('monflux-quote-markup') || 0));
+  const [quoteMarkup, setQuoteMarkup] = useState(() => Number(localStorage.getItem('monflux-quote-markup') || 0)); // synced to uiPrefs below
   const [showFloQuotePanel, setShowFloQuotePanel] = useState(false);
   const [floQuoteLoading, setFloQuoteLoading] = useState(false);
   const [floInspirationInput, setFloInspirationInput] = useState('');
@@ -3100,6 +3102,7 @@ export default function ProjectDetail() {
     setQuotePdfCols(prev => {
       const next = { ...prev, [col]: prev[col] === false ? true : false };
       localStorage.setItem('monflux-quote-pdf-cols', JSON.stringify(next));
+      setUiPref('quote_pdf_cols', next);
       return next;
     });
   };
@@ -3198,6 +3201,25 @@ export default function ProjectDetail() {
   const [sqRate, setSqRate] = useState('');
   const [sqArea, setSqArea] = useState('');
   const clientMsgRef = useRef(null);
+
+  // Sync per-project prefs from field_assessment (DB) when project loads, falling back to localStorage
+  useEffect(() => {
+    if (!project || typeof project === 'string') return;
+    const fa = project.field_assessment || {};
+    if (fa.trade_certifs !== undefined)   setTradeCertifs(fa.trade_certifs);
+    if (fa.trade_resources !== undefined) setTradeResourcesMap(fa.trade_resources);
+    if (fa.trade_conformite !== undefined) setTradeConformite(fa.trade_conformite);
+    if (fa.mat_wishlist !== undefined)    setMatWishlist(fa.mat_wishlist);
+    if (fa.relances_count !== undefined)  setRelanceCount(Number(fa.relances_count));
+    if (fa.relances_methods !== undefined) setRelanceMethods(fa.relances_methods);
+    if (fa.relances_freq !== undefined)   setRelanceFrequency(Number(fa.relances_freq));
+  }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync global prefs from DB when uiPrefs loads
+  useEffect(() => {
+    if (uiPrefs.quote_markup !== undefined) setQuoteMarkup(Number(uiPrefs.quote_markup));
+    if (uiPrefs.quote_pdf_cols !== undefined) setQuotePdfCols(uiPrefs.quote_pdf_cols);
+  }, [uiPrefs.quote_markup, uiPrefs.quote_pdf_cols]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     setLoading(true);
@@ -3318,6 +3340,29 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { load(); }, [id]);
+
+  // ── Helpers DB-sync pour données per-projet ──────────────────────────────
+  // Chaque helper écrit en localStorage (réactivité immédiate) ET en field_assessment (DB).
+  const saveTradeCertifs = useCallback((val) => {
+    setTradeCertifs(val);
+    localStorage.setItem(`monflux-trade-certifs-${id}`, JSON.stringify(val));
+    saveAssessmentField('trade_certifs', val);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveTradeResources = useCallback((val) => {
+    setTradeResourcesMap(val);
+    localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(val));
+    saveAssessmentField('trade_resources', val);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveTradeConformite = useCallback((val) => {
+    setTradeConformite(val);
+    localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(val));
+    saveAssessmentField('trade_conformite', val);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveMatWishlist = useCallback((val) => {
+    setMatWishlist(val);
+    localStorage.setItem(`monflux-mat-wishlist-${id}`, JSON.stringify(val));
+    saveAssessmentField('mat_wishlist', val);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Descriptif : analyse plan d'architecte avec Flo ──
   const analyzePlan = async (file) => {
@@ -3476,8 +3521,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
     const next = matWishlist.includes(itemId)
       ? matWishlist.filter(x => x !== itemId)
       : [...matWishlist, itemId];
-    setMatWishlist(next);
-    localStorage.setItem(`monflux-mat-wishlist-${id}`, JSON.stringify(next));
+    saveMatWishlist(next);
   };
 
   // Auto-générer le message d'estimation quand le projet ou les résultats IA changent
@@ -4058,10 +4102,8 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       });
       updatedMap[tradeName] = { internal: existing.internal, external: existing.external };
     });
-    setTradeResourcesMap(updatedMap);
-    setTradeConformite(updatedConf);
-    localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
-    localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updatedConf));
+    saveTradeResources(updatedMap);
+    saveTradeConformite(updatedConf);
     setFloMergePending(null);
   };
 
@@ -4219,6 +4261,7 @@ Réponds en JSON UNIQUEMENT dans ce format :
                 floResult: parsed,
               }
             };
+            saveAssessmentField('trade_conformite', updated);
             localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
             return updated;
           });
@@ -4385,8 +4428,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     const newPerson = { name: reco.name, status: 'a_contacter', phone: reco.phone || '', email: reco.email || '', location: '' };
     const newList   = [...existing, newPerson];
     const updated   = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [pType]: newList } };
-    setTradeResourcesMap(updated);
-    localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+    saveTradeResources(updated);
     const newPKey = `${tradeName}||${pType}||${existing.length}`;
     // Pré-remplir conformité si Flo l'a analysée
     if (reco.conformite) {
@@ -4401,8 +4443,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
           floDate:  new Date().toLocaleString('fr-CA', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
         }
       };
-      setTradeConformite(confUpdated);
-      localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(confUpdated));
+      saveTradeConformite(confUpdated);
     }
     // Auto-générer le message de contact
     generateContactMessage(tradeName, newPerson, pType, newPKey);
@@ -7057,7 +7098,7 @@ Règles :
                       <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Nombre de relances</p>
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {[0,1,2,3,4,5,6,7].map(n => (
-                          <button key={n} onClick={() => { setRelanceCount(n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
+                          <button key={n} onClick={() => { setRelanceCount(n); saveAssessmentField('relances_count', n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
                             style={{ width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
                             {n}
                           </button>
@@ -7069,7 +7110,7 @@ Règles :
                         <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Fréquence</p>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           {[[2,'2 j'],[3,'3 j'],[5,'5 j'],[7,'1 sem.'],[14,'2 sem.'],[30,'1 mois']].map(([v,l]) => (
-                            <button key={v} onClick={() => { setRelanceFrequency(v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
+                            <button key={v} onClick={() => { setRelanceFrequency(v); saveAssessmentField('relances_freq', v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
                               style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${relanceFrequency === v ? BRAND : '#E0E4E8'}`, background: relanceFrequency === v ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceFrequency === v ? BRAND : '#7C8089', cursor: 'pointer' }}>
                               {l}
                             </button>
@@ -7085,6 +7126,7 @@ Règles :
                             <button key={k} onClick={() => {
                               const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
                               setRelanceMethods(next);
+                              saveAssessmentField('relances_methods', next);
                               localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
                             }}
                               style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
@@ -7568,8 +7610,7 @@ Règles :
                         if (arr[pi2]) arr[pi2] = { ...arr[pi2], status: newStatus };
                         updatedMap[tn] = { ...updatedMap[tn], [tp]: arr };
                       });
-                      setTradeResourcesMap(updatedMap);
-                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
+                      saveTradeResources(updatedMap);
                       setTradePersonSelected(new Set());
                     };
                     const massDelete = () => {
@@ -7586,8 +7627,7 @@ Règles :
                           updatedMap[tn] = { ...updatedMap[tn], [tp]: (updatedMap[tn]?.[tp] || []).filter((_, i) => !indices.has(i)) };
                         });
                       });
-                      setTradeResourcesMap(updatedMap);
-                      localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updatedMap));
+                      saveTradeResources(updatedMap);
                       setTradePersonSelected(new Set());
                     };
                     return (
@@ -7651,8 +7691,7 @@ Règles :
 
                       const updateResources = (type, newList) => {
                         const updated = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [type]: newList } };
-                        setTradeResourcesMap(updated);
-                        localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(updated));
+                        saveTradeResources(updated);
                       };
 
                       const updatePersonField = (type, pi, field, value) => {
@@ -7671,8 +7710,7 @@ Règles :
                         const key = personKey(tradeName, type, pi);
                         const cur = tradeConformite[key] || { rbq: {}, ccq: {}, insurance: {} };
                         const updated = { ...tradeConformite, [key]: { ...cur, [certKey]: { ...cur[certKey], [field]: val } } };
-                        setTradeConformite(updated);
-                        localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(updated));
+                        saveTradeConformite(updated);
                       };
 
                       const renderPersonSection = (type) => {
@@ -8232,7 +8270,7 @@ Règles :
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
                 <input type="number" min="0" max="300" step="1" value={quoteMarkup}
-                  onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); }}
+                  onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
                   style={{ width: 42, fontSize: 13, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>%</span>
               </div>
@@ -8520,7 +8558,7 @@ Règles :
                     <span style={{ fontSize: 11, color: '#6B7280', flex: 1 }}>Markup global</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${BRAND}10`, borderRadius: 6, padding: '2px 8px' }}>
                       <input type="number" min="0" max="300" step="1" value={quoteMarkup}
-                        onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); }}
+                        onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
                         style={{ width: 40, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: BRAND, fontFamily: 'inherit' }}/>
                       <span style={{ fontSize: 11, color: BRAND }}>%</span>
                     </div>

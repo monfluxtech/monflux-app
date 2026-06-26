@@ -38,7 +38,7 @@ router.patch('/', async (req, res) => {
 router.patch('/config', async (req, res) => {
   const allowed = ['preferred_suppliers','ai_auto_read_email','ai_auto_detect_leads',
     'ai_auto_followup','ai_followup_delay_days','landing_preference','custom_fields','automations',
-    'lead_sources'];
+    'lead_sources','ui_preferences'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.company_id];

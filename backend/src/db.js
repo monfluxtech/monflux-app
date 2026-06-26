@@ -507,6 +507,10 @@ async function applyMigrations() {
     `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS file_url TEXT`);
   await run('project_documents: mime_type col',
     `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS mime_type TEXT`);
+
+  // ── company_config : ui_preferences pour remplacer localStorage ──────────
+  await run('company_config: ui_preferences',
+    `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS ui_preferences JSONB DEFAULT '{}'::jsonb`);
 }
 
 export async function initializeDatabase() {
