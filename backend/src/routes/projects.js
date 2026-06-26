@@ -53,7 +53,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { rows: [project] } = await query(
-      `SELECT p.*, c.name AS client_name, c.email AS client_email, c.phone AS client_phone
+      `SELECT p.*,
+              COALESCE(c.name,  p.client_name)  AS client_name,
+              COALESCE(c.email, p.client_email) AS client_email,
+              COALESCE(c.phone, p.client_phone) AS client_phone
        FROM projects p
        LEFT JOIN contacts c ON c.id = p.client_id
        WHERE p.id = $1 AND p.company_id = $2`,
@@ -178,6 +181,8 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const allowed = ['name','description','type','status','address','city','postal_code',
     'start_date','end_date','contract_value','budget_materials','budget_labor','progress_pct','notes',
+    // Infos client directes (sans contact lié)
+    'client_name','client_email','client_phone',
     // Batch 3 — en-tête riche + estimation terrain
     'payment_terms','project_manager','approvers','materials_buyer','permits_responsible',
     'permits_required','machines','field_assessment','estimated_price',

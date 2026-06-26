@@ -441,6 +441,9 @@ async function applyMigrations() {
     `ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'::jsonb`);
   await run('activity_log: idx project_id',
     `CREATE INDEX IF NOT EXISTS activity_log_project_idx ON activity_log(project_id) WHERE project_id IS NOT NULL`);
+  // client_phone colonne directe sur projects (sans contact lié)
+  await run('projects: client_phone',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_phone TEXT`);
 }
 
 export async function initializeDatabase() {

@@ -3183,7 +3183,7 @@ export default function ProjectDetail() {
     try {
       const { data } = await projectsApi.update(id, { [stateKey]: value || null });
       setProject(p => ({ ...p, ...data }));
-      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id: Number(id), [stateKey]: value } }));
+      window.dispatchEvent(new CustomEvent('monflux:project-updated', { detail: { id, [stateKey]: value } }));
     } catch {}
     // Si un contact est lié, mettre aussi à jour le contact
     if (project.client_id) {
