@@ -30,9 +30,9 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
   { id: 's-soumission', icon: '📄', label: 'Devis & Contrat' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
-  { id: 's-expenses', icon: '💸', label: 'Dépenses' },
-  { id: 's-punch', icon: '⏱️', label: 'Punch' },
-  { id: 's-invoices', icon: '🧾', label: 'Factures' },
+  { id: 's-punch', icon: '⏱️', label: 'Punch et dépenses' },
+  { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
+  { id: 's-invoices', icon: '🧾', label: 'Factures client' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
 ];
@@ -8455,8 +8455,8 @@ Règles :
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💸</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Dépenses & factures fournisseurs</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures fournisseurs</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures et dépenses fournisseurs · coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
             </div>
             <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
@@ -8496,8 +8496,8 @@ Règles :
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⏱️</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps{timesheets.length > 0 ? ` · ${timesheets.length} entrée(s) · ${activeTs.length} en cours` : ''}</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch et dépenses</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps · Dépenses de chantier{timesheets.length > 0 ? ` · ${timesheets.length} punch(es) · ${activeTs.length} en cours` : ''}</div>
             </div>
           </div>
           {timesheets.length > 0 ? (
@@ -8572,6 +8572,50 @@ Règles :
           ) : (
             <p className="text-sm text-gray-400 text-center py-4">Aucun punch enregistré. Générez un QR ci-dessous pour commencer.</p>
           )}
+
+          {/* ── Dépenses de chantier (dans Punch et dépenses) ── */}
+          <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1.5px solid #D1FAE5' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span style={{ fontSize: 18 }}>💸</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Dépenses</p>
+                <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>Matériaux, frais divers, dépenses directes{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</p>
+              </div>
+              <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
+            </div>
+
+            {showExpenseForm && (
+              <form onSubmit={addExpense} className="bg-white rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end border border-green-100">
+                <div><label className="label">Type</label>
+                  <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
+                    {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
+                <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
+                <div className="flex gap-2"><input className="input flex-1" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Description" /><button type="submit" className="btn-primary text-xs px-3">OK</button></div>
+              </form>
+            )}
+
+            {project.expenses?.length > 0 ? (
+              <div className="space-y-1.5">
+                {project.expenses.map(x => (
+                  <div key={x.id} className="flex items-center gap-3 py-1.5 border-b border-green-50 last:border-0">
+                    <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
+                    <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{x.description || x.subcontractor_name || '—'}</span>
+                    {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
+                    <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
+                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
+                  </div>
+                ))}
+                <div className="flex justify-end pt-2 border-t border-green-100">
+                  <p className="text-sm font-bold text-gray-800">Total : {money(project.expenses.reduce((s, x) => s + Number(x.amount || 0), 0))}</p>
+                </div>
+              </div>
+            ) : !showExpenseForm && (
+              <p className="text-sm text-gray-400 text-center py-3">Aucune dépense enregistrée pour ce projet.</p>
+            )}
+          </div>
         </div>
 
         {/* ── Soumission détaillée ── (white) */}
@@ -8615,8 +8659,8 @@ Règles :
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
               <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
               <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures</h2>
-                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures liées à ce projet · {projectInvoices.length} facture(s)</div>
+                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures client</h2>
+                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures émises au client · {projectInvoices.length} facture(s)</div>
               </div>
               <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
             </div>

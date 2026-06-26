@@ -337,18 +337,21 @@ Réponds en JSON STRICT:
 }
 
 RÈGLES CRITIQUES pour les url_source dans les fallbacks:
-- Home Depot Canada: TOUJOURS "https://www.homedepot.ca/fr/s/MOT_CLE" (jamais /search?q=)
-- Rona: "https://www.rona.ca/fr/search?q=MOT_CLE"
-- Amazon.ca: "https://www.amazon.ca/s?k=MOT_CLE"
-- Canac: "https://www.canac.ca/recherche?q=MOT_CLE"
-- Patrick Morin: "https://www.patrickmorin.com/recherche?q=MOT_CLE"
-- Si tu ne connais pas le bon fournisseur: "https://www.google.com/search?q=MOT_CLE+matériaux+construction+Québec+prix"
-- N'invente JAMAIS lowes.ca, réno-dépôt.ca ou tout autre domaine dont tu n'es pas certain à 100%
-- Le MOT_CLE doit être encodé URL (%20 ou +) et inclure les termes de recherche spécifiques au produit`;
+- Si la recherche est en anglais, traduis d'abord le terme en français québécois (ex: "subway tiles" → "carreaux métro", "hardwood floor" → "plancher bois franc")
+- Utilise le terme FR dans l'url ET dans le nom du produit
+- Home Depot Canada: "https://www.homedepot.ca/fr/s/TERME_FR_ENCODE" (ex: carreaux+m%C3%A9tro)
+- Rona: "https://www.rona.ca/fr/search?q=TERME_FR_ENCODE"
+- Amazon.ca: "https://www.amazon.ca/s?k=TERME_FR_ENCODE"
+- Canac: "https://www.canac.ca/recherche?q=TERME_FR_ENCODE"
+- Patrick Morin: "https://www.patrickmorin.com/recherche?q=TERME_FR_ENCODE"
+- PAR DÉFAUT si incertain: "https://www.google.com/search?q=TERME_FR_ENCODE+construction+Québec"
+- N'invente JAMAIS lowes.ca, réno-dépôt.ca ou un domaine que tu ne connais pas avec certitude absolue
+- INTERDIT: toute URL avec un chemin de produit spécifique (ex: /p/12345) — utilise UNIQUEMENT les URLs de recherche ci-dessus
+- Le terme doit être encodé URL correctement (espaces → +, accents → %XX)`;
 
   try {
     const msg = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     });
