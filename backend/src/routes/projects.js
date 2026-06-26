@@ -67,13 +67,15 @@ router.get('/:id', async (req, res) => {
     project.client_phone = project.contact_phone || project.client_phone || null;
     delete project.contact_phone;
 
+    const safeQuery = async (sql, params) => { try { const r = await query(sql, params); return r; } catch { return { rows: [] }; } };
+
     const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }, { rows: cfgRows }] = await Promise.all([
-      query(`SELECT pp.*,
-        COALESCE((SELECT SUM(ts.hours_total) FROM timesheets ts WHERE ts.project_id = $1 AND ts.phase_name = pp.name), 0) AS logged_hours,
-        pp.depends_on_phase_id, pp.dep_type, pp.dep_from_pt, pp.dep_to_pt
+      // dep_type/dep_from_pt/dep_to_pt are in pp.* — explicit refs removed to avoid error if column missing on older DB
+      safeQuery(`SELECT pp.*,
+        COALESCE((SELECT SUM(ts.hours_total) FROM timesheets ts WHERE ts.project_id = $1 AND ts.phase_name = pp.name), 0) AS logged_hours
         FROM project_phases pp WHERE pp.project_id = $1 ORDER BY pp.display_order`, [req.params.id]),
-      query(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
-      query(
+      safeQuery(`SELECT * FROM project_milestones WHERE project_id = $1 ORDER BY due_date`, [req.params.id]),
+      safeQuery(
         `SELECT pm.*, u.name, u.email, u.avatar_url, s.name AS sub_name
          FROM project_members pm
          LEFT JOIN users u ON u.id = pm.user_id
@@ -81,12 +83,12 @@ router.get('/:id', async (req, res) => {
          WHERE pm.project_id = $1`,
         [req.params.id]
       ),
-      query(
-        `SELECT id, type, name, file_url, mime_type, extraction_done, created_at
+      safeQuery(
+        `SELECT id, type, name, file_url, mime_type, COALESCE(extraction_done, false) AS extraction_done, created_at
          FROM project_documents WHERE project_id = $1 ORDER BY created_at DESC`,
         [req.params.id]
       ),
-      query(
+      safeQuery(
         `SELECT t.*, s.name AS subcontractor_name, s.company_name AS subcontractor_company,
                 s.phone AS subcontractor_phone, s.hourly_rate AS subcontractor_hourly_rate
          FROM project_trades t
@@ -94,14 +96,14 @@ router.get('/:id', async (req, res) => {
          WHERE t.project_id = $1 ORDER BY t.created_at`,
         [req.params.id]
       ),
-      query(
+      safeQuery(
         `SELECT e.*, s.name AS subcontractor_name
          FROM project_expenses e
          LEFT JOIN subcontractors s ON s.id = e.subcontractor_id
          WHERE e.project_id = $1 ORDER BY e.expense_date DESC NULLS LAST, e.created_at DESC`,
         [req.params.id]
       ),
-      query(
+      safeQuery(
         `SELECT cc.field_checklists, comp.trades AS company_trades
          FROM companies comp
          LEFT JOIN company_config cc ON cc.company_id = comp.id

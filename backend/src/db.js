@@ -444,6 +444,31 @@ async function applyMigrations() {
   // client_phone colonne directe sur projects (sans contact lié)
   await run('projects: client_phone',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_phone TEXT`);
+
+  // ── project_documents : colonnes absentes des migrations précédentes ──────
+  await run('project_documents: extraction_done',
+    `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS extraction_done BOOLEAN DEFAULT FALSE`);
+  await run('project_documents: extraction_data',
+    `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS extraction_data JSONB`);
+
+  // ── project_milestones : s'assurer que la table existe ───────────────────
+  await run('project_milestones create',
+    `CREATE TABLE IF NOT EXISTS project_milestones (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id   UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      title        TEXT NOT NULL,
+      description  TEXT,
+      due_date     DATE,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      amount       NUMERIC(12,2),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+
+  // ── projects : start_date / end_date si absents ───────────────────────────
+  await run('projects: start_date col',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE`);
+  await run('projects: end_date col',
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`);
 }
 
 export async function initializeDatabase() {
