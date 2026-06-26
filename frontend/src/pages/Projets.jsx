@@ -6,7 +6,7 @@ import { projects as projectsApi, ai as aiApi } from '../api';
 import { useConfigStore } from '../store';
 import { useT } from '../hooks/useT';
 import { DEFAULT_PIPELINE } from '../config/modules';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, ChevronLeft, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
 
 const num = (v) => Number(v) || 0;
 const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }) + '$';
@@ -222,6 +222,121 @@ function GanttPortfolio({ projects, stageMap }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Vue Calendrier ─────────────────────────────────────────────────────────────
+function CalendarView({ projects, stageMap }) {
+  const navigate = useNavigate();
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth()); // 0-11
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOffset = (firstDay + 6) % 7; // Mon=0 … Sun=6
+
+  const fmtMonth = new Date(year, month, 1).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
+
+  // Build per-day project map: projects that START or are ACTIVE on that day
+  const dayEvents = {};
+  projects.forEach(p => {
+    if (!p.start_date && !p.end_date) return;
+    const start = p.start_date ? new Date(p.start_date + 'T00:00') : null;
+    const end   = p.end_date   ? new Date(p.end_date   + 'T00:00') : start;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const day = new Date(year, month, d);
+      if (start && day >= start && day <= end) {
+        if (!dayEvents[d]) dayEvents[d] = [];
+        dayEvents[d].push(p);
+      }
+    }
+  });
+
+  const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  const cells = Array.from({ length: startOffset + daysInMonth }, (_, i) => i < startOffset ? null : i - startOffset + 1);
+  // Pad to full 6-row grid
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
+      {/* Header navigation */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #F0F2F4' }}>
+        <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex', alignItems: 'center' }}>
+          <ChevronLeft size={16}/>
+        </button>
+        <span style={{ fontSize: 14, fontWeight: 800, color: '#15171C', textTransform: 'capitalize' }}>{fmtMonth}</span>
+        <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex', alignItems: 'center' }}>
+          <ChevronRight size={16}/>
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid #F0F2F4' }}>
+        {DAYS.map(d => (
+          <div key={d} style={{ padding: '7px 0', textAlign: 'center', fontSize: 10, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', background: '#FAFAFA' }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+        {cells.map((day, i) => {
+          const isToday = day && today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+          const events = day ? (dayEvents[day] || []) : [];
+          return (
+            <div key={i} style={{ minHeight: 76, borderRight: '1px solid #F5F7F9', borderBottom: '1px solid #F5F7F9', padding: '5px 4px', background: day ? '#fff' : '#FAFAFA', position: 'relative' }}>
+              {day && (
+                <>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: '50%', fontSize: 11, fontWeight: isToday ? 800 : 500, color: isToday ? '#fff' : '#374151', background: isToday ? '#E8794E' : 'transparent', marginBottom: 3 }}>
+                    {day}
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {events.slice(0, 3).map(p => {
+                      const color = stageMap[p.status]?.color || '#94a3b8';
+                      const label = p.field_assessment?.work_type || p.type || p.name || '—';
+                      return (
+                        <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 9, fontWeight: 700, color, background: color + '18', border: `1px solid ${color}33`, borderRadius: 4, padding: '1px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                          title={`${label}${p.address ? ' · ' + p.address : ''}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {events.length > 3 && (
+                      <span style={{ fontSize: 9, color: '#9CA3AF', paddingLeft: 4 }}>+{events.length - 3}</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      {projects.length > 0 && (
+        <div style={{ padding: '8px 16px', borderTop: '1px solid #F0F2F4', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {projects.slice(0, 6).map(p => {
+            const color = stageMap[p.status]?.color || '#94a3b8';
+            const label = p.field_assessment?.work_type || p.type || p.name || '—';
+            return (
+              <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 5 }}
+                onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>
+                {label}{p.address ? ` · ${p.address}` : ''}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -584,7 +699,7 @@ export default function Projets() {
 
   // Auto-géocode quand on arrive sur la vue carte
   useEffect(() => {
-    if (view === 'carte' && items.some(p => p.address && !p.latitude)) {
+    if (view === 'map' && items.some(p => p.address && !p.latitude)) {
       geocodeAll();
     }
   }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -599,13 +714,23 @@ export default function Projets() {
       ? Math.ceil((new Date(p.end_date) - Date.now()) / 86400000)
       : null;
 
+    // Titre composé : type travaux · adresse · dates
+    const workType = p.field_assessment?.work_type || p.type || null;
+    const fmtDate = (d) => d ? new Date(d + 'T00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : null;
+    const dateStr = p.start_date && p.end_date
+      ? `${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}`
+      : fmtDate(p.start_date) || fmtDate(p.end_date);
+    const titleParts = [workType, p.address, dateStr].filter(Boolean);
+    const displayTitle = titleParts.length > 0 ? titleParts.join('  ·  ') : p.name;
+    const isAutoTitle = titleParts.length > 0;
+
     return (
       <div className="card hover:shadow-md transition-shadow" onClick={() => { if (!isEditing) navigate(`/projets/${p.id}`); }}>
         <div className="flex items-center gap-4 cursor-pointer">
           <div className="w-2 h-10 rounded-full flex-shrink-0" style={{ background: color }}/>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
-              <p className="font-medium text-gray-900 text-sm truncate">{p.name}</p>
+              <p className="font-medium text-gray-900 text-sm truncate">{displayTitle}</p>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: `${color}1a`, color }}>{st.label || p.status}</span>
               {daysLeft !== null && daysLeft <= 7 && (
                 <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${daysLeft < 0 ? 'text-red-500' : 'text-orange-500'}`}>
@@ -614,8 +739,9 @@ export default function Projets() {
               )}
             </div>
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
-              {p.address && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
-              {p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(p.start_date).toLocaleDateString('fr-CA')}</span>}
+              {isAutoTitle && p.name && <span className="text-gray-300 italic truncate max-w-[180px]">{p.name}</span>}
+              {!isAutoTitle && p.address && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
+              {!isAutoTitle && p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(p.start_date).toLocaleDateString('fr-CA')}</span>}
               {p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
               {(() => {
                 const hasReal = num(p.invoiced_real) > 0;
@@ -697,10 +823,11 @@ export default function Projets() {
             {/* List / Kanban / Gantt / Map toggle */}
             <div className="flex bg-gray-100 rounded-lg p-0.5">
               {[
-                { key: 'list',   icon: <List size={13}/>,       label: 'Liste' },
-                { key: 'kanban', icon: <Columns size={13}/>,    label: 'Kanban' },
-                { key: 'gantt',  icon: <GanttChart size={13}/>, label: 'Gantt' },
-                { key: 'map',    icon: <MapIcon size={13}/>,    label: 'Carte' },
+                { key: 'list',     icon: <List size={13}/>,       label: 'Liste' },
+                { key: 'kanban',   icon: <Columns size={13}/>,    label: 'Kanban' },
+                { key: 'gantt',    icon: <GanttChart size={13}/>, label: 'Gantt' },
+                { key: 'calendar', icon: <Calendar size={13}/>,   label: 'Calendrier' },
+                { key: 'map',      icon: <MapIcon size={13}/>,    label: 'Carte' },
               ].map(({ key, icon, label }) => (
                 <button
                   key={key}
@@ -774,6 +901,8 @@ export default function Projets() {
           />
         ) : view === 'gantt' ? (
           <GanttPortfolio projects={filtered} stageMap={stageMap} />
+        ) : view === 'calendar' ? (
+          <CalendarView projects={filtered} stageMap={stageMap} />
         ) : loadError ? (
           <div className="text-center py-12">
             <p className="text-sm text-red-500 font-medium mb-2">Erreur de chargement</p>
