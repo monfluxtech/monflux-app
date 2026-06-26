@@ -232,32 +232,30 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
         {toc ? toc : <div style={{ flex: 1 }} />}
 
         <div className="app-sidebar-bottom">
-          {/* Box test rôle/forfait */}
+          {/* Box test admin */}
           <div style={{ margin: '0 8px 10px', padding: '10px 12px', background: 'rgba(255,255,255,.07)', borderRadius: 10, border: '1px solid rgba(255,255,255,.1)' }}>
-            <p style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>Test rôle / forfait</p>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              {['Propriétaire', 'Chef', 'Technicien', 'Sous-traitant'].map(r => (
-                <button key={r} type="button"
-                  onClick={() => setTestRole(testRole === r ? '' : r)}
-                  style={{ flex: 1, fontSize: 9, fontWeight: 700, padding: '4px 2px', borderRadius: 5, border: '1px solid', cursor: 'pointer', textAlign: 'center', transition: 'all .12s',
-                    background: testRole === r ? '#E8794E' : 'transparent',
-                    borderColor: testRole === r ? '#E8794E' : 'rgba(255,255,255,.2)',
-                    color: testRole === r ? '#fff' : 'rgba(255,255,255,.5)',
-                  }}
-                >{r}</button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {['Solo', 'Pro', 'Équipe', 'Entreprise'].map(p => (
-                <button key={p} type="button"
-                  onClick={() => setTestPlan(testPlan === p ? '' : p)}
-                  style={{ flex: 1, fontSize: 9, fontWeight: 700, padding: '4px 2px', borderRadius: 5, border: '1px solid', cursor: 'pointer', textAlign: 'center', transition: 'all .12s',
-                    background: testPlan === p ? '#3B5BDB' : 'transparent',
-                    borderColor: testPlan === p ? '#3B5BDB' : 'rgba(255,255,255,.2)',
-                    color: testPlan === p ? '#fff' : 'rgba(255,255,255,.5)',
-                  }}
-                >{p}</button>
-              ))}
+            <p style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>⚡ Test admin</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <select
+                value={testRole}
+                onChange={e => setTestRole(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.08)', color: testRole ? '#fff' : 'rgba(255,255,255,.45)', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,.4)' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: 28 }}
+              >
+                <option value="" style={{ background: '#1a1d23', color: '#fff' }}>Rôle : (par défaut)</option>
+                {['Propriétaire', 'Chef', 'Technicien', 'Sous-traitant'].map(r => (
+                  <option key={r} value={r} style={{ background: '#1a1d23', color: '#fff' }}>{r}</option>
+                ))}
+              </select>
+              <select
+                value={testPlan}
+                onChange={e => setTestPlan(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.08)', color: testPlan ? '#fff' : 'rgba(255,255,255,.45)', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,.4)' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: 28 }}
+              >
+                <option value="" style={{ background: '#1a1d23', color: '#fff' }}>Forfait : (par défaut)</option>
+                {['Solo', 'Pro', 'Équipe', 'Entreprise'].map(p => (
+                  <option key={p} value={p} style={{ background: '#1a1d23', color: '#fff' }}>Forfait : {p}</option>
+                ))}
+              </select>
             </div>
           </div>
 

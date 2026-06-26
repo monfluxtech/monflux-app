@@ -67,10 +67,10 @@ function InlineField({ value, onSave, placeholder = '—', multiline = false, st
 }
 
 // ── Capture multimodale : texte, dictée vocale (Web Speech API), photo, vidéo, document ──
-function CaptureModal({ projectId, projectName, onClose, onAdded }) {
+function CaptureModal({ projectId, projectName, onClose, onAdded, initialText = '' }) {
   const BRAND = '#E8794E', BRAND_DARK = '#C85A2B';
   const MAX_BYTES = 45 * 1024 * 1024; // ~45 Mo (limite body 50 Mo côté serveur)
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText);
   const [files, setFiles] = useState([]); // { uid, kind:'photo'|'video'|'document', name, mime, dataUrl, size }
   const [listening, setListening] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2973,6 +2973,16 @@ export default function ProjectDetail() {
   const [lightboxItem, setLightboxItem] = useState(null);
   const [showMediaForm, setShowMediaForm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  const [floContext, setFloContext] = useState('');
+  // Facture inline
+  const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [newInvoice, setNewInvoice] = useState({ title: '', client_name: '', client_email: '', due_date: '' });
+  const [newInvoiceItems, setNewInvoiceItems] = useState([{ description: '', qty: 1, unit_price: '' }]);
+  const [savingInvoice, setSavingInvoice] = useState(false);
+  // Extra inline (demande de modification)
+  const [showExtraForm, setShowExtraForm] = useState(false);
+  const [extraForm, setExtraForm] = useState({ title: '', description: '', amount: '', notes: '' });
+  const [savingExtra, setSavingExtra] = useState(false);
   const [photoDragOver, setPhotoDragOver] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
@@ -4408,6 +4418,40 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     refreshProfit();
   };
 
+  const createInvoiceInline = async (e) => {
+    e.preventDefault();
+    const items = newInvoiceItems.filter(it => it.description && it.unit_price);
+    if (!items.length) return;
+    setSavingInvoice(true);
+    try {
+      const { data } = await invoicesApi.create({
+        project_id: id,
+        title: newInvoice.title || undefined,
+        client_name: newInvoice.client_name || project.client_name || '',
+        client_email: newInvoice.client_email || project.client_email || '',
+        due_date: newInvoice.due_date || undefined,
+        items: items.map((it, idx) => ({ description: it.description, qty: Number(it.qty) || 1, unit_price: Number(it.unit_price) || 0, total: (Number(it.qty)||1) * (Number(it.unit_price)||0), order_idx: idx })),
+      });
+      setProjectInvoices(prev => [data, ...prev]);
+      setShowNewInvoice(false);
+      setNewInvoice({ title: '', client_name: '', client_email: '', due_date: '' });
+      setNewInvoiceItems([{ description: '', qty: 1, unit_price: '' }]);
+    } catch (err) { console.error(err); }
+    finally { setSavingInvoice(false); }
+  };
+
+  const createExtraInline = async (e) => {
+    e.preventDefault();
+    if (!extraForm.title) return;
+    setSavingExtra(true);
+    try {
+      await changeOrdersApi.create({ project_id: id, title: extraForm.title, description: extraForm.description || undefined, amount: Number(extraForm.amount) || 0, notes: extraForm.notes || undefined });
+      setShowExtraForm(false);
+      setExtraForm({ title: '', description: '', amount: '', notes: '' });
+    } catch (err) { console.error(err); }
+    finally { setSavingExtra(false); }
+  };
+
   const saveLaborRate = async () => {
     setSavingRate(true);
     try {
@@ -5364,7 +5408,7 @@ Règles :
       <div className="app-sidebar-bottom pt-3">
         <button
           className="btn-ghost w-full text-xs"
-          onClick={() => navigate(`/soumissions?new=1&project_id=${id}&title=${encodeURIComponent(t('change_order')+' — '+project.name)}`)}
+          onClick={() => setShowExtraForm(true)}
         >
           <GitBranch size={12}/> {t('create_change_order')}
         </button>
@@ -5780,7 +5824,8 @@ Règles :
         <CaptureModal
           projectId={id}
           projectName={project.name}
-          onClose={() => setShowCapture(false)}
+          initialText={floContext}
+          onClose={() => { setShowCapture(false); setFloContext(''); }}
           onAdded={(createdMedia, hadDocs) => {
             if (createdMedia.length) setMedia(prev => [...createdMedia, ...prev]);
             if (hadDocs) load();
@@ -5802,6 +5847,40 @@ Règles :
         <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à Florence — assistante IA">
           <Sparkles size={22} />
         </button>
+      )}
+
+      {/* ── Modal : Créer un extra (demande de modification) ── */}
+      {showExtraForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#FFF7ED', border: '1px solid #FED7AA', display: 'grid', placeItems: 'center', fontSize: 18 }}>⚡</div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#15171C' }}>Demande de modification</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>Extra ou travail hors contrat original</p>
+                </div>
+              </div>
+              <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }} onClick={() => setShowExtraForm(false)}><X size={18}/></button>
+            </div>
+            <form onSubmit={createExtraInline} style={{ padding: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div><label className="label">Titre *</label><input className="input" value={extraForm.title} onChange={e => setExtraForm(f => ({...f, title: e.target.value}))} placeholder="Ex : Ajout d'une fenêtre patio" required /></div>
+                <div><label className="label">Description</label><textarea className="input" rows={3} style={{ resize: 'vertical' }} value={extraForm.description} onChange={e => setExtraForm(f => ({...f, description: e.target.value}))} placeholder="Détails des travaux supplémentaires..." /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div><label className="label">Montant estimé ($)</label><input className="input" type="number" min="0" step="0.01" value={extraForm.amount} onChange={e => setExtraForm(f => ({...f, amount: e.target.value}))} placeholder="0.00" /></div>
+                  <div><label className="label">Notes internes</label><input className="input" value={extraForm.notes} onChange={e => setExtraForm(f => ({...f, notes: e.target.value}))} placeholder="Notes équipe" /></div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+                <button type="button" className="btn-secondary text-xs" onClick={() => setShowExtraForm(false)}>Annuler</button>
+                <button type="submit" className="btn-primary text-xs" disabled={savingExtra || !extraForm.title}>
+                  {savingExtra ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>} Créer l'extra
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ── QR Modal ── */}
@@ -6185,6 +6264,7 @@ Règles :
                   <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
                   <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4, maxWidth: 560 }}>Qualifiez le projet sans perdre de temps. Envoyez un message au client, visitez sur place ou laissez Florence estimer les coûts — dans l'ordre qui vous convient, aucune étape obligatoire.</div>
                 </div>
+                <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Je travaille sur le projet "${project.name}". Aide-moi à estimer les coûts approximatifs : matériaux, main-d'œuvre, et délai probable. Type de projet : ${project.project_type || 'construction résidentielle'}.`); setShowCapture(true); }}>✨ Demander à Flo</button>
               </div>
 
               {/* Bannière profil métier */}
@@ -6771,6 +6851,7 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, Gantt et dépendances</div>
             </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}". Propose-moi un découpage en phases réalistes avec durées estimées (fondations, structure, finitions, etc.). Indique les dépendances clés entre phases.`); setShowCapture(true); }}>✨ Demander à Flo</button>
           </div>
 
           {(showPhase || editPhase) && (
@@ -6936,6 +7017,7 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
             </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}". Quels corps de métier sont nécessaires pour ce projet ? Y a-t-il des exigences RBQ ou CCQ au Québec dont je dois m'assurer ?`); setShowCapture(true); }}>✨ Demander à Flo</button>
             <button onClick={() => { setShowFloPanel(v => !v); if (!showFloPanel && !tradeRecos) fetchTradeRecos(null); }}
               style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:`1.5px solid ${BRAND}`, background: showFloPanel ? `${BRAND}15` : '#fff', color:BRAND, fontSize:12, fontWeight:800, cursor:'pointer', flexShrink:0 }}>
               <Sparkles size={13}/>
@@ -7874,6 +7956,7 @@ Règles :
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Matériaux · Main d'œuvre · Sous-traitants · Génération contrat</div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — devis & contrat. Aide-moi à optimiser ma soumission : y a-t-il des postes que j'oublie souvent, des clauses contractuelles importantes au Québec, ou des conseils pour éviter les litiges ?`); setShowCapture(true); }}>✨ Flo</button>
               {/* Markup */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
@@ -8456,6 +8539,7 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures fournisseurs</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures et dépenses fournisseurs · coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
             </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — dépenses fournisseurs. Aide-moi à vérifier si mes dépenses sont cohérentes avec un projet de ce type. Des bons de commande manquent-ils ? Comment minimiser les litiges fournisseurs ?`); setShowCapture(true); }}>✨ Flo</button>
             <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
@@ -8523,6 +8607,7 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch et dépenses</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps · Dépenses de chantier{timesheets.length > 0 ? ` · ${timesheets.length} punch(es) · ${activeTs.length} en cours` : ''}</div>
             </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — punch et présences. Y a-t-il des anomalies dans les heures travaillées ? Comment optimiser la gestion des feuilles de temps pour ce type de chantier au Québec ?`); setShowCapture(true); }}>✨ Flo</button>
           </div>
           {timesheets.length > 0 ? (
             <>
@@ -8678,36 +8763,155 @@ Règles :
 
         {/* ── Factures client ── (mint) */}
         <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
-              <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures client</h2>
-                <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures émises au client · {projectInvoices.length} facture(s)</div>
-              </div>
-              <button className="btn-ghost text-xs" onClick={() => navigate('/factures')}>Voir tout</button>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures client</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures émises au client · {projectInvoices.length} facture(s)</div>
             </div>
-            <div className="space-y-2">
-              {projectInvoices.map(inv => {
-                const SB = { draft:'badge-gray', sent:'badge-blue', viewed:'badge-yellow', partial:'badge-orange', paid:'badge-green', overdue:'badge-red', cancelled:'badge-gray' };
-                const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
-                return (
-                  <div key={inv.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                    <FileText size={13} className="text-gray-300 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 truncate">{inv.title || `Facture ${inv.number}`}</p>
-                    </div>
-                    <span className={`badge ${SB[inv.status]||'badge-gray'} text-xs`}>{SL[inv.status]||inv.status}</span>
-                    <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(inv.total||0).toLocaleString('fr-CA')}$</p>
-                    <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
-                    <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Télécharger PDF" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}><Download size={13}/></a>
-                  </div>
-                );
-              })}
-              {projectInvoices.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">Aucune facture pour ce projet. <button className="text-brand underline" onClick={() => navigate('/factures')}>Créer une facture</button></p>
-              )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-ghost text-xs" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#E8794E', fontWeight: 700 }} onClick={() => { setFloContext(`Aide-moi à rédiger une facture pour le projet "${project.name}". Le client est ${project.client_name || 'à préciser'}. Quels éléments dois-je inclure ?`); setShowCapture(true); }}>
+                ✨ Flo
+              </button>
+              <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(v => !v)}>
+                <Plus size={13}/> Nouvelle facture
+              </button>
             </div>
           </div>
+
+          {/* ── Formulaire nouvelle facture ── */}
+          {showNewInvoice && (
+            <form onSubmit={createInvoiceInline} style={{ background: '#fff', borderRadius: 16, border: '1px solid #D1FAE5', padding: 24, marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#15171C' }}>Nouvelle facture</h3>
+                <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }} onClick={() => setShowNewInvoice(false)}><X size={16}/></button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: 16 }}>
+                <div><label className="label">Titre (optionnel)</label><input className="input" value={newInvoice.title} onChange={e => setNewInvoice(f => ({...f, title: e.target.value}))} placeholder="Ex : Acompte 50%" /></div>
+                <div><label className="label">Date d'échéance</label><input className="input" type="date" value={newInvoice.due_date} onChange={e => setNewInvoice(f => ({...f, due_date: e.target.value}))} /></div>
+                <div><label className="label">Nom client</label><input className="input" value={newInvoice.client_name} onChange={e => setNewInvoice(f => ({...f, client_name: e.target.value}))} placeholder={project.client_name || 'Client'} /></div>
+                <div><label className="label">Courriel client</label><input className="input" type="email" value={newInvoice.client_email} onChange={e => setNewInvoice(f => ({...f, client_email: e.target.value}))} placeholder={project.client_email || ''} /></div>
+              </div>
+
+              {/* Lignes de la facture */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 110px 32px', gap: 6, marginBottom: 6 }}>
+                  <span className="label" style={{ margin: 0 }}>Description</span>
+                  <span className="label" style={{ margin: 0 }}>Qté</span>
+                  <span className="label" style={{ margin: 0 }}>Prix unitaire</span>
+                  <span/>
+                </div>
+                {newInvoiceItems.map((it, i) => {
+                  const lineTotal = (Number(it.qty)||0) * (Number(it.unit_price)||0);
+                  return (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 110px 32px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                      <input className="input" value={it.description} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, description: e.target.value} : x))} placeholder="Travaux, matériaux..." required />
+                      <input className="input" type="number" min="0" step="1" value={it.qty} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, qty: e.target.value} : x))} />
+                      <input className="input" type="number" min="0" step="0.01" value={it.unit_price} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, unit_price: e.target.value} : x))} placeholder="0.00" required />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {lineTotal > 0 && <span style={{ fontSize: 10, color: '#6B7280', whiteSpace: 'nowrap' }}>{money(lineTotal)}</span>}
+                        {newInvoiceItems.length > 1 && <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 2 }} onClick={() => setNewInvoiceItems(items => items.filter((_,j) => j !== i))}><X size={12}/></button>}
+                      </div>
+                    </div>
+                  );
+                })}
+                <button type="button" className="btn-ghost text-xs mt-1" onClick={() => setNewInvoiceItems(items => [...items, { description: '', qty: 1, unit_price: '' }])}>
+                  <Plus size={12}/> Ajouter une ligne
+                </button>
+              </div>
+
+              {/* Totaux */}
+              {(() => {
+                const sub = newInvoiceItems.reduce((acc, it) => acc + (Number(it.qty)||0)*(Number(it.unit_price)||0), 0);
+                const tps = sub * 0.05; const tvq = sub * 0.09975;
+                return sub > 0 ? (
+                  <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>Sous-total</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C' }}>{money(sub)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>TPS (5%)</span>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>{money(tps)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24 }}>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>TVQ (9,975%)</span>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>{money(tvq)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24, borderTop: '1px solid #D1FAE5', paddingTop: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: '#15171C' }}>Total</span>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: BRAND }}>{money(sub + tps + tvq)}</span>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary text-xs" onClick={() => setShowNewInvoice(false)}>Annuler</button>
+                <button type="submit" className="btn-primary text-xs" disabled={savingInvoice}>
+                  {savingInvoice ? <Loader2 size={13} className="animate-spin"/> : <FileText size={13}/>} Créer la facture
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ── Tableau des factures ── */}
+          {projectInvoices.length > 0 ? (
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #D1FAE5', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#F0FDF4' }}>
+                    {['N°', 'Titre', 'Client', 'Échéance', 'Total', 'Statut', ''].map((h, i) => (
+                      <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #D1FAE5' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectInvoices.map(inv => {
+                    const SB = { draft:'#9CA3AF', sent:'#3B82F6', viewed:'#F59E0B', partial:'#F97316', paid:'#22C55E', overdue:'#EF4444', cancelled:'#9CA3AF' };
+                    const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
+                    const overdue = inv.status === 'overdue' || (inv.due_date && new Date(inv.due_date) < new Date() && !['paid','cancelled'].includes(inv.status));
+                    return (
+                      <tr key={inv.id} style={{ borderBottom: '1px solid #F0FDF4' }}>
+                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{inv.number}</td>
+                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: '#15171C', maxWidth: 180 }}>
+                          <p style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.title || `Facture ${inv.number}`}</p>
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#6B7280' }}>{inv.client_name || '—'}</td>
+                        <td style={{ padding: '12px 14px', fontSize: 12, color: overdue ? '#EF4444' : '#6B7280', fontWeight: overdue ? 700 : 400 }}>
+                          {inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-CA') : '—'}
+                          {overdue && <span style={{ marginLeft: 4 }}>⚠️</span>}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#15171C' }}>{money(inv.total || 0)}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: (SB[inv.status]||'#9CA3AF') + '20', color: SB[inv.status]||'#9CA3AF', border: `1px solid ${(SB[inv.status]||'#9CA3AF')}40` }}>
+                            {SL[inv.status] || inv.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
+                            <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="PDF" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Download size={13}/></a>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ padding: '10px 14px', background: '#F9FFF9', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
+                <span style={{ fontSize: 12, color: '#6B7280' }}>Total facturé</span>
+                <span style={{ fontSize: 13, fontWeight: 900, color: '#15171C' }}>{money(projectInvoices.reduce((s, inv) => s + Number(inv.total || 0), 0))}</span>
+              </div>
+            </div>
+          ) : !showNewInvoice && (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <FileText size={32} style={{ color: '#D1FAE5', margin: '0 auto 12px' }} />
+              <p style={{ fontSize: 14, color: '#9CA3AF', marginBottom: 16 }}>Aucune facture pour ce projet.</p>
+              <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(true)}><Plus size={13}/> Créer la première facture</button>
+            </div>
+          )}
+        </div>
 
         {/* ── Quittance ── (mint) */}
         <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
@@ -8717,6 +8921,7 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Quittances</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Certificat de satisfaction client · clôture du projet (Québec)</div>
             </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 20, padding: '5px 12px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }} onClick={() => { setFloContext(`Projet "${project.name}" — quittance et clôture. Aide-moi à formuler une quittance solide légalement au Québec. Quelles clauses inclure pour protéger l'entrepreneur ?`); setShowCapture(true); }}>✨ Flo</button>
           </div>
 
           {!quittance && !showQuittanceForm && (
