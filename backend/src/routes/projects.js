@@ -118,8 +118,8 @@ router.get('/:id', async (req, res) => {
       company_trades: cfgRows?.[0]?.company_trades || [],
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('GET /projects/:id error:', err);
+    res.status(500).json({ error: 'Erreur serveur', detail: err.message });
   }
 });
 

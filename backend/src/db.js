@@ -469,6 +469,40 @@ async function applyMigrations() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE`);
   await run('projects: end_date col',
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`);
+
+  // ── project_phases : colonnes ajoutées en cours de projet ────────────────
+  await run('project_phases: display_order',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS display_order INT NOT NULL DEFAULT 0`);
+  await run('project_phases: status text fallback',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'not_started'`);
+  await run('project_phases: color',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS color TEXT DEFAULT '#F26522'`);
+  await run('project_phases: progress_pct',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0`);
+  await run('project_phases: actual_start',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS actual_start DATE`);
+  await run('project_phases: actual_end',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS actual_end DATE`);
+  await run('project_phases: trade_name',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS trade_name TEXT`);
+  await run('project_phases: start_time',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS start_time TEXT`);
+  await run('project_phases: duration_hours',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS duration_hours NUMERIC(6,2)`);
+  await run('project_phases: assigned_to_name',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS assigned_to_name TEXT`);
+  await run('project_phases: recurrence_type',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_type TEXT`);
+  await run('project_phases: recurrence_count',
+    `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS recurrence_count INTEGER DEFAULT 1`);
+
+  // ── project_documents : toutes les colonnes nécessaires ──────────────────
+  await run('project_documents: type col',
+    `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS type TEXT`);
+  await run('project_documents: file_url col',
+    `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS file_url TEXT`);
+  await run('project_documents: mime_type col',
+    `ALTER TABLE project_documents ADD COLUMN IF NOT EXISTS mime_type TEXT`);
 }
 
 export async function initializeDatabase() {
