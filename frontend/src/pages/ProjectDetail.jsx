@@ -48,7 +48,7 @@ function InlineField({ value, onSave, placeholder = '—', multiline = false, st
   const [val, setVal] = useState(value || '');
   const [committed, setCommitted] = useState(value || '');
   const inputRef = useRef(null);
-  // Sync from parent only when value prop changes — NOT when editing toggles (prevents committed reset before API responds)
+  const spanRef = useRef(null);
   useEffect(() => { if (!editing) { setVal(value || ''); setCommitted(value || ''); } }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
   const start = () => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); };
   const cancel = () => { setVal(committed); setEditing(false); };
@@ -60,13 +60,20 @@ function InlineField({ value, onSave, placeholder = '—', multiline = false, st
   };
   const base = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', padding: 0, ...style };
   if (editing) return multiline
-    ? <textarea ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => e.key === 'Escape' && cancel()} style={{ ...base, width: '100%', minHeight: 48, resize: 'vertical' }} />
-    : <input ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%' }} />;
+    ? <textarea ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%', minHeight: 48, resize: 'vertical' }} />
+    : <input ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save(); } if (e.key === 'Escape') cancel(); }} style={{ ...base, width: '100%' }} />;
   const display = committed;
   return (
-    <span onClick={start} title="Cliquer pour modifier" style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', ...displayStyle }}
+    <span
+      ref={spanRef}
+      tabIndex={0}
+      onClick={start}
+      onFocus={start}
+      title="Cliquer pour modifier"
+      style={{ cursor: 'text', borderBottom: '1px dashed transparent', transition: 'border-color .15s', outline: 'none', ...displayStyle }}
       onMouseEnter={e => e.currentTarget.style.borderBottomColor = 'rgba(232,121,78,.5)'}
-      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}>
+      onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+    >
       {display || <span style={{ color: '#B0B3BA', fontStyle: 'italic' }}>{placeholder}</span>}
     </span>
   );
@@ -2938,6 +2945,18 @@ export default function ProjectDetail() {
     try { const s = localStorage.getItem(`monflux-toc-hidden-${id}`); if (s) return JSON.parse(s); } catch {}
     return [];
   });
+  // Sections marquées "indisponibles" que l'utilisateur a forcé à afficher
+  const [overriddenSections, setOverriddenSections] = useState(() => {
+    try { const s = localStorage.getItem(`monflux-toc-override-${id}`); if (s) return JSON.parse(s); } catch {}
+    return [];
+  });
+  const toggleSectionOverride = (sectionId) => {
+    setOverriddenSections(prev => {
+      const next = prev.includes(sectionId) ? prev.filter(x => x !== sectionId) : [...prev, sectionId];
+      localStorage.setItem(`monflux-toc-override-${id}`, JSON.stringify(next));
+      return next;
+    });
+  };
   const [dragSrcIdx, setDragSrcIdx] = useState(null);
   // B4 — Vente
   const scrollToSection = (id) => {
@@ -5417,12 +5436,13 @@ Règles :
   };
 
   const ProjectTOC = () => {
-    // Split active vs inactive sections
-    const availableSections  = tocSections.filter(s => !unavailableReason(s.id, project.status, activePipeline, configModules));
-    const unavailableSections = tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules));
+    // Split active vs inactive sections (overridden = forced visible)
+    const availableSections  = tocSections.filter(s => !unavailableReason(s.id, project.status, activePipeline, configModules) || overriddenSections.includes(s.id));
+    const unavailableSections = tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules) && !overriddenSections.includes(s.id));
 
     const renderRow = (s, idx, isUnavailable) => {
       const isHidden = hiddenSections.includes(s.id);
+      const isOverridden = overriddenSections.includes(s.id);
       return (
         <div
           key={s.id}
@@ -5430,32 +5450,38 @@ Règles :
           onDragStart={e => !isUnavailable && onTocDragStart(e, idx)}
           onDragOver={e => !isUnavailable && onTocDragOver(e, idx)}
           onDrop={onTocDrop}
-          style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isUnavailable ? 0.5 : 1 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isUnavailable ? 0.45 : 1 }}
           title={isUnavailable ? unavailableReason(s.id, project.status, activePipeline, configModules) : undefined}
         >
-          <span style={{ cursor: isUnavailable ? 'default' : 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}>
+          <span style={{ cursor: isUnavailable ? 'pointer' : 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}
+            onClick={isUnavailable ? () => toggleSectionOverride(s.id) : undefined}
+            title={isUnavailable ? 'Cliquer pour afficher la section' : undefined}
+          >
             {isUnavailable ? <EyeOff size={11} style={{ color: '#9CA3AF' }} /> : <GripVertical size={12} />}
           </span>
           <button
             type="button"
             className={`project-toc-item ${activeSection === s.id && !isHidden && !isUnavailable ? 'active' : ''}`}
-            style={{ flex: 1, textDecoration: isUnavailable ? 'none' : undefined }}
-            onClick={() => !isHidden && !isUnavailable && scrollToSection(s.id)}
-            disabled={isUnavailable}
+            style={{ flex: 1, textDecoration: 'none', color: isUnavailable ? '#9CA3AF' : undefined }}
+            onClick={() => {
+              if (isUnavailable) toggleSectionOverride(s.id);
+              else if (!isHidden) scrollToSection(s.id);
+            }}
           >
             <span className="project-toc-icon" style={{ opacity: isUnavailable ? 0.5 : 1 }}>{s.icon}</span>
             <span className="project-toc-label" style={{ color: isUnavailable ? '#9CA3AF' : undefined }}>{s.label}</span>
             {s.badge && !isUnavailable && <span className="project-toc-badge">{s.badge}</span>}
           </button>
-          {!isUnavailable && (
+          {/* Eye toggle : visible sections can be hidden ; overridden sections can be re-hidden */}
+          {(!isUnavailable || isOverridden) && (
             <button
               type="button"
-              title={isHidden ? 'Afficher la section' : 'Masquer la section'}
-              onClick={() => toggleSectionVisibility(s.id)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
+              title={isHidden || isOverridden ? 'Afficher la section' : 'Masquer la section'}
+              onClick={() => isOverridden ? toggleSectionOverride(s.id) : toggleSectionVisibility(s.id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: (isHidden || isOverridden) ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: (isHidden || isOverridden) ? 1 : 0, transition: 'opacity .15s' }}
               className="toc-eye-btn"
             >
-              {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              {(isHidden || isOverridden) ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
           )}
         </div>
@@ -5492,7 +5518,7 @@ Règles :
       <style>{
         tocSections.map((s, idx) => `#${s.id}{order:${idx}}`).join('') +
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
-        (project ? tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules)).map(s => `#${s.id}{display:none!important}`).join('') : '') +
+        (project ? tocSections.filter(s => !!unavailableReason(s.id, project.status, activePipeline, configModules) && !overriddenSections.includes(s.id)).map(s => `#${s.id}{display:none!important}`).join('') : '') +
         `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
       }</style>
       {/* ── Project Topbar — 2 lignes ── */}
@@ -9814,7 +9840,65 @@ Règles :
               <button type="button" onClick={() => setShowPipelineEditor(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}><X size={18}/></button>
             </div>
 
-            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>Glisse pour réordonner. Double-clic sur un label pour renommer.</p>
+            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12 }}>Glisse pour réordonner. Clique sur un label pour renommer.</p>
+
+            {/* Presets rapides */}
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 7 }}>Modèles prédéfinis</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { label: 'Entrepreneur GC', stages: [
+                    { key: 'brouillon', label: 'Brouillon', color: '#94a3b8' },
+                    { key: 'estimation', label: 'Estimation terrain', color: '#a855f7' },
+                    { key: 'prix_envoye', label: 'Prix envoyé', color: '#f59e0b' },
+                    { key: 'accepte', label: 'Accepté', color: '#3b82f6' },
+                    { key: 'planifie', label: 'Planifié', color: '#6366f1' },
+                    { key: 'en_chantier', label: 'En chantier', color: '#22c55e' },
+                    { key: 'a_facturer', label: 'À facturer', color: '#eab308' },
+                    { key: 'paye', label: 'Payé', color: '#10b981' },
+                    { key: 'clos', label: 'Clos', color: '#64748b', terminal: true },
+                  ]},
+                  { label: 'Proprio / Particulier', stages: [
+                    { key: 'brouillon', label: 'Brouillon', color: '#94a3b8' },
+                    { key: 'planification', label: 'Planification', color: '#a855f7' },
+                    { key: 'soumissions', label: 'En soumission', color: '#f59e0b' },
+                    { key: 'planifie', label: 'Planifié', color: '#6366f1' },
+                    { key: 'en_chantier', label: 'En chantier', color: '#22c55e' },
+                    { key: 'inspection', label: 'Inspection finale', color: '#eab308' },
+                    { key: 'termine', label: 'Terminé', color: '#10b981' },
+                    { key: 'clos', label: 'Clos', color: '#64748b', terminal: true },
+                  ]},
+                  { label: 'Sous-traitant', stages: [
+                    { key: 'brouillon', label: 'Brouillon', color: '#94a3b8' },
+                    { key: 'prix_envoye', label: 'Soumission envoyée', color: '#f59e0b' },
+                    { key: 'accepte', label: 'Contrat signé', color: '#3b82f6' },
+                    { key: 'planifie', label: 'Planifié', color: '#6366f1' },
+                    { key: 'en_chantier', label: 'En chantier', color: '#22c55e' },
+                    { key: 'a_facturer', label: 'À facturer', color: '#eab308' },
+                    { key: 'paye', label: 'Payé', color: '#10b981' },
+                    { key: 'clos', label: 'Clos', color: '#64748b', terminal: true },
+                  ]},
+                  { label: 'Promoteur immo', stages: [
+                    { key: 'brouillon', label: 'Brouillon', color: '#94a3b8' },
+                    { key: 'analyse', label: 'Analyse & faisabilité', color: '#a855f7' },
+                    { key: 'financement', label: 'Financement', color: '#f59e0b' },
+                    { key: 'permis', label: 'Permis & appro.', color: '#3b82f6' },
+                    { key: 'en_chantier', label: 'En construction', color: '#22c55e' },
+                    { key: 'ventes', label: 'Ventes / livraisons', color: '#eab308' },
+                    { key: 'clos', label: 'Clos', color: '#64748b', terminal: true },
+                  ]},
+                ].map(preset => (
+                  <button key={preset.label} type="button"
+                    onClick={() => setEditPipeline(preset.stages)}
+                    style={{ fontSize: 11, fontWeight: 700, background: '#F3F4F6', color: '#374151', border: '1.5px solid #E5E7EB', borderRadius: 7, padding: '5px 11px', cursor: 'pointer' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#E8794E'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {editPipeline.map((stage, idx) => (
