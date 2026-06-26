@@ -223,4 +223,9 @@ export const dev = {
   clear:   ()            => http.delete('/dev/switch'),
 };
 
+export const activityLog = {
+  list:   (projectId, limit = 80) => http.get('/activity-log', { params: { project_id: projectId, limit } }),
+  create: (data)                  => http.post('/activity-log', data),
+};
+
 export default http;

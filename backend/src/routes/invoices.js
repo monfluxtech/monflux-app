@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
+import { logActivity } from '../activityLog.js';
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
@@ -54,6 +55,9 @@ router.post('/', async (req, res) => {
       );
     }
     await client.query('COMMIT');
+    if (inv.project_id) {
+      logActivity({ companyId: req.company_id, projectId: inv.project_id, userId: req.user.userId, action: 'invoice_created', payload: { number: inv.number, total: inv.total } });
+    }
     res.status(201).json(inv);
   } catch (err) {
     await client.query('ROLLBACK');

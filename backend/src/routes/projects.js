@@ -2,6 +2,7 @@ import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db.js';
 import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware/auth.js';
+import { logActivity } from '../activityLog.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
@@ -165,6 +166,7 @@ router.post('/', async (req, res) => {
       }
     }
 
+    logActivity({ companyId: req.company_id, projectId: project.id, userId: req.user.userId, action: 'project_created', payload: { name: project.name } });
     res.status(201).json(project);
   } catch (err) {
     console.error(err);
@@ -202,6 +204,9 @@ router.patch('/:id', async (req, res) => {
       values
     );
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
+    if (updates.status) {
+      logActivity({ companyId: req.company_id, projectId: project.id, userId: req.user.userId, action: 'project_status_changed', payload: { new_status: updates.status } });
+    }
     res.json(project);
   } catch (err) {
     console.error(err);

@@ -32,6 +32,7 @@ import contractsRoutes    from './routes/contracts.js';
 import materialOrdersRoutes from './routes/material-orders.js';
 import siteMediaRoutes      from './routes/site-media.js';
 import scrapeRoutes          from './routes/scrape.js';
+import activityLogRoutes     from './routes/activity-log.js';
 
 dotenv.config();
 
@@ -91,6 +92,7 @@ app.use('/api/contracts',        contractsRoutes);
 app.use('/api/material-orders',  materialOrdersRoutes);
 app.use('/api/site-media',        siteMediaRoutes);
 app.use('/api/scrape',            scrapeRoutes);
+app.use('/api/activity-log',     activityLogRoutes);
 
 // ── DEV ONLY — plan switcher ────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {

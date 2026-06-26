@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
 import { isSectionAvailable, unavailableReason } from '../config/projectSections';
-import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi } from '../api';
+import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi, activityLog as activityLogApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
@@ -2925,6 +2925,7 @@ export default function ProjectDetail() {
   const [savingCO, setSavingCO] = useState(false);
   const [copiedCO, setCopiedCO] = useState(null);
   const [portalMessages, setPortalMessages] = useState([]);
+  const [dbActivityLog, setDbActivityLog] = useState([]);
   // Batch J — rentabilité, corps de métiers, dépenses, aperçu documents
   const [profit, setProfit] = useState(null);
   const [subs, setSubs] = useState([]);
@@ -3105,6 +3106,7 @@ export default function ProjectDetail() {
       setQuittance(quits?.[0] || null);
       setChangeOrdersList(cos || []);
       setPortalMessages(msgs || []);
+      activityLogApi.list(id).then(r => setDbActivityLog(r.data || [])).catch(() => {});
       setNotes(proj.notes || '');
       setProfit(prof);
       setSubs(subList || []);
@@ -9470,6 +9472,18 @@ Règles :
                   title: `Message portail — ${msg.author_name || 'Client'}`,
                   sub: msg.content,
                   date: msg.created_at,
+                }))),
+                ...(dbActivityLog.map(entry => ({
+                  type: 'log', icon: entry.actor_type === 'flo' ? '✦' : '👤', color: '#059669', bg: '#ECFDF5',
+                  title: entry.action === 'project_status_changed'
+                    ? `Statut → ${entry.payload?.new_status || ''}`
+                    : entry.action === 'invoice_created'
+                    ? `Facture créée${entry.payload?.number ? ` #${entry.payload.number}` : ''}`
+                    : entry.action === 'project_created'
+                    ? 'Projet créé'
+                    : entry.action,
+                  sub: entry.user_name ? `par ${entry.user_name}` : (entry.actor_type === 'flo' ? 'par Flo' : ''),
+                  date: entry.created_at,
                 }))),
               ].sort((a, b) => new Date(b.date) - new Date(a.date));
 

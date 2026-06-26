@@ -431,6 +431,16 @@ async function applyMigrations() {
   // ── Devis — visibilité ligne sur le PDF (2026-06-25) ─────────────────────
   await run('quote_items: show_on_quote',
     `ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS show_on_quote BOOLEAN DEFAULT TRUE`);
+
+  // ── T8 — Fil du chantier : enrichir activity_log (2026-06-26) ────────────
+  await run('activity_log: project_id',
+    `ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE CASCADE`);
+  await run('activity_log: actor_type',
+    `ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS actor_type VARCHAR(10) DEFAULT 'user' CHECK (actor_type IN ('user','flo'))`);
+  await run('activity_log: payload',
+    `ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'::jsonb`);
+  await run('activity_log: idx project_id',
+    `CREATE INDEX IF NOT EXISTS activity_log_project_idx ON activity_log(project_id) WHERE project_id IS NOT NULL`);
 }
 
 export async function initializeDatabase() {
