@@ -56,13 +56,16 @@ router.get('/:id', async (req, res) => {
       `SELECT p.*,
               COALESCE(c.name,  p.client_name)  AS client_name,
               COALESCE(c.email, p.client_email) AS client_email,
-              COALESCE(c.phone, p.client_phone) AS client_phone
+              c.phone AS contact_phone
        FROM projects p
        LEFT JOIN contacts c ON c.id = p.client_id
        WHERE p.id = $1 AND p.company_id = $2`,
       [req.params.id, req.company_id]
     );
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
+    // Merge contact_phone with project's own client_phone (contact wins if linked)
+    project.client_phone = project.contact_phone || project.client_phone || null;
+    delete project.contact_phone;
 
     const [{ rows: phases }, { rows: milestones }, { rows: members }, { rows: docs }, { rows: trades }, { rows: expenses }, { rows: cfgRows }] = await Promise.all([
       query(`SELECT pp.*,

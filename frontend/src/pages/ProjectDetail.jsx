@@ -3137,7 +3137,10 @@ export default function ProjectDetail() {
           setProject(p => ({ ...p, field_assessment: nextFa }));
         } catch {}
       }
-    } catch {} finally { setLoading(false); }
+    } catch (err) {
+      console.error('load project error:', err);
+      setProject('error:' + (err?.response?.data?.error || err?.message || 'Erreur réseau'));
+    } finally { setLoading(false); }
   };
 
   const refreshProfit = async () => {
@@ -4939,7 +4942,27 @@ Règles :
   const SEV = { low: { c: 'badge-green', l: 'Faible' }, medium: { c: 'badge-yellow', l: 'Moyen' }, high: { c: 'badge-red', l: 'Élevé' } };
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
-  if (!project) return <Layout><div className="p-8 text-red-500">Projet non trouvé</div></Layout>;
+  if (!project) return (
+    <Layout>
+      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+        <Loader2 size={24} className="animate-spin text-gray-300"/>
+        <p className="text-sm text-gray-400">Chargement…</p>
+      </div>
+    </Layout>
+  );
+  if (typeof project === 'string' && project.startsWith('error:')) {
+    const msg = project.slice(6);
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+          <p className="text-sm font-semibold text-red-500">{msg === 'Projet non trouvé' ? 'Projet introuvable' : 'Erreur de chargement'}</p>
+          <p className="text-xs text-gray-400">{msg}</p>
+          <button className="btn-primary text-xs mt-2" onClick={() => { setProject(null); load(); }}>Réessayer</button>
+          <button className="btn-ghost text-xs" onClick={() => navigate('/projets')}>← Retour aux projets</button>
+        </div>
+      </Layout>
+    );
+  }
 
   const pct = project.progress_pct || 0;
   const activeTs = timesheets.filter(t=>!t.clock_out);
