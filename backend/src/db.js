@@ -172,6 +172,11 @@ async function applyMigrations() {
     )`);
   await run('project_expenses index',
     `CREATE INDEX IF NOT EXISTS project_expenses_project_idx ON project_expenses(project_id)`);
+  // Migration: add po_number + supplier_invoice_number if missing
+  await run('project_expenses po_number col',
+    `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS po_number TEXT`);
+  await run('project_expenses supplier_inv_number col',
+    `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS supplier_invoice_number TEXT`);
 
   // ── Member invites — pending email invitations (2026-06) ────────────────────
   await run('member_invites create',

@@ -29,12 +29,12 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
   { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
   { id: 's-soumission', icon: '📄', label: 'Devis & Contrat' },
-  { id: 's-media', icon: '📷', label: 'Photos & médias' },
   { id: 's-punch', icon: '⏱️', label: 'Punch et dépenses' },
   { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
   { id: 's-invoices', icon: '🧾', label: 'Factures client' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
+  { id: 's-media', icon: '📷', label: 'Photos & médias' },
 ];
 
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
@@ -2901,7 +2901,7 @@ export default function ProjectDetail() {
   const [showTradeForm, setShowTradeForm] = useState(false);
   const [tradeForm, setTradeForm] = useState({ trade: '', estimated_cost: '', chosen_subcontractor_id: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '' });
+  const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '' });
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -4391,9 +4391,11 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         description: expenseForm.description || null,
         amount: Number(expenseForm.amount),
         expense_date: expenseForm.expense_date || null,
+        po_number: expenseForm.po_number || null,
+        supplier_invoice_number: expenseForm.supplier_invoice_number || null,
       });
       setProject(p => ({ ...p, expenses: [data, ...(p.expenses || [])] }));
-      setExpenseForm({ type: 'supplier_invoice', description: '', amount: '', expense_date: '' });
+      setExpenseForm({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '' });
       setShowExpenseForm(false);
       refreshProfit();
     } catch {}
@@ -5377,28 +5379,43 @@ Règles :
         hiddenSections.map(sid => `#${sid}{display:none!important}`).join('') +
         `.toc-eye-btn{opacity:0!important}.project-toc-list>div:hover .toc-eye-btn{opacity:1!important}`
       }</style>
-      {/* ── Project Topbar ── */}
+      {/* ── Project Topbar — 2 lignes ── */}
       <div style={{
-        position: 'sticky', top: 0, height: 54,
-        background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid #E8EAED', display: 'flex', alignItems: 'center',
-        gap: 8, padding: '0 20px', zIndex: 15,
+        position: 'sticky', top: 0,
+        background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid #E8EAED', zIndex: 15,
+        display: 'flex', flexDirection: 'column',
       }}>
-        {/* Breadcrumb */}
-        <button
-          onClick={() => navigate('/projets')}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
-        >
-          Projets
-        </button>
-        <span style={{ color: '#C8CACD', fontSize: 13, flexShrink: 0 }}>›</span>
-        <b style={{ fontSize: 13, color: '#15171C', fontWeight: 700, flexShrink: 0, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {project.field_assessment?.work_type || WORK_TYPE_LABELS[project.type] || project.name}
-          {project.address ? ` · ${project.address}` : ''}
-        </b>
-
-        {/* ── Onglets centrés ── */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 2 }}>
+        {/* Ligne 1 : breadcrumb + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 20px 0', minHeight: 32 }}>
+          <button
+            onClick={() => navigate('/projets')}
+            style={{ fontSize: 11.5, color: '#7C8089', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0, padding: 0 }}
+          >
+            Projets
+          </button>
+          <span style={{ color: '#C8CACD', fontSize: 12, flexShrink: 0 }}>›</span>
+          <span style={{ fontSize: 11.5, color: '#15171C', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+            {project.field_assessment?.work_type || WORK_TYPE_LABELS[project.type] || project.name}
+            {project.address ? ` · ${project.address}` : ''}
+          </span>
+          {/* Fermer popover portail au clic à l'extérieur */}
+          {portalCopyTarget && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
+          )}
+          <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
+            📥 Exporter PDF
+          </button>
+          <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
+            if (project.portal_token) {
+              navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
+            }
+          }}>
+            Envoyer →
+          </button>
+        </div>
+        {/* Ligne 2 : onglets */}
+        <div style={{ display: 'flex', gap: 2, padding: '0 20px' }}>
           {[
             { key: 'detail', label: 'Fiche projet' },
             { key: 'memoire', label: 'Mémoire' },
@@ -5407,8 +5424,8 @@ Règles :
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               fontSize: 12.5, fontWeight: activeTab === tab.key ? 700 : 500,
               color: activeTab === tab.key ? BRAND : '#7C8089',
-              background: activeTab === tab.key ? `${BRAND}12` : 'transparent',
-              border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+              background: 'transparent',
+              border: 'none', padding: '6px 12px', cursor: 'pointer',
               borderBottom: activeTab === tab.key ? `2px solid ${BRAND}` : '2px solid transparent',
               transition: 'all .15s',
             }}>
@@ -5416,22 +5433,6 @@ Règles :
             </button>
           ))}
         </div>
-
-        {/* Fermer popover portail au clic à l'extérieur */}
-        {portalCopyTarget && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
-        )}
-
-        <button className="btn-secondary text-xs" onClick={() => window.print()} style={{ flexShrink: 0 }}>
-          📥 Exporter PDF
-        </button>
-        <button className="btn-primary text-xs" style={{ flexShrink: 0 }} onClick={() => {
-          if (project.portal_token) {
-            navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
-          }
-        }}>
-          Envoyer →
-        </button>
       </div>
 
       {/* ── Zone sticky notes — couvre hero + toutes sections ── */}
@@ -8459,32 +8460,58 @@ Règles :
           </div>
 
           {showExpenseForm && (
-            <form onSubmit={addExpense} className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
-              <div><label className="label">Type</label>
-                <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
-                  {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+            <form onSubmit={addExpense} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div><label className="label">Type</label>
+                  <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
+                    {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
+                <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
+                <div><label className="label">Description</label><input className="input" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Fournisseur / détail" /></div>
               </div>
-              <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
-              <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
-              <div className="flex gap-2"><input className="input flex-1" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Description" /><button type="submit" className="btn-primary text-xs px-3">OK</button></div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
+                <div><label className="label">N° bon de commande</label><input className="input" value={expenseForm.po_number} onChange={e => setExpenseForm(f => ({ ...f, po_number: e.target.value }))} placeholder="BC-001" /></div>
+                <div><label className="label">N° facture fournisseur</label><input className="input" value={expenseForm.supplier_invoice_number} onChange={e => setExpenseForm(f => ({ ...f, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" /></div>
+                <div className="flex gap-2 items-end">
+                  <button type="button" className="btn-secondary text-xs flex-1" onClick={() => setShowExpenseForm(false)}>Annuler</button>
+                  <button type="submit" className="btn-primary text-xs flex-1">Enregistrer</button>
+                </div>
+              </div>
             </form>
           )}
 
           {project.expenses?.length > 0 ? (
             <div className="space-y-1.5">
-              {project.expenses.map(x => (
-                <div key={x.id} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                  <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
-                  <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{x.description || x.subcontractor_name || '—'}</span>
-                  {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
-                  <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
-                  <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
-                </div>
-              ))}
+              {project.expenses.map(x => {
+                const noPO = x.type === 'supplier_invoice' && !x.po_number;
+                return (
+                  <div key={x.id} className="flex items-center gap-3 py-2 border-b border-purple-50 last:border-0">
+                    {noPO && (
+                      <span title="Aucun bon de commande associé" style={{ color: '#f59e0b', flexShrink: 0 }}><AlertTriangle size={13}/></span>
+                    )}
+                    <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700 truncate">{x.description || x.subcontractor_name || '—'}</p>
+                      <div className="flex gap-3 mt-0.5">
+                        {x.supplier_invoice_number && <span className="text-xs text-gray-400">Facture : {x.supplier_invoice_number}</span>}
+                        {x.po_number ? <span className="text-xs text-purple-600 font-medium">BC : {x.po_number}</span>
+                          : x.type === 'supplier_invoice' && <span className="text-xs text-amber-500">Sans bon de commande</span>}
+                      </div>
+                    </div>
+                    {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
+                    <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
+                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
+                  </div>
+                );
+              })}
+              <div className="flex justify-end pt-2 border-t border-purple-50">
+                <p className="text-sm font-bold text-gray-800">Total : {money(project.expenses.reduce((s, x) => s + Number(x.amount || 0), 0))}</p>
+              </div>
             </div>
           ) : !showExpenseForm && (
-            <p className="text-sm text-gray-400 text-center py-4">Aucune dépense. Ajoutez factures fournisseurs et dépenses pour calculer la rentabilité réelle.</p>
+            <p className="text-sm text-gray-400 text-center py-4">Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.</p>
           )}
         </div>
 
@@ -8672,9 +8699,13 @@ Règles :
                     <span className={`badge ${SB[inv.status]||'badge-gray'} text-xs`}>{SL[inv.status]||inv.status}</span>
                     <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{Number(inv.total||0).toLocaleString('fr-CA')}$</p>
                     <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
+                    <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Télécharger PDF" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}><Download size={13}/></a>
                   </div>
                 );
               })}
+              {projectInvoices.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">Aucune facture pour ce projet. <button className="text-brand underline" onClick={() => navigate('/factures')}>Créer une facture</button></p>
+              )}
             </div>
           </div>
 
@@ -8756,6 +8787,14 @@ Règles :
                     className="btn-ghost text-xs py-1.5"
                   >
                     <ExternalLink size={12}/> Prévisualiser
+                  </a>
+                  <a
+                    href={pdf.quittanceUrl(quittance.id)}
+                    download={`quittance-${quittance.id.slice(0,8)}.pdf`}
+                    className="btn-ghost text-xs py-1.5"
+                    title="Télécharger PDF"
+                  >
+                    <Download size={12}/> PDF
                   </a>
                   <a
                     href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ${quittance.client_name}, voici votre quittance de fin de travaux à signer : ${FRONTEND_URL}/quittance/${quittance.public_token}`)}`}

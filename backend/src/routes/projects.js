@@ -529,15 +529,16 @@ router.delete('/:id/trades/:tradeId', async (req, res) => {
 
 // ── Dépenses réelles (factures fournisseurs, matériaux…) ──────────────────────
 router.post('/:id/expenses', async (req, res) => {
-  const { type, description, amount, subcontractor_id, expense_date } = req.body;
+  const { type, description, amount, subcontractor_id, expense_date, po_number, supplier_invoice_number } = req.body;
   try {
     if (!(await assertProjectInCompany(req.params.id, req.company_id)))
       return res.status(404).json({ error: 'Projet introuvable' });
     const { rows: [row] } = await query(
-      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, subcontractor_id, expense_date, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, subcontractor_id, expense_date, created_by, po_number, supplier_invoice_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [req.company_id, req.params.id, type || 'supplier_invoice', description || null,
-       Number(amount) || 0, subcontractor_id || null, expense_date || null, req.user.userId]
+       Number(amount) || 0, subcontractor_id || null, expense_date || null, req.user.userId,
+       po_number || null, supplier_invoice_number || null]
     );
     res.status(201).json(row);
   } catch (err) {

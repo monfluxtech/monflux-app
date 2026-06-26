@@ -197,6 +197,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
           </div>
         </div>
 
+        <div className="app-sidebar-scroll">
         <nav className="app-sidebar-global">
           {coreNav.map((m) => {
             const Icon = ICONS[m.icon] || FolderKanban;
@@ -228,7 +229,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
           )}
         </nav>
 
-        {toc ? toc : <div className="flex-1" />}
+        {toc ? toc : <div style={{ flex: 1 }} />}
 
         <div className="app-sidebar-bottom">
           {/* Box test rôle/forfait */}
@@ -372,6 +373,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             )}
           </div>
         </div>
+        </div>{/* fin app-sidebar-scroll */}
       </aside>
 
       <div className="flex min-w-0 min-h-screen flex-col overflow-hidden">

@@ -163,8 +163,9 @@ export const documents = {
 
 const _pdfToken = () => (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
 export const pdf = {
-  quoteUrl:   (id) => `${BASE}/pdf/quote/${id}?token=${_pdfToken()}`,
-  invoiceUrl: (id) => `${BASE}/pdf/invoice/${id}?token=${_pdfToken()}`,
+  quoteUrl:      (id) => `${BASE}/pdf/quote/${id}?token=${_pdfToken()}`,
+  invoiceUrl:    (id) => `${BASE}/pdf/invoice/${id}?token=${_pdfToken()}`,
+  quittanceUrl:  (id) => `${BASE}/pdf/quittance/${id}?token=${_pdfToken()}`,
 };
 
 export const email = {

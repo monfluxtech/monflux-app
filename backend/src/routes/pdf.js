@@ -213,4 +213,93 @@ router.get('/invoice/:id', async (req, res) => {
   }
 });
 
+// GET /api/pdf/quittance/:id
+router.get('/quittance/:id', async (req, res) => {
+  const { rows: [q] } = await query(
+    `SELECT qu.*, co.name AS co_name, co.phone AS co_phone, co.email AS co_email, co.address AS co_address,
+            p.name AS project_name, p.address AS project_address
+     FROM quittances qu
+     LEFT JOIN companies co ON co.id = qu.company_id
+     LEFT JOIN projects p ON p.id = qu.project_id
+     WHERE qu.id = $1 AND qu.company_id = $2`,
+    [req.params.id, req.company_id]
+  );
+  if (!q) return res.status(404).json({ error: 'Quittance non trouvée' });
+  try {
+    const buf = await pdfToBuffer((doc) => {
+      // Header bar
+      doc.rect(0, 0, 595, 6).fill(BRAND);
+      doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND).text('MONFLUX', 50, 25);
+      doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(q.co_name || '', 50, 48);
+      if (q.co_phone) doc.text(q.co_phone, 50, 58);
+      if (q.co_email) doc.text(q.co_email, 50, 68);
+      doc.fontSize(22).font('Helvetica-Bold').fillColor(DARK).text('QUITTANCE', 300, 25, { align: 'right', width: 245 });
+      doc.fontSize(10).font('Helvetica').fillColor(GRAY)
+        .text(`Date : ${new Date(q.created_at).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 300, 52, { align: 'right', width: 245 });
+      if (q.signed_at) {
+        doc.text(`Signée le : ${new Date(q.signed_at).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 300, 65, { align: 'right', width: 245 });
+      }
+      drawLine(doc, 88);
+
+      let y = 108;
+      // Client block
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(GRAY).text('CLIENT', 50, y);
+      doc.fontSize(11).font('Helvetica-Bold').fillColor(DARK).text(q.client_name || 'Client', 50, y + 12);
+      if (q.client_email) doc.fontSize(9).font('Helvetica').fillColor(GRAY).text(q.client_email, 50, y + 26);
+      y += 55;
+
+      // Project block
+      if (q.project_name || q.project_address) {
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(GRAY).text('PROJET', 300, y - 55);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor(DARK).text(q.project_name || '', 300, y - 43);
+        if (q.project_address) doc.fontSize(9).font('Helvetica').fillColor(GRAY).text(q.project_address, 300, y - 29);
+      }
+
+      drawLine(doc, y);
+      y += 18;
+
+      // Main declaration
+      doc.fontSize(13).font('Helvetica-Bold').fillColor(DARK)
+        .text('DÉCLARATION DE FIN DE TRAVAUX ET QUITTANCE', 50, y, { align: 'center', width: 495 });
+      y += 28;
+
+      const amount = q.amount_paid ? `${Number(q.amount_paid).toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $` : null;
+      const bodyText = `Je soussigné(e), ${q.client_name || 'le client'}, déclare avoir reçu les travaux effectués${q.project_description ? ` (${q.project_description})` : ''}${amount ? ` pour un montant total de ${amount}` : ''}, et atteste que ces travaux ont été réalisés à ma satisfaction complète.\n\nPar la présente quittance, je libère l'entrepreneur de toute réclamation relative aux travaux mentionnés ci-dessus.`;
+      doc.fontSize(10).font('Helvetica').fillColor(DARK).text(bodyText, 50, y, { width: 495, lineGap: 4 });
+      y = doc.y + 28;
+
+      if (q.notes) {
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(GRAY).text('NOTES', 50, y);
+        y += 12;
+        doc.fontSize(9).font('Helvetica').fillColor(DARK).text(q.notes, 50, y, { width: 495 });
+        y = doc.y + 20;
+      }
+
+      // Status badge
+      const statusColor = q.status === 'signed' ? '#16a34a' : '#f59e0b';
+      const statusLabel = q.status === 'signed' ? '✓ SIGNÉE' : q.status === 'sent' ? 'ENVOYÉE' : 'BROUILLON';
+      doc.roundedRect(50, y, 120, 26, 6).fill(q.status === 'signed' ? '#dcfce7' : '#fef3c7');
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(statusColor).text(statusLabel, 50, y + 8, { width: 120, align: 'center' });
+      y += 50;
+
+      // Signature block
+      if (q.signed_at) {
+        drawLine(doc, y);
+        y += 12;
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(GRAY).text('SIGNATURE DU CLIENT', 50, y);
+        doc.fontSize(9).font('Helvetica').fillColor(DARK).text(q.client_name || '', 50, y + 14);
+        doc.text(`Signé électroniquement le ${new Date(q.signed_at).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 50, y + 26);
+      }
+
+      pdfFooter(doc);
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="quittance-${q.id.slice(0,8)}.pdf"`);
+    res.send(buf);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur génération PDF' });
+  }
+});
+
 export default router;
