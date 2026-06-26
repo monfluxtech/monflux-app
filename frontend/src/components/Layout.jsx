@@ -159,7 +159,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             {notifOpen && (
               <div className="absolute right-0 top-9 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-72 overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                  <p className="text-sm font-semibold text-gray-900">{t('sidebar_notifications', 'Notifications')}</p>
                   {notifs.length > 0 && (
                     <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">{notifs.length}</span>
                   )}
@@ -167,7 +167,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                 {notifs.length === 0 ? (
                   <div className="px-4 py-6 text-center">
                     <Bell size={20} className="text-gray-200 mx-auto mb-2" />
-                    <p className="text-xs text-gray-400">Aucune alerte en ce moment</p>
+                    <p className="text-xs text-gray-400">{t('sidebar_no_notifications', 'Aucune alerte en ce moment')}</p>
                   </div>
                 ) : (
                   <div className="max-h-64 overflow-y-auto py-1">
@@ -212,7 +212,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
 
           {secondaryNav.length > 0 && (
             <>
-              <div className="app-sidebar-section-label">Modules</div>
+              <div className="app-sidebar-section-label">{t('nav_modules_label', 'Modules')}</div>
               {secondaryNav.map((m) => {
                 const Icon = ICONS[m.icon] || FolderKanban;
                 return (
@@ -262,24 +262,21 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             <div className="app-sidebar-status">
               <span className="app-sidebar-status-dot warn" />
               <div className="app-sidebar-status-text">
-                Profil à compléter
+                {t('sidebar_profile_incomplete', 'Profil à compléter')}
                 <br />
-                Active MONFLUX selon ton métier
+                {t('sidebar_profile_incomplete_sub', 'Active MONFLUX selon ton métier')}
               </div>
               <button
                 type="button"
                 className="text-[10px] font-bold text-[#E8794E] px-1.5 py-1 rounded"
                 onClick={() => navigate('/onboarding')}
               >
-                Modifier
+                {t('sidebar_complete_btn', 'Modifier')}
               </button>
             </div>
           )}
 
           <div className="app-sidebar-mini-actions">
-            <button type="button" className="mini" title="Paramètres" onClick={() => navigate('/parametres')}>
-              <Settings size={14} />
-            </button>
             <button
               type="button"
               className="mini"
@@ -291,8 +288,8 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             <button
               type="button"
               className="mini"
-              title="Visite guidée — relancer la visite de bienvenue"
-              onClick={() => navigate('/onboarding?tour=1')}
+              title={lang === 'fr' ? 'Visite guidée' : 'Guided tour'}
+              onClick={() => window.dispatchEvent(new Event('mf:start-tour'))}
               style={{ color: '#E8794E' }}
             >
               <Sparkles size={14} />
@@ -330,7 +327,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                     setUserMenuOpen(false);
                   }}
                 >
-                  <User size={14} className="text-gray-400" /> Mon profil
+                  <User size={14} className="text-gray-400" /> {t('sidebar_user_profile', 'Mon profil')}
                 </button>
                 <button
                   type="button"
@@ -340,7 +337,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                     setUserMenuOpen(false);
                   }}
                 >
-                  <Settings size={14} className="text-gray-400" /> Paramètres
+                  <Settings size={14} className="text-gray-400" /> {t('sidebar_settings', 'Paramètres')}
                 </button>
                 <div className="my-1 border-t border-gray-100" />
                 {onboardingDone === false && (
@@ -353,7 +350,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                     }}
                   >
                     <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
-                    Compléter l&apos;onboarding
+                    {t('sidebar_complete_onboarding', "Compléter l'onboarding")}
                   </button>
                 )}
                 <button
@@ -361,7 +358,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
                   className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"
                   onClick={handleLogout}
                 >
-                  <LogOut size={14} /> Déconnexion
+                  <LogOut size={14} /> {t('sidebar_logout', 'Déconnexion')}
                 </button>
               </div>
             )}

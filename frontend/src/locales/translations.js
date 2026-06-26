@@ -2,6 +2,8 @@ export const translations = {
   fr: {
     // Navigation
     nav_ia: 'Assistant IA',
+    nav_dashboard: 'Tableau de bord',
+    nav_chat: 'Florence — Flo',
     nav_projets: 'Projets',
     nav_leads: 'Leads',
     nav_soumissions: 'Soumissions',
@@ -13,6 +15,17 @@ export const translations = {
     nav_contrats: 'Contrats',
     nav_commandes: 'Commandes',
     nav_factures_achat: "Factures d'achat",
+    // Sidebar labels
+    nav_modules_label: 'Modules',
+    sidebar_profile_incomplete: 'Profil à compléter',
+    sidebar_profile_incomplete_sub: 'Active MONFLUX selon ton métier',
+    sidebar_complete_btn: 'Modifier',
+    sidebar_user_profile: 'Mon profil',
+    sidebar_settings: 'Paramètres',
+    sidebar_complete_onboarding: "Compléter l'onboarding",
+    sidebar_logout: 'Déconnexion',
+    sidebar_notifications: 'Notifications',
+    sidebar_no_notifications: 'Aucune alerte en ce moment',
     // Actions communes
     create: 'Créer',
     save: 'Enregistrer',
@@ -112,6 +125,8 @@ export const translations = {
   en: {
     // Navigation
     nav_ia: 'AI Assistant',
+    nav_dashboard: 'Dashboard',
+    nav_chat: 'Florence — Flo',
     nav_projets: 'Projects',
     nav_leads: 'Leads',
     nav_soumissions: 'Quotes',
@@ -122,6 +137,17 @@ export const translations = {
     nav_punch: 'Timesheets',
     nav_contrats: 'Contracts',
     nav_commandes: 'Orders',
+    // Sidebar labels
+    nav_modules_label: 'Modules',
+    sidebar_profile_incomplete: 'Profile incomplete',
+    sidebar_profile_incomplete_sub: 'Configure MONFLUX for your trade',
+    sidebar_complete_btn: 'Edit',
+    sidebar_user_profile: 'My profile',
+    sidebar_settings: 'Settings',
+    sidebar_complete_onboarding: 'Complete onboarding',
+    sidebar_logout: 'Log out',
+    sidebar_notifications: 'Notifications',
+    sidebar_no_notifications: 'No alerts right now',
     nav_factures_achat: 'Purchase Invoices',
     // Actions
     create: 'Create',
