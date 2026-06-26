@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useT } from '../hooks/useT';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store';
+import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
+import { isSectionAvailable, unavailableReason } from '../config/projectSections';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin } from 'lucide-react';
 
@@ -37,6 +38,30 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Photos & médias' },
 ];
+
+// Stub affiché dans le corps quand une section est désactivée (par état ou par module).
+function SectionStub({ sectionId, reason, onActivate }) {
+  const [open, setOpen] = useState(false);
+  const isByStatus = reason?.startsWith('Disponible après');
+  return (
+    <div style={{ background: '#F9FAFB', border: '1px dashed #D1D5DB', borderRadius: 12, padding: '18px 28px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
+        <span style={{ fontSize: 18, opacity: 0.4 }}>🔒</span>
+        <span style={{ color: '#6B7280', fontSize: 13, fontWeight: 500, flex: 1 }}>{reason}</span>
+        {!isByStatus && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onActivate && onActivate(); }}
+            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#E8794E', border: 'none', borderRadius: 6, padding: '3px 12px', cursor: 'pointer' }}
+          >
+            Réactiver
+          </button>
+        )}
+        <span style={{ color: '#9CA3AF', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
+      </div>
+    </div>
+  );
+}
 
 function InlineField({ value, onSave, placeholder = '—', multiline = false, style = {}, displayStyle = {} }) {
   const [editing, setEditing] = useState(false);
@@ -2839,6 +2864,7 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuthStore();
+  const { pipeline: configPipeline, modules: configModules } = useConfigStore();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
@@ -3004,6 +3030,9 @@ export default function ProjectDetail() {
   const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
   const [statusPopup, setStatusPopup] = useState(null);
   const [changingStatus, setChangingStatus] = useState(false);
+  const [showPipelineEditor, setShowPipelineEditor] = useState(false);
+  const [editPipeline, setEditPipeline] = useState(null); // copie locale pendant l'édition
+  const [pipeEditDragSrc, setPipeEditDragSrc] = useState(null);
   const [estimTab, setEstimTab] = useState('voieB');
   const [showClientReply, setShowClientReply] = useState(false);
   const [clientReplyText, setClientReplyText] = useState('');
@@ -5358,7 +5387,7 @@ Règles :
     { key: 'a_facturer', label: 'À facturer' }, { key: 'paye', label: 'Payé' },
     { key: 'clos', label: 'Clos' },
   ];
-  const pipeActiveIdx = PIPE.findIndex(s => s.key === project.status);
+  const pipeActiveIdx = (configPipeline || PIPE).findIndex(s => s.key === project.status);
 
   const toggleSectionVisibility = (sectionId) => {
     setHiddenSections(prev => {
@@ -5366,6 +5395,16 @@ Règles :
       localStorage.setItem(`monflux-toc-hidden-${id}`, JSON.stringify(next));
       return next;
     });
+  };
+
+  const activePipeline = configPipeline || PIPE;
+
+  // Retourne le composant SectionStub si la section est désactivée, sinon null.
+  const sectionGuard = (sectionId) => {
+    if (!project) return null;
+    const reason = unavailableReason(sectionId, project.status, activePipeline, configModules);
+    if (!reason) return null;
+    return <SectionStub key={`stub-${sectionId}`} sectionId={sectionId} reason={reason} onActivate={() => navigate('/parametres?tab=flow')} />;
   };
 
   const onTocDragStart = (e, idx) => {
@@ -5397,38 +5436,45 @@ Règles :
       <div className="project-toc-list">
         {tocSections.map((s, idx) => {
           const isHidden = hiddenSections.includes(s.id);
+          const unavail = unavailableReason(s.id, project.status, activePipeline, configModules);
+          const isUnavailable = !!unavail;
+          const rowOpacity = isHidden || isUnavailable ? 0.45 : 1;
           return (
             <div
               key={s.id}
-              draggable
-              onDragStart={e => onTocDragStart(e, idx)}
-              onDragOver={e => onTocDragOver(e, idx)}
+              draggable={!isUnavailable}
+              onDragStart={e => !isUnavailable && onTocDragStart(e, idx)}
+              onDragOver={e => !isUnavailable && onTocDragOver(e, idx)}
               onDrop={onTocDrop}
-              style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: isHidden ? 0.4 : 1 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 0, opacity: rowOpacity }}
+              title={isUnavailable ? unavail : undefined}
             >
-              <span style={{ cursor: 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}
-                title="Glisser pour réordonner">
+              <span style={{ cursor: isUnavailable ? 'default' : 'grab', color: '#4B5563', padding: '6px 4px', display: 'flex', alignItems: 'center', flexShrink: 0, opacity: 0.4 }}>
                 <GripVertical size={12} />
               </span>
               <button
                 type="button"
-                className={`project-toc-item ${activeSection === s.id && !isHidden ? 'active' : ''}`}
-                style={{ flex: 1, opacity: isHidden ? 0.5 : 1 }}
-                onClick={() => !isHidden && scrollToSection(s.id)}
+                className={`project-toc-item ${activeSection === s.id && !isHidden && !isUnavailable ? 'active' : ''}`}
+                style={{ flex: 1 }}
+                onClick={() => !isHidden && !isUnavailable && scrollToSection(s.id)}
+                disabled={isUnavailable}
               >
                 <span className="project-toc-icon">{s.icon}</span>
                 <span className="project-toc-label">{s.label}</span>
                 {s.badge && <span className="project-toc-badge">{s.badge}</span>}
+                {isUnavailable && <span style={{ fontSize: 9, background: '#FEE2E2', color: '#991B1B', borderRadius: 4, padding: '1px 5px', marginLeft: 4 }}>inactif</span>}
               </button>
-              <button
-                type="button"
-                title={isHidden ? 'Afficher la section' : 'Masquer la section'}
-                onClick={() => toggleSectionVisibility(s.id)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
-                className="toc-eye-btn"
-              >
-                {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
-              </button>
+              {!isUnavailable && (
+                <button
+                  type="button"
+                  title={isHidden ? 'Afficher la section' : 'Masquer la section'}
+                  onClick={() => toggleSectionVisibility(s.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 4px', color: isHidden ? '#E8794E' : '#6B7280', flexShrink: 0, opacity: isHidden ? 1 : 0, transition: 'opacity .15s' }}
+                  className="toc-eye-btn"
+                >
+                  {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+              )}
             </div>
           );
         })}
@@ -5807,9 +5853,9 @@ Règles :
                 <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid rgba(0,0,0,.08)' }}>
                   <div style={{ position: 'relative', padding: '8px 0 0' }}>
                     <div style={{ position: 'absolute', top: 28, left: 0, right: 0, height: 3, background: 'rgba(0,0,0,.1)', zIndex: 0 }} />
-                    <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (PIPE.length - 1)) * 100}%` : '0%' }} />
+                    <div style={{ position: 'absolute', top: 28, left: 0, height: 3, background: BRAND, zIndex: 1, transition: '.4s', width: pipeActiveIdx >= 0 ? `${(pipeActiveIdx / (activePipeline.length - 1)) * 100}%` : '0%' }} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
-                      {PIPE.map((s, i) => {
+                      {activePipeline.map((s, i) => {
                         const isDone = i < pipeActiveIdx;
                         const isActive = i === pipeActiveIdx;
                         const dateStr = fmtDate(statusDates[s.key]);
@@ -5838,6 +5884,15 @@ Règles :
                         );
                       })}
                     </div>
+                  </div>
+                  <div style={{ textAlign: 'right', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setEditPipeline(activePipeline.map(s => ({ ...s }))); setShowPipelineEditor(true); }}
+                      style={{ fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Modifier le pipeline
+                    </button>
                   </div>
                 </div>
               );
@@ -6285,6 +6340,7 @@ Règles :
 
           return (
             <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+              {sectionGuard('s-estimation')}
               {/* En-tête */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
@@ -7043,11 +7099,6 @@ Règles :
               <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
               <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
             </div>
-            <button onClick={() => { setShowFloPanel(v => !v); if (!showFloPanel && !tradeRecos) fetchTradeRecos(null); }}
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:`1.5px solid ${BRAND}`, background: showFloPanel ? `${BRAND}15` : '#fff', color:BRAND, fontSize:12, fontWeight:800, cursor:'pointer', flexShrink:0 }}>
-              <Sparkles size={13}/>
-              {loadingTradeRecos ? 'Analyse…' : showFloPanel ? 'Masquer Flo' : 'Flo recommande'}
-            </button>
           </div>
 
           {/* Bannière confirmation merge/reset */}
@@ -7777,6 +7828,7 @@ Règles :
 
         {/* ── Recherche de matériaux ── */}
         <div id="s-materiaux" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', background: '#F0F5FF' }}>
+          {sectionGuard('s-materiaux')}
           {(() => {
             const warnings = (() => { try { return JSON.parse(localStorage.getItem(`monflux-mat-warnings-${id}`) || '[]'); } catch { return []; } })();
             const displayed = matFilter === 'wishlist' ? matSearchResults.filter(it => matWishlist.includes(it.id)) : matSearchResults;
@@ -8557,6 +8609,7 @@ Règles :
 
         {/* ── Dépenses ── (violet) */}
         <div id="s-expenses" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          {sectionGuard('s-expenses')}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💸</div>
             <div style={{ flex: 1 }}>
@@ -8624,6 +8677,7 @@ Règles :
 
         {/* ── Feuilles de temps ── (mint) */}
         <div id="s-punch" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          {sectionGuard('s-punch')}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⏱️</div>
             <div style={{ flex: 1 }}>
@@ -8785,6 +8839,7 @@ Règles :
 
         {/* ── Factures client ── (mint) */}
         <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+          {sectionGuard('s-invoices')}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
             <div style={{ flex: 1 }}>
@@ -8944,17 +8999,11 @@ Règles :
             </div>
           )}
 
-          {/* ── Barre Flo ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 20, padding: '10px 16px', background: `${BRAND}08`, borderRadius: 12, border: `1px solid ${BRAND_BORDER}` }}>
-            <Sparkles size={14} color={BRAND}/>
-            <span style={{ fontSize: 12, fontWeight: 700, color: BRAND, flex: 1 }}>Flo</span>
-            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => { setFloContext(`Projet "${project.name}" — factures client. Analyse les ${projectInvoices.length} facture(s) : y a-t-il des montants en retard ? Que suggères-tu pour accélérer les paiements ?`); setShowCapture(true); }}>Analyser les factures</button>
-            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => setShowNewInvoice(true)}>Aide à facturer</button>
-          </div>
         </div>
 
         {/* ── Extras & avenants ── */}
         <div id="s-extras" style={{ background: '#FFF7ED', borderTop: '1px solid #FED7AA', padding: '36px 56px 44px' }}>
+          {sectionGuard('s-extras')}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #FED7AA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⚡</div>
             <div style={{ flex: 1 }}>
@@ -9018,12 +9067,6 @@ Règles :
             </div>
           )}
 
-          {/* ── Barre Flo ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 20, padding: '10px 16px', background: `${BRAND}08`, borderRadius: 12, border: `1px solid ${BRAND_BORDER}` }}>
-            <Sparkles size={14} color={BRAND}/>
-            <span style={{ fontSize: 12, fontWeight: 700, color: BRAND, flex: 1 }}>Flo</span>
-            <button style={{ fontSize: 11, fontWeight: 600, color: BRAND, background: BRAND_SOFT, border: `1px solid ${BRAND_BORDER}`, borderRadius: 8, padding: '4px 11px', cursor: 'pointer' }} onClick={() => { setFloContext(`Projet "${project.name}" — extras et avenants (${changeOrdersList.length} au total, ${money(changeOrdersList.reduce((s,co)=>s+Number(co.amount||0),0))} au total). Ces montants sont-ils raisonnables ? Comment bien documenter un extra pour éviter les litiges au Québec ?`); setShowCapture(true); }}>Analyser les extras</button>
-          </div>
         </div>
 
         {/* ── Quittance ── (mint) */}
@@ -9166,6 +9209,7 @@ Règles :
 
           return (
             <div id="s-denonciations" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+              {sectionGuard('s-denonciations')}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: '#FEF2F2', border: '1px solid #FECACA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0 }}>⚖️</div>
                 <div style={{ flex: 1 }}>
@@ -9719,6 +9763,77 @@ Règles :
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ── Éditeur pipeline (niveau compagnie) ── */}
+      {showPipelineEditor && editPipeline && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 65, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowPipelineEditor(false)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,.18)', maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: BRAND_SOFT, display: 'grid', placeItems: 'center', fontSize: 18 }}>🏗️</div>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, color: '#15171C', margin: 0 }}>Modifier le pipeline</h3>
+                <p style={{ fontSize: 12, color: '#E8794E', margin: 0, fontWeight: 600 }}>⚠️ S'applique à tous tes projets</p>
+              </div>
+              <button type="button" onClick={() => setShowPipelineEditor(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}><X size={18}/></button>
+            </div>
+
+            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>Glisse pour réordonner. Double-clic sur un label pour renommer.</p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {editPipeline.map((stage, idx) => (
+                <div key={stage.key}
+                  draggable
+                  onDragStart={() => setPipeEditDragSrc(idx)}
+                  onDragOver={e => {
+                    e.preventDefault();
+                    if (pipeEditDragSrc === null || pipeEditDragSrc === idx) return;
+                    const next = [...editPipeline];
+                    const [item] = next.splice(pipeEditDragSrc, 1);
+                    next.splice(idx, 0, item);
+                    setEditPipeline(next);
+                    setPipeEditDragSrc(idx);
+                  }}
+                  onDrop={() => setPipeEditDragSrc(null)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F9FAFB', borderRadius: 10, padding: '8px 12px', border: '1px solid #E5E7EB' }}
+                >
+                  <GripVertical size={14} style={{ color: '#9CA3AF', cursor: 'grab', flexShrink: 0 }}/>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: stage.color || '#94a3b8', flexShrink: 0, border: '2px solid rgba(0,0,0,.1)' }}/>
+                  <input
+                    value={stage.label}
+                    onChange={e => {
+                      const next = editPipeline.map((s, i) => i === idx ? { ...s, label: e.target.value } : s);
+                      setEditPipeline(next);
+                    }}
+                    style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: '#1F2937', outline: 'none' }}
+                  />
+                  {editPipeline.length > 2 && !stage.terminal && (
+                    <button type="button" onClick={() => setEditPipeline(editPipeline.filter((_, i) => i !== idx))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: '2px 4px' }}>
+                      <X size={13}/>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button type="button"
+              onClick={() => setEditPipeline([...editPipeline.slice(0, -1), { key: `custom_${Date.now()}`, label: 'Nouvelle étape', color: '#94a3b8' }, editPipeline[editPipeline.length - 1]])}
+              style={{ marginTop: 10, fontSize: 12, color: BRAND, background: 'none', border: `1px dashed ${BRAND_BORDER}`, borderRadius: 8, padding: '7px 16px', cursor: 'pointer', width: '100%' }}
+            >
+              <Plus size={12} style={{ verticalAlign: 'middle' }}/> Ajouter une étape
+            </button>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button type="button" className="btn-secondary flex-1" onClick={() => setShowPipelineEditor(false)}>Annuler</button>
+              <button type="button" className="btn-primary flex-1" onClick={async () => {
+                const { setPipeline } = useConfigStore.getState();
+                await setPipeline(editPipeline);
+                setShowPipelineEditor(false);
+              }}>Sauvegarder</button>
+            </div>
           </div>
         </div>
       )}

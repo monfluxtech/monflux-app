@@ -7,7 +7,7 @@ import SearchModal from './SearchModal';
 import { useT, useLang } from '../hooks/useT';
 import {
   LayoutDashboard, FolderKanban, Users, FileText, Receipt,
-  HardHat, QrCode, Settings, Moon, Sun, Plus, X,
+  HardHat, QrCode, Settings, Plus, X,
   LogOut, User, BookUser, BarChart3, Bell,
   AlertCircle, Clock, FileQuestion, Search, Sparkles,
   FileSignature, ShoppingCart, FileStack, Languages,
@@ -56,7 +56,6 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
   const t = useT();
   const { lang, setLanguage } = useLang();
   const { user, logout, company } = useAuthStore();
-  const { darkMode, toggleDark } = useUIStore();
   const { modules, load } = useConfigStore();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -280,9 +279,6 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
           <div className="app-sidebar-mini-actions">
             <button type="button" className="mini" title="Paramètres" onClick={() => navigate('/parametres')}>
               <Settings size={14} />
-            </button>
-            <button type="button" className="mini" title={darkMode ? 'Mode clair' : 'Mode sombre'} onClick={toggleDark}>
-              {darkMode ? <Sun size={14} /> : <Moon size={14} />}
             </button>
             <button
               type="button"

@@ -31,22 +31,17 @@ export const useAuthStore = create(
 export const useUIStore = create(
   persist(
     (set) => ({
-      darkMode: false,
       sidebarOpen: true,
       activeModule: 'dashboard',
       language: 'fr',
 
-      toggleDark:    () => set((s) => { const d = !s.darkMode; document.documentElement.classList.toggle('dark', d); return { darkMode: d }; }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setModule:     (m) => set({ activeModule: m }),
       setLanguage:   (l) => set({ language: l }),
     }),
     {
       name: 'monflux-ui',
-      partialize: (s) => ({ darkMode: s.darkMode, sidebarOpen: s.sidebarOpen, language: s.language }),
-      onRehydrateStorage: () => (state) => {
-        if (state?.darkMode) document.documentElement.classList.add('dark');
-      },
+      partialize: (s) => ({ sidebarOpen: s.sidebarOpen, language: s.language }),
     }
   )
 );
