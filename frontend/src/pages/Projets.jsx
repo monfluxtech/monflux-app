@@ -149,7 +149,8 @@ function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
   }, [ready, projects, navigate]);
 
   const located = projects.filter(p => p.latitude && p.longitude).length;
-  const missing = projects.filter(p => p.address && (!p.latitude || !p.longitude)).length;
+  const looksReal = (addr) => addr && addr.trim().length >= 8 && /\d/.test(addr);
+  const missing = projects.filter(p => looksReal(p.address) && (!p.latitude || !p.longitude)).length;
 
   return (
     <div>

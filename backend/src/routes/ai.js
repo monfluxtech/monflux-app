@@ -23,8 +23,8 @@ function aiNotConfigured(res) {
   });
 }
 
-// POST /api/ai/health-check — AI dashboard health summary
-router.get('/health-check', requireFeature('ai_health_check'), async (req, res) => {
+// GET /api/ai/health-check — AI dashboard health summary (disponible pour tous les forfaits)
+router.get('/health-check', async (req, res) => {
   if (!aiReady()) {
     console.warn('[health-check] AI not ready, returning 503');
     return aiNotConfigured(res);

@@ -112,6 +112,7 @@
   padding: 16px 14px 12px;
   border-bottom: 1px solid rgba(255,255,255,.08);
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .app-sidebar-logo {
@@ -326,6 +327,7 @@
 
 .app-sidebar-mini-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -351,6 +353,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .app-sidebar-avatar {
@@ -393,16 +396,22 @@
 .app-topbar {
   position: sticky;
   top: 0;
-  height: 54px;
+  min-height: 54px;
   background: rgba(255,255,255,.92);
   backdrop-filter: blur(12px) saturate(180%);
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 36px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 36px;
   z-index: 15;
   flex-shrink: 0;
+}
+.app-topbar-search {
+  min-width: 140px;
+  max-width: 220px;
+  flex: 1;
 }
 
 /* ── Section backgrounds (betterproposals style) ── */

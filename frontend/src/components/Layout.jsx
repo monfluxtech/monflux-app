@@ -359,12 +359,13 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
 
                 <button
                   type="button"
+                  className="app-topbar-search"
                   onClick={() => setSearchOpen(true)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: '#F4F5F6', border: '1px solid #E8EAED',
                     borderRadius: 9, padding: '8px 11px', fontSize: 12.5,
-                    color: '#7C8089', width: 220, cursor: 'pointer',
+                    color: '#7C8089', cursor: 'pointer',
                   }}
                 >
                   <Search size={13} />
