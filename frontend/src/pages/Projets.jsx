@@ -304,90 +304,232 @@ function GanttPortfolio({ projects, stageMap }) {
   );
 }
 
-// ── Vue Calendrier ─────────────────────────────────────────────────────────────
+// ── Vue Calendrier (Jour / Semaine / Mois) ─────────────────────────────────────
 function CalendarView({ projects, stageMap }) {
   const navigate = useNavigate();
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth()); // 0-11
+  const [calMode, setCalMode] = useState('month'); // 'day' | 'week' | 'month'
+  // Curseur: pour "jour" = date ISO, pour "semaine" = date ISO du lundi, pour "mois" = {year, month}
+  const [cursor, setCursor] = useState({
+    year: today.getFullYear(), month: today.getMonth(), day: today.getDate(),
+  });
 
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+  // ── Helpers ──
+  const d2 = (d) => String(d).padStart(2, '0');
+  const isoDate = (y, m, d) => `${y}-${d2(m + 1)}-${d2(d)}`;
+  const fromISO = (s) => { const p = new Date(s + 'T00:00'); return p; };
+  const fmtShort = (dt) => dt.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+  const fmtLong  = (dt) => dt.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  // Projets actifs à une date donnée
+  const projectsOnDay = (dt) => {
+    const iso = isoDate(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    return projects.filter(p => {
+      if (!p.start_date && !p.end_date) return false;
+      const s = p.start_date ? String(p.start_date).slice(0, 10) : null;
+      const e = p.end_date   ? String(p.end_date).slice(0, 10)   : s;
+      return (!s || iso >= s) && (!e || iso <= e);
+    });
+  };
+
+  const ProjectChip = ({ p, size = 'sm' }) => {
+    const color = stageMap[p.status]?.color || '#94a3b8';
+    const label = p.field_assessment?.work_type || p.name || '—';
+    return (
+      <button onClick={() => navigate(`/projets/${p.id}`)}
+        style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left',
+          fontSize: size === 'lg' ? 12 : 9, fontWeight: 700, color,
+          background: color + '18', border: `1px solid ${color}33`,
+          borderRadius: 5, padding: size === 'lg' ? '6px 10px' : '2px 5px',
+          overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'pointer' }}
+        title={`${label}${p.address ? ' · ' + p.address : ''}`}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }}/>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+        {size === 'lg' && p.address && <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11 }}>· {p.address}</span>}
+      </button>
+    );
+  };
+
+  // ── Header commun ──
+  const NavHeader = ({ title, onPrev, onNext }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #F0F2F4' }}>
+      <button onClick={onPrev} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex' }}><ChevronLeft size={16}/></button>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 800, color: '#15171C', textTransform: 'capitalize' }}>{title}</span>
+        <div style={{ display: 'flex', gap: 2, background: '#F3F4F6', borderRadius: 8, padding: 2 }}>
+          {[['day','Jour'],['week','Semaine'],['month','Mois']].map(([k, l]) => (
+            <button key={k} onClick={() => setCalMode(k)}
+              style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: calMode === k ? '#fff' : 'transparent',
+                color: calMode === k ? '#15171C' : '#9CA3AF',
+                boxShadow: calMode === k ? '0 1px 4px rgba(0,0,0,.08)' : 'none' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <button onClick={onNext} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex' }}><ChevronRight size={16}/></button>
+    </div>
+  );
+
+  // ══════════ VUE JOUR ══════════
+  if (calMode === 'day') {
+    const dt = new Date(cursor.year, cursor.month, cursor.day);
+    const isToday = dt.toDateString() === today.toDateString();
+    const prevDay = () => { const d = new Date(dt); d.setDate(d.getDate() - 1); setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); };
+    const nextDay = () => { const d = new Date(dt); d.setDate(d.getDate() + 1); setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); };
+    const active = projectsOnDay(dt);
+    const starting = active.filter(p => p.start_date && String(p.start_date).slice(0, 10) === isoDate(cursor.year, cursor.month, cursor.day));
+    const ending   = active.filter(p => p.end_date   && String(p.end_date).slice(0, 10)   === isoDate(cursor.year, cursor.month, cursor.day));
+    const ongoing  = active.filter(p => !starting.includes(p) && !ending.includes(p));
+    const Section = ({ emoji, title, items, color }) => (
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid #F8FAFC' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{emoji} {title}</p>
+        {items.length === 0
+          ? <p style={{ fontSize: 12, color: '#D1D5DB' }}>Aucun chantier</p>
+          : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.map(p => <ProjectChip key={p.id} p={p} size="lg"/>)}</div>}
+      </div>
+    );
+    return (
+      <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
+        <NavHeader title={fmtLong(dt)} onPrev={prevDay} onNext={nextDay}/>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 220 }}>
+          <div style={{ borderRight: '1px solid #F0F2F4' }}>
+            <div style={{ padding: '10px 20px', background: '#FFF7F0', borderBottom: '1px solid #F0F2F4' }}>
+              <p style={{ fontSize: 11, fontWeight: 800, color: '#E8794E' }}>🌅 Matin — AM</p>
+              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Chantiers démarrant ce matin</p>
+            </div>
+            <Section emoji="" title="Début de chantier" items={starting} color="#16A34A"/>
+            <Section emoji="" title="En cours" items={ongoing.slice(0, Math.ceil(ongoing.length / 2))} color="#6366F1"/>
+          </div>
+          <div>
+            <div style={{ padding: '10px 20px', background: '#F0F4FF', borderBottom: '1px solid #F0F2F4' }}>
+              <p style={{ fontSize: 11, fontWeight: 800, color: '#6366F1' }}>🌆 Après-midi — PM</p>
+              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Chantiers se terminant ce soir</p>
+            </div>
+            <Section emoji="" title="Fin de chantier" items={ending} color="#DC2626"/>
+            <Section emoji="" title="En cours" items={ongoing.slice(Math.ceil(ongoing.length / 2))} color="#6366F1"/>
+          </div>
+        </div>
+        {isToday && <div style={{ padding: '6px 16px', background: '#FFF7F0', fontSize: 11, color: '#E8794E', fontWeight: 600 }}>📍 Aujourd'hui · {active.length} chantier{active.length !== 1 ? 's' : ''} actif{active.length !== 1 ? 's' : ''}</div>}
+      </div>
+    );
+  }
+
+  // ══════════ VUE SEMAINE ══════════
+  if (calMode === 'week') {
+    // Trouver le lundi de la semaine du curseur
+    const dt = new Date(cursor.year, cursor.month, cursor.day);
+    const dow = (dt.getDay() + 6) % 7; // 0=lun
+    const monday = new Date(dt); monday.setDate(dt.getDate() - dow);
+    const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+    const prevWeek = () => { const d = new Date(monday); d.setDate(d.getDate() - 7); setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); };
+    const nextWeek = () => { const d = new Date(monday); d.setDate(d.getDate() + 7); setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); };
+    const weekTitle = `${fmtShort(monday)} – ${fmtShort(weekDays[6])} ${weekDays[6].getFullYear()}`;
+
+    // Toutes les plages AM/PM pour chaque jour
+    const PERIODS = [
+      { key: 'am', label: 'AM', sub: '6h – 12h', bg: '#FFFBF5', border: '#FDE8D4' },
+      { key: 'pm', label: 'PM', sub: '12h – 18h', bg: '#F5F7FF', border: '#DDE3FF' },
+    ];
+
+    return (
+      <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
+        <NavHeader title={weekTitle} onPrev={prevWeek} onNext={nextWeek}/>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ minWidth: 700 }}>
+            {/* En-têtes jours */}
+            <div style={{ display: 'grid', gridTemplateColumns: '56px repeat(7,1fr)', borderBottom: '1px solid #F0F2F4' }}>
+              <div style={{ background: '#FAFAFA' }}/>
+              {weekDays.map((d, i) => {
+                const isTod = d.toDateString() === today.toDateString();
+                return (
+                  <div key={i} style={{ padding: '8px 4px', textAlign: 'center', background: isTod ? '#FFF7F0' : '#FAFAFA', borderLeft: '1px solid #F0F2F4' }}
+                    onClick={() => { setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); setCalMode('day'); }}
+                    style={{ cursor: 'pointer', padding: '8px 4px', textAlign: 'center', background: isTod ? '#FFF7F0' : '#FAFAFA', borderLeft: '1px solid #F0F2F4' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{DAYS_SHORT[i]}</p>
+                    <p style={{ fontSize: 13, fontWeight: isTod ? 800 : 500, color: isTod ? '#E8794E' : '#374151', lineHeight: 1.2 }}>{d.getDate()}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Lignes AM / PM */}
+            {PERIODS.map(period => (
+              <div key={period.key} style={{ display: 'grid', gridTemplateColumns: '56px repeat(7,1fr)', borderBottom: '1px solid #F5F7FA' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '8px 4px', background: '#FAFAFA', borderRight: '1px solid #F0F2F4' }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: period.key === 'am' ? '#E8794E' : '#6366F1' }}>{period.label}</span>
+                  <span style={{ fontSize: 8, color: '#D1D5DB' }}>{period.sub}</span>
+                </div>
+                {weekDays.map((d, i) => {
+                  const evts = projectsOnDay(d);
+                  return (
+                    <div key={i} style={{ minHeight: 64, borderLeft: '1px solid #F0F2F4', padding: '4px 3px', background: period.bg }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {evts.slice(0, 2).map(p => <ProjectChip key={p.id} p={p}/>)}
+                        {evts.length > 2 && <span style={{ fontSize: 8, color: '#9CA3AF', paddingLeft: 2 }}>+{evts.length - 2}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════ VUE MOIS ══════════
+  const { year, month } = cursor;
+  const prevMonth = () => { if (month === 0) setCursor({ year: year - 1, month: 11, day: 1 }); else setCursor({ year, month: month - 1, day: 1 }); };
+  const nextMonth = () => { if (month === 11) setCursor({ year: year + 1, month: 0,  day: 1 }); else setCursor({ year, month: month + 1, day: 1 }); };
+
+  const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const startOffset = (firstDay + 6) % 7; // Mon=0 … Sun=6
-
+  const startOffset = (firstDay + 6) % 7;
   const fmtMonth = new Date(year, month, 1).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
 
-  // Build per-day project map: projects that START or are ACTIVE on that day
-  const dayEvents = {};
+  const dayEventsMap = {};
   projects.forEach(p => {
     if (!p.start_date && !p.end_date) return;
-    const start = p.start_date ? new Date(String(p.start_date).slice(0, 10) + 'T00:00') : null;
-    const end   = p.end_date   ? new Date(String(p.end_date).slice(0, 10)   + 'T00:00') : start;
+    const s = p.start_date ? String(p.start_date).slice(0, 10) : null;
+    const e = p.end_date   ? String(p.end_date).slice(0, 10)   : s;
     for (let d = 1; d <= daysInMonth; d++) {
-      const day = new Date(year, month, d);
-      if (start && day >= start && day <= end) {
-        if (!dayEvents[d]) dayEvents[d] = [];
-        dayEvents[d].push(p);
+      const iso = isoDate(year, month, d);
+      if ((!s || iso >= s) && (!e || iso <= e)) {
+        if (!dayEventsMap[d]) dayEventsMap[d] = [];
+        dayEventsMap[d].push(p);
       }
     }
   });
 
-  const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   const cells = Array.from({ length: startOffset + daysInMonth }, (_, i) => i < startOffset ? null : i - startOffset + 1);
-  // Pad to full 6-row grid
   while (cells.length % 7 !== 0) cells.push(null);
 
   return (
     <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
-      {/* Header navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #F0F2F4' }}>
-        <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex', alignItems: 'center' }}>
-          <ChevronLeft size={16}/>
-        </button>
-        <span style={{ fontSize: 14, fontWeight: 800, color: '#15171C', textTransform: 'capitalize' }}>{fmtMonth}</span>
-        <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8, color: '#6B7280', display: 'flex', alignItems: 'center' }}>
-          <ChevronRight size={16}/>
-        </button>
-      </div>
-
-      {/* Day headers */}
+      <NavHeader title={fmtMonth} onPrev={prevMonth} onNext={nextMonth}/>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid #F0F2F4' }}>
-        {DAYS.map(d => (
-          <div key={d} style={{ padding: '7px 0', textAlign: 'center', fontSize: 10, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', background: '#FAFAFA' }}>{d}</div>
-        ))}
+        {DAYS_SHORT.map(d => <div key={d} style={{ padding: '7px 0', textAlign: 'center', fontSize: 10, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', background: '#FAFAFA' }}>{d}</div>)}
       </div>
-
-      {/* Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
         {cells.map((day, i) => {
           const isToday = day && today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-          const events = day ? (dayEvents[day] || []) : [];
+          const events = day ? (dayEventsMap[day] || []) : [];
           return (
-            <div key={i} style={{ minHeight: 76, borderRight: '1px solid #F5F7F9', borderBottom: '1px solid #F5F7F9', padding: '5px 4px', background: day ? '#fff' : '#FAFAFA', position: 'relative' }}>
+            <div key={i}
+              onClick={() => day && (setCursor({ year, month, day }), setCalMode('day'))}
+              style={{ minHeight: 76, borderRight: '1px solid #F5F7F9', borderBottom: '1px solid #F5F7F9', padding: '5px 4px', background: day ? '#fff' : '#FAFAFA', cursor: day ? 'pointer' : 'default', position: 'relative' }}>
               {day && (
                 <>
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: '50%', fontSize: 11, fontWeight: isToday ? 800 : 500, color: isToday ? '#fff' : '#374151', background: isToday ? '#E8794E' : 'transparent', marginBottom: 3 }}>
                     {day}
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {events.slice(0, 3).map(p => {
-                      const color = stageMap[p.status]?.color || '#94a3b8';
-                      const label = p.field_assessment?.work_type || p.type || p.name || '—';
-                      return (
-                        <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 9, fontWeight: 700, color, background: color + '18', border: `1px solid ${color}33`, borderRadius: 4, padding: '1px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
-                          title={`${label}${p.address ? ' · ' + p.address : ''}`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                    {events.length > 3 && (
-                      <span style={{ fontSize: 9, color: '#9CA3AF', paddingLeft: 4 }}>+{events.length - 3}</span>
-                    )}
+                    {events.slice(0, 3).map(p => <ProjectChip key={p.id} p={p}/>)}
+                    {events.length > 3 && <span style={{ fontSize: 9, color: '#9CA3AF', paddingLeft: 4 }}>+{events.length - 3}</span>}
                   </div>
                 </>
               )}
@@ -395,21 +537,18 @@ function CalendarView({ projects, stageMap }) {
           );
         })}
       </div>
-
-      {/* Legend */}
       {projects.length > 0 && (
         <div style={{ padding: '8px 16px', borderTop: '1px solid #F0F2F4', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {projects.slice(0, 6).map(p => {
             const color = stageMap[p.status]?.color || '#94a3b8';
-            const label = p.field_assessment?.work_type || p.type || p.name || '—';
+            const label = p.field_assessment?.work_type || p.name || '—';
             return (
               <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 5 }}
                 onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>
-                {label}{p.address ? ` · ${p.address}` : ''}
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>{label}
               </button>
             );
           })}
@@ -941,8 +1080,9 @@ export default function Projets() {
   }, []);
 
   // Geocode all projects that have an address but no coordinates
+  const looksLikeRealAddress = (addr) => addr && addr.trim().length >= 8 && /\d/.test(addr);
   const geocodeAll = useCallback(async () => {
-    const missing = items.filter(p => p.address && (!p.latitude || !p.longitude));
+    const missing = items.filter(p => looksLikeRealAddress(p.address) && (!p.latitude || !p.longitude));
     if (!missing.length) return;
     setGeocoding(true);
     for (const p of missing) {
