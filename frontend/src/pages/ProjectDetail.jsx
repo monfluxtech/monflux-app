@@ -3355,32 +3355,112 @@ export default function ProjectDetail() {
     return () => window.removeEventListener('monflux:data-changed', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Orbe contextuel proactif ─────────────────────────────────────────────
-  // Map section → [{ type, text }] par ordre de priorité (regulatory > deadline > tip)
-  const SECTION_TIPS = {
-    's-phases':       [{ type: 'regulatory', text: '⚠️ RBQ : tout entrepreneur général superviseur de travaux doit détenir une licence valide (Loi sur le bâtiment, R.Q. B-1.1). Vérifiez chaque corps de métier.' }],
-    's-equipe':       [{ type: 'regulatory', text: '⚠️ CCQ : les travailleurs de la construction sont soumis aux décrets de conventions collectives CCQ. Exigez la preuve de certificat de compétence avant d\'embaucher.' }],
-    's-conformite':   [{ type: 'regulatory', text: '⚠️ CNESST : le programme de prévention doit être affiché sur le chantier (RSST, art. 58). Conservez les preuves d\'assurance de tous les sous-traitants.' }],
-    's-devis':        [{ type: 'tip', text: '💡 Flo peut compléter le devis automatiquement à partir de tes phases et des prix du marché. Clique sur « Flo complète le devis » dans la section.' }],
-    's-contrat':      [{ type: 'regulatory', text: '⚠️ Un contrat écrit est obligatoire pour tout travail > 2 000 $ avec un consommateur (L.R.Q. c. P-40.1, art. 23). Inclus le délai d\'exécution et le prix total.' }],
-    's-invoices':     [{ type: 'tip', text: '💡 Pour la facturation progressive, un état d\'avancement signé est requis à chaque tranche. Garde les courriels de confirmation comme preuve.' }],
-    's-punch':        [{ type: 'regulatory', text: '⚠️ CNESST : le registre des présences sur le chantier doit être tenu à jour et accessible en tout temps (LSST, art. 62).' }],
-    's-materiaux':    [{ type: 'tip', text: '💡 Flo peut rechercher les meilleurs prix en temps réel chez RONA, Home Depot, BMR, Canac et plusieurs autres distributeurs.' }],
-    's-photos':       [{ type: 'tip', text: '💡 Les photos horodatées géolocalisées constituent une preuve légale solide en cas de litige, réclamation ou vice caché.' }],
-    's-denonciations':[{ type: 'regulatory', text: '⚠️ Dénonciation : obligatoire pour bénéficier de l\'hypothèque légale de la construction (C.c.Q., art. 2728). Délai : 30 jours après la fin des travaux.' }],
-    's-extras':       [{ type: 'regulatory', text: '⚠️ Tout extra doit être autorisé par écrit avant exécution pour être récupérable (C.c.Q., art. 2109). Un courriel de confirmation suffit.' }],
-  };
-
+  // ── Alertes opérationnelles Flo ──────────────────────────────────────────
+  // Alertes dynamiques basées sur les données réelles du projet (retard, équipe, matériaux, tickets)
   useEffect(() => {
-    if (!activeSection || showAIChat || proactiveDismissedSections.has(activeSection)) return;
-    const tips = SECTION_TIPS[activeSection];
-    if (!tips?.length) { setProactiveTip(null); return; }
-    // Pick highest priority: regulatory > deadline > tip
-    const pick = tips.find(t => t.type === 'regulatory') || tips.find(t => t.type === 'deadline') || tips[0];
-    setProactiveTip({ ...pick, section: activeSection });
-    const timer = setTimeout(() => setProactiveTip(null), 12000);
+    if (showAIChat) return;
+
+    const todayMs = Date.now();
+    const alerts = [];
+    const phases = project.phases || [];
+
+    // 1. Retard calendrier : Gantt dépasse date annoncée
+    const phaseEndMs = phases.map(ph => ph.end_date ? new Date(ph.end_date.slice(0,10)+'T00:00').getTime() : null).filter(Boolean);
+    const ganttEndMs = phaseEndMs.length > 0 ? Math.max(...phaseEndMs) : null;
+    const announcedEndMs = project.end_date ? new Date(project.end_date.slice(0,10)+'T00:00').getTime() : null;
+    if (ganttEndMs && announcedEndMs && ganttEndMs > announcedEndMs) {
+      const slip = Math.round((ganttEndMs - announcedEndMs) / 86400000);
+      alerts.push({
+        id: 'delay',
+        type: 'delay',
+        priority: 1,
+        title: `Retard de ${slip} jour${slip > 1 ? 's' : ''}`,
+        text: `La fin réelle dans le Gantt (${new Date(ganttEndMs).toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}) dépasse la date annoncée au client (${new Date(announcedEndMs).toLocaleDateString('fr-CA',{day:'numeric',month:'short'})}). Flo peut envoyer un courriel.`,
+        sections: ['s-hero', 's-phases'],
+      });
+    }
+
+    // 2. Ressources manquantes dans les 30 prochains jours
+    const phasesNoResource = phases.filter(ph => {
+      if (!ph.start_date) return false;
+      const startMs = new Date(ph.start_date.slice(0,10)+'T00:00').getTime();
+      if (startMs < todayMs || startMs > todayMs + 30 * 86400000) return false;
+      const trade = ph.trade_name ? (project.trades||[]).find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase()) : null;
+      return !ph.assigned_to_name && !trade?.chosen_subcontractor_id;
+    });
+    if (phasesNoResource.length > 0) {
+      const names = phasesNoResource.slice(0,2).map(ph => `"${ph.name}"`).join(', ');
+      alerts.push({
+        id: 'team_gap',
+        type: 'team',
+        priority: 1,
+        title: `${phasesNoResource.length} étape${phasesNoResource.length>1?'s':''} sans ressource`,
+        text: `${names}${phasesNoResource.length > 2 ? ` +${phasesNoResource.length-2}` : ''} — aucun sous-traitant ni employé assigné dans les 30 prochains jours.`,
+        sections: ['s-equipe', 's-phases'],
+      });
+    }
+
+    // 3. Commandes de matériel en retard (date de livraison dépassée)
+    const lateMat = materialOrders.filter(o => {
+      if (!o.expected_date || ['received','cancelled'].includes(o.status)) return false;
+      return new Date(o.expected_date.slice(0,10)+'T00:00').getTime() < todayMs;
+    });
+    if (lateMat.length > 0) {
+      const suppliers = lateMat.slice(0,2).map(o => o.supplier).join(', ');
+      alerts.push({
+        id: 'material_late',
+        type: 'material',
+        priority: 1,
+        title: `${lateMat.length} commande${lateMat.length>1?'s':''} en retard`,
+        text: `${suppliers}${lateMat.length>2?` +${lateMat.length-2} autre${lateMat.length-2>1?'s':''}`:''} — la date de livraison prévue est dépassée.`,
+        sections: ['s-materiaux'],
+      });
+    }
+
+    // 4. Tickets de chantier — non-conformités détectées (IA ou mots-clés, 7 derniers jours)
+    const recentMedia = media.filter(m => (todayMs - new Date(m.created_at).getTime()) < 7 * 86400000);
+    const ncTickets = recentMedia.filter(m => {
+      const hasAiNc = (m.ai_analysis?.non_conformities?.length || 0) > 0;
+      const text = (m.caption || m.transcript || '').toLowerCase();
+      return hasAiNc || /(non[- ]conforme|défaut|défectueux|manufacturier|mauvaise qualité|erreur de livraison|produit non)/.test(text);
+    });
+    if (ncTickets.length > 0) {
+      alerts.push({
+        id: 'nc_ticket',
+        type: 'nonconform',
+        priority: 2,
+        title: `${ncTickets.length} ticket${ncTickets.length>1?'s':''} non-conformité`,
+        text: `Un travailleur a signalé une non-conformité sur le chantier (produit, livraison ou exécution). Vérifie les notes et photos.`,
+        sections: ['s-media'],
+      });
+    }
+
+    // 5. Tickets de chantier — demandes de matériel dans les notes (7 derniers jours)
+    const ncIds = new Set(ncTickets.map(m => m.id));
+    const matRequestTickets = recentMedia.filter(m => {
+      if (ncIds.has(m.id)) return false;
+      const text = (m.caption || m.transcript || '').toLowerCase();
+      return /(manque|commande|commander|besoin de matér|matériaux|livraison manquante|pas reçu)/.test(text);
+    });
+    if (matRequestTickets.length > 0) {
+      alerts.push({
+        id: 'mat_request',
+        type: 'material_request',
+        priority: 2,
+        title: `${matRequestTickets.length} demande${matRequestTickets.length>1?'s':''} de matériel`,
+        text: `Un travailleur a signalé un besoin de matériel dans les notes de chantier. Passe une commande avant le prochain blocage.`,
+        sections: ['s-media', 's-materiaux'],
+      });
+    }
+
+    // Trier par priorité et choisir la plus urgente non-ignorée
+    alerts.sort((a, b) => a.priority - b.priority);
+    const pick = alerts.find(a => !proactiveDismissedSections.has(a.id));
+    if (!pick) { setProactiveTip(null); return; }
+    setProactiveTip({ ...pick, section: pick.id });
+    const timer = setTimeout(() => setProactiveTip(null), 15000);
     return () => clearTimeout(timer);
-  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project, materialOrders, media, showAIChat, proactiveDismissedSections]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers DB-sync pour données per-projet ──────────────────────────────
   // Chaque helper écrit en localStorage (réactivité immédiate) ET en field_assessment (DB).
@@ -6350,44 +6430,61 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         />
       )}
 
-      {/* ── Bulle proactive Flo (contextuelle par section) ── */}
-      {!showAIChat && proactiveTip && (
-        <div style={{
-          position: 'fixed', bottom: 90, right: 20, zIndex: 60,
-          maxWidth: 300, background: '#fff',
-          border: `1.5px solid ${proactiveTip.type === 'regulatory' ? '#FCA5A5' : '#E8EAED'}`,
-          borderRadius: 14, padding: '12px 14px',
-          boxShadow: '0 8px 32px rgba(0,0,0,.14)',
-          animation: 'slideUpFade .3s ease',
-        }}>
-          <button onClick={() => {
-            setProactiveDismissedSections(s => new Set([...s, proactiveTip.section]));
-            setProactiveTip(null);
-          }} style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', padding: 2, lineHeight: 1 }}>
-            <X size={13}/>
-          </button>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{proactiveTip.type === 'regulatory' ? '⚠️' : '💡'}</span>
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 800, color: proactiveTip.type === 'regulatory' ? '#DC2626' : BRAND, margin: '0 0 4px' }}>
-                {proactiveTip.type === 'regulatory' ? 'Point réglementaire' : 'Conseil Flo'}
-              </p>
-              <p style={{ fontSize: 11.5, color: '#374151', margin: '0 0 8px', lineHeight: 1.5 }}>{proactiveTip.text}</p>
-              <button onClick={() => { setShowAIChat(true); setProactiveTip(null); }}
-                style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
-                Demander à Flo →
-              </button>
+      {/* ── Bulle opérationnelle Flo ── */}
+      {!showAIChat && proactiveTip && (() => {
+        const ALERT_STYLES = {
+          delay:           { border: '#FCA5A5', dot: '#DC2626', bg: '#FFF5F5', label: 'Retard calendrier' },
+          team:            { border: '#FED7AA', dot: '#EA580C', bg: '#FFF7ED', label: 'Équipe incomplète' },
+          material:        { border: '#FDE68A', dot: '#D97706', bg: '#FFFBEB', label: 'Commande en retard' },
+          nonconform:      { border: '#FCA5A5', dot: '#DC2626', bg: '#FFF5F5', label: 'Non-conformité' },
+          material_request:{ border: '#BAE6FD', dot: '#0284C7', bg: '#F0F9FF', label: 'Demande de matériel' },
+        };
+        const st = ALERT_STYLES[proactiveTip.type] || { border: '#E8EAED', dot: BRAND, bg: '#fff', label: 'Info Flo' };
+        return (
+          <div style={{
+            position: 'fixed', bottom: 90, right: 20, zIndex: 60,
+            width: 300, background: st.bg,
+            border: `1.5px solid ${st.border}`,
+            borderRadius: 16, padding: '14px 14px 12px',
+            boxShadow: '0 8px 32px rgba(0,0,0,.14)',
+            animation: 'slideUpFade .3s ease',
+          }}>
+            <button onClick={() => {
+              setProactiveDismissedSections(s => new Set([...s, proactiveTip.section]));
+              setProactiveTip(null);
+            }} style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#C4C8CE', padding: 2 }}>
+              <X size={13}/>
+            </button>
+            <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#E8794E', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>F</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 10, fontWeight: 800, color: st.dot, margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '.08em' }}>{st.label}</p>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: '0 0 4px' }}>{proactiveTip.title}</p>
+                <p style={{ fontSize: 11.5, color: '#374151', margin: '0 0 10px', lineHeight: 1.5 }}>{proactiveTip.text}</p>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => { setShowAIChat(true); setProactiveTip(null); }}
+                    style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: '#E8794E', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer' }}>
+                    Parler à Flo →
+                  </button>
+                  <button onClick={() => {
+                    setProactiveDismissedSections(s => new Set([...s, proactiveTip.section]));
+                    setProactiveTip(null);
+                  }} style={{ fontSize: 10.5, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 4px' }}>
+                    Ignorer
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Bouton flottant Chat IA ── */}
       {!showAIChat && (
         <button className="ai-float-btn" onClick={() => setShowAIChat(true)} title="Parler à Florence — assistante IA">
           <Sparkles size={22} />
-          {proactiveTip?.type === 'regulatory' && (
-            <span style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: '#DC2626', border: '2px solid #fff' }}/>
+          {proactiveTip && (
+            <span style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: proactiveTip.type === 'delay' || proactiveTip.type === 'nonconform' ? '#DC2626' : '#EA580C', border: '2px solid #fff' }}/>
           )}
         </button>
       )}
