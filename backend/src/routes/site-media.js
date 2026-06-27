@@ -31,14 +31,16 @@ router.get('/project/:projectId', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { project_id, type, url, mime_type, caption, transcript } = req.body;
+  const { project_id, type, url, mime_type, caption, transcript, photos } = req.body;
   if (!project_id) return res.status(400).json({ error: 'project_id requis' });
   try {
     const { rows: [m] } = await query(
-      `INSERT INTO site_media (company_id, project_id, type, url, mime_type, caption, transcript, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [req.company_id, project_id, type || 'photo', url || null, mime_type || null,
-       caption || null, transcript || null, req.user.userId]
+      `INSERT INTO site_media (company_id, project_id, type, url, mime_type, caption, transcript, photos, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.company_id, project_id, type || 'note', url || null, mime_type || null,
+       caption || null, transcript || null,
+       photos ? JSON.stringify(photos) : null,
+       req.user.userId]
     );
     res.status(201).json(m);
   } catch (err) {

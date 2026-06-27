@@ -360,6 +360,8 @@ async function applyMigrations() {
   `);
   await run('site_media project index',
     `CREATE INDEX IF NOT EXISTS site_media_project_idx ON site_media(project_id)`);
+  await run('site_media: photos array',
+    `ALTER TABLE site_media ADD COLUMN IF NOT EXISTS photos JSONB`);
 
   // Impact IA d'un avenant — stocké sur change_orders
   await run('change_orders: add ai_impact',

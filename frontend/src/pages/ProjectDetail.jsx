@@ -37,7 +37,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-extras', icon: '⚡', label: 'Extras & avenants' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
-  { id: 's-media', icon: '📷', label: 'Photos pendant et post chantier' },
+  { id: 's-media', icon: '📷', label: 'Notes et photos' },
 ];
 
 // Stub affiché dans le corps quand une section est désactivée (par état ou par module).
@@ -3144,7 +3144,7 @@ export default function ProjectDetail() {
   const [updatingInvoiceId, setUpdatingInvoiceId] = useState(null);
   const [photoDragOver, setPhotoDragOver] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [mediaForm, setMediaForm] = useState({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
+  const [mediaForm, setMediaForm] = useState({ type: 'note', caption: '', photos: [], transcript: '' });
   const [analyzingMediaId, setAnalyzingMediaId] = useState(null);
   const [purchasePlan, setPurchasePlan] = useState(null);
   const [groupingPurchases, setGroupingPurchases] = useState(false);
@@ -3152,6 +3152,9 @@ export default function ProjectDetail() {
   const [analyzingCoId, setAnalyzingCoId] = useState(null);
   const [aiNotice, setAiNotice] = useState('');
   const [aiRecommendations, setAiRecommendations] = useState([]);
+  const [dismissedFloHeroAlerts, setDismissedFloHeroAlerts] = useState(new Set());
+  const [floEmailModal, setFloEmailModal] = useState(null); // { subject, body } | null
+  const [floEmailLoading, setFloEmailLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('s-ai');
   const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'memoire' | 'communication'
   const [proactiveTip, setProactiveTip] = useState(null); // { text, type: 'regulatory'|'deadline'|'tip' }
@@ -5092,13 +5095,67 @@ Règles :
     } catch {}
   };
 
+  // Flo — prépare un courriel de retard à envoyer au client
+  const prepareDelayEmail = async ({ slipDays, announcedEnd, ganttEnd }) => {
+    setFloEmailLoading(true);
+    const clientName = project.client_name || 'le client';
+    const companyName = project.company_name || 'notre équipe';
+    const announcedStr = announcedEnd ? new Date(announcedEnd).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const ganttStr = ganttEnd ? new Date(ganttEnd).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const projectName = project.work_type_label || project.name || 'votre projet';
+    try {
+      const token = localStorage.getItem('token');
+      const BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const prompt = `Rédige un courriel professionnel en français québécois pour informer le client "${clientName}" d'un retard de ${slipDays} jour${slipDays>1?'s':''} sur son projet "${projectName}".
+La date de fin initialement prévue était le ${announcedStr}, mais le calendrier des travaux montre maintenant une fin estimée au ${ganttStr}.
+Sois transparent, rassurant et propose de planifier un appel ou une rencontre pour en discuter.
+Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis le corps du message, sans autre commentaire.`;
+      const res = await fetch(`${BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) throw new Error();
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const ln of dec.decode(value).split('\n').filter(l => l.startsWith('data: '))) {
+          try { const ev = JSON.parse(ln.slice(6)); if (ev.type === 'text') txt += ev.text; } catch {}
+        }
+      }
+      const lines = txt.trim().split('\n');
+      const subjectLine = lines.find(l => l.toLowerCase().startsWith('objet:'));
+      const subject = subjectLine ? subjectLine.replace(/^objet\s*:\s*/i, '').trim() : `Mise à jour — ${projectName}`;
+      const body = lines.filter(l => !l.toLowerCase().startsWith('objet:')).join('\n').trim();
+      setFloEmailModal({ subject, body });
+    } catch {
+      setFloEmailModal({
+        subject: `Mise à jour de calendrier — ${projectName}`,
+        body: `Bonjour ${clientName},\n\nJe vous contacte pour vous informer d'un ajustement dans le calendrier de votre projet. La date de fin initialement prévue au ${announcedStr} devra être décalée au ${ganttStr}, soit un retard de ${slipDays} jour${slipDays>1?'s':''}.\n\nNous faisons tout notre possible pour minimiser cet impact. N'hésitez pas à nous contacter pour en discuter.\n\nCordialement,\n${companyName}`,
+      });
+    } finally { setFloEmailLoading(false); }
+  };
+
   // B7 — handlers IA chantier
   const addMedia = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await siteMediaApi.create({ ...mediaForm, project_id: id });
+      const payload = { project_id: id, type: mediaForm.type };
+      if (mediaForm.type === 'voice') {
+        payload.transcript = mediaForm.transcript;
+      } else {
+        payload.caption = mediaForm.caption;
+        const validPhotos = (mediaForm.photos || []).filter(p => p.url.trim());
+        if (validPhotos.length === 1) {
+          payload.url = validPhotos[0].url;
+          payload.mime_type = 'image/jpeg';
+        } else if (validPhotos.length > 1) {
+          payload.photos = validPhotos;
+        }
+      }
+      const { data } = await siteMediaApi.create(payload);
       setMedia(prev => [data, ...prev]);
-      setMediaForm({ type: 'photo', url: '', mime_type: '', caption: '', transcript: '' });
+      setMediaForm({ type: 'note', caption: '', photos: [], transcript: '' });
       setShowMediaForm(false);
     } catch {}
   };
@@ -5867,6 +5924,47 @@ Règles :
         const IFS = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
         const IFD = { fontSize: 13.5, color: '#15171C', fontWeight: 500 };
 
+        // ── Calendrier réel depuis le Gantt ──
+        const allPhases = project.phases || [];
+        const phaseStartDates = allPhases.map(ph => ph.start_date ? new Date(ph.start_date.slice(0,10)+'T00:00') : null).filter(Boolean);
+        const phaseEndDates = allPhases.map(ph => ph.end_date ? new Date(ph.end_date.slice(0,10)+'T00:00') : null).filter(Boolean);
+        const ganttStart = phaseStartDates.length > 0 ? new Date(Math.min(...phaseStartDates.map(d => d.getTime()))) : null;
+        const ganttEnd = phaseEndDates.length > 0 ? new Date(Math.max(...phaseEndDates.map(d => d.getTime()))) : null;
+        const announcedEndDate = project.end_date ? new Date(project.end_date.slice(0,10)+'T00:00') : null;
+        const announcedStartDate = project.start_date ? new Date(project.start_date.slice(0,10)+'T00:00') : null;
+        const slipDays = (ganttEnd && announcedEndDate) ? Math.round((ganttEnd.getTime() - announcedEndDate.getTime()) / 86400000) : 0;
+        const fmtD = d => d ? d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) : '—';
+
+        // ── Alertes Flo héro ──
+        const today = new Date(); today.setHours(0,0,0,0);
+        const in14days = new Date(today.getTime() + 14 * 86400000);
+        const upcomingInternalPhases = allPhases.filter(ph => {
+          if (!ph.start_date) return false;
+          const d = new Date(ph.start_date.slice(0,10)+'T00:00');
+          if (d < today || d > in14days) return false;
+          // "interne" = pas de sous-traitant assigné ET pas de corps de métier externe évident
+          const tradeForPhase = ph.trade_name ? (project.trades || []).find(t => t.trade?.toLowerCase() === ph.trade_name?.toLowerCase()) : null;
+          return !tradeForPhase?.chosen_subcontractor_id;
+        });
+        const hasOrderedMaterial = materialOrders.some(o => ['ordered', 'partial', 'received'].includes(o.status));
+        const floHeroAlerts = [
+          slipDays > 0 && !dismissedFloHeroAlerts.has('date_slip') && {
+            id: 'date_slip',
+            icon: '📅',
+            msg: `Le Gantt se termine le ${fmtD(ganttEnd)}, soit ${slipDays} jour${slipDays>1?'s':''} après la date annoncée (${fmtD(announcedEndDate)}). Flo peut envoyer un courriel au client.`,
+            cta: floEmailLoading ? 'Rédaction…' : 'Préparer un courriel',
+            ctaDisabled: floEmailLoading,
+            ctaAction: () => prepareDelayEmail({ slipDays, announcedEnd: announcedEndDate, ganttEnd }),
+          },
+          upcomingInternalPhases.length > 0 && !hasOrderedMaterial && !dismissedFloHeroAlerts.has('material_gap') && {
+            id: 'material_gap',
+            icon: '📦',
+            msg: `Aucune commande de matériel passée avant "${upcomingInternalPhases[0].name}" (${fmtD(new Date(upcomingInternalPhases[0].start_date.slice(0,10)+'T00:00'))}). Pense à commander avant le début.`,
+            cta: 'Aller aux commandes',
+            ctaAction: () => { setActiveSection('s-materials'); document.getElementById('s-materials')?.scrollIntoView({ behavior: 'smooth' }); },
+          },
+        ].filter(Boolean);
+
         return (
           <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED', display: activeTab !== 'detail' ? 'none' : undefined }}>
 
@@ -5876,7 +5974,27 @@ Règles :
               Projet · {PIPELINE_LABELS[project.status] || project.status || 'Brouillon'}
             </div>
 
-            {/* Titre composé — format : Type de travaux | Adresse | Début - Fin */}
+            {/* ── Alertes Flo ── */}
+            {floHeroAlerts.map(alert => (
+              <div key={alert.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF8F0', border: '1.5px solid #F5C08A', borderRadius: 12, padding: '10px 14px', marginBottom: 12, fontSize: 12.5, color: '#7C4700' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: '#E8794E', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>F</div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600 }}>{alert.msg}</span>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button type="button" onClick={alert.ctaAction} disabled={alert.ctaDisabled}
+                      style={{ fontSize: 11, fontWeight: 700, background: '#E8794E', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', opacity: alert.ctaDisabled ? .6 : 1 }}>
+                      {alert.icon} {alert.cta}
+                    </button>
+                    <button type="button" onClick={() => setDismissedFloHeroAlerts(s => new Set([...s, alert.id]))}
+                      style={{ fontSize: 11, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 4px' }}>
+                      Ignorer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Titre composé — format : Type de travaux | Adresse | Début - Fin (annoncé) */}
             <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', lineHeight: 1.2, color: '#15171C', margin: '0 0 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 4px' }}>
               <InlineField value={workType} onSave={v => saveAssessmentField('work_type', v)} placeholder="Type de travaux"
                 style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-.03em', color: '#15171C' }}
@@ -5918,6 +6036,34 @@ Règles :
                 </div>
               ))}
             </div>
+
+            {/* ── Comparaison dates annoncées vs Gantt ── */}
+            {(announcedStartDate || announcedEndDate || ganttStart || ganttEnd) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+                {/* Dates annoncées */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #E8EAED', borderRadius: 9, padding: '5px 12px', fontSize: 12 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF' }}>Annoncé client</span>
+                  <span style={{ color: '#374151', fontWeight: 600 }}>
+                    {startLabel || fmtD(announcedStartDate)} → {endLabel || fmtD(announcedEndDate)}
+                  </span>
+                </div>
+                {/* Flèche séparateur */}
+                {(ganttStart || ganttEnd) && allPhases.length > 0 && (
+                  <>
+                    <span style={{ color: '#C8CACD', fontSize: 13 }}>vs</span>
+                    {/* Dates Gantt */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: slipDays > 0 ? '#FFF8F0' : '#F0F9FF', border: `1px solid ${slipDays > 0 ? '#F5C08A' : '#BAE6FD'}`, borderRadius: 9, padding: '5px 12px', fontSize: 12 }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: slipDays > 0 ? '#B45309' : '#0369A1' }}>Gantt réel</span>
+                      <span style={{ color: slipDays > 0 ? '#92400E' : '#0C4A6E', fontWeight: 600 }}>
+                        {fmtD(ganttStart)} → {fmtD(ganttEnd)}
+                      </span>
+                      {slipDays > 0 && <span style={{ fontSize: 10, background: '#FEF3C7', color: '#92400E', fontWeight: 700, borderRadius: 5, padding: '1px 6px' }}>+{slipDays}j</span>}
+                      {slipDays < 0 && <span style={{ fontSize: 10, background: '#DCFCE7', color: '#166534', fontWeight: 700, borderRadius: 5, padding: '1px 6px' }}>{slipDays}j</span>}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Métriques non-éditables + rentabilité + QR */}
             {(() => {
@@ -6343,6 +6489,47 @@ Règles :
                     <Download size={13}/> Télécharger
                   </a>
                 </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal courriel Flo — retard ou commande ── */}
+      {floEmailModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9990, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={e => { if (e.target === e.currentTarget) setFloEmailModal(null); }}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 560, boxShadow: '0 24px 80px rgba(0,0,0,0.22)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#E8794E', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 800 }}>F</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#15171C' }}>Courriel préparé par Flo</p>
+                <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF' }}>Relis, modifie si besoin, puis copie ou envoie.</p>
+              </div>
+              <button onClick={() => setFloEmailModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 4 }}><X size={16}/></button>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Objet</label>
+              <input className="input" value={floEmailModal.subject}
+                onChange={e => setFloEmailModal(m => ({ ...m, subject: e.target.value }))}
+                style={{ fontSize: 13, fontWeight: 600 }}/>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Corps du message</label>
+              <textarea className="input resize-none" rows={10} value={floEmailModal.body}
+                onChange={e => setFloEmailModal(m => ({ ...m, body: e.target.value }))}
+                style={{ fontSize: 13, lineHeight: 1.65 }}/>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => { navigator.clipboard.writeText(`Objet : ${floEmailModal.subject}\n\n${floEmailModal.body}`); }}
+                style={{ fontSize: 12, fontWeight: 600, background: '#F3F4F6', color: '#374151', border: 'none', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Copy size={12}/> Copier
+              </button>
+              {project.client_email && (
+                <a href={`mailto:${project.client_email}?subject=${encodeURIComponent(floEmailModal.subject)}&body=${encodeURIComponent(floEmailModal.body)}`}
+                  style={{ fontSize: 12, fontWeight: 700, background: '#E8794E', color: '#fff', border: 'none', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}>
+                  <Send size={12}/> Ouvrir dans le client courriel
+                </a>
               )}
             </div>
           </div>
@@ -8777,8 +8964,8 @@ Règles :
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Photos pendant et post chantier</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Photos, notes et mémos — L'IA détecte non-conformités (RBQ) et risques CNESST</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Notes et photos</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Pendant et post chantier · L'IA détecte non-conformités (RBQ) et risques CNESST</div>
             </div>
             <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
           </div>
@@ -8801,55 +8988,87 @@ Règles :
 
           {showMediaForm && (
             <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
+              {/* Type: Note ou Mémo vocal */}
               <div className="flex gap-2">
                 {[
-                  { k: 'photo', icon: <Image size={13}/>, l: 'Photo' },
                   { k: 'note',  icon: <StickyNote size={13}/>, l: 'Note' },
-                  { k: 'voice', icon: <Mic size={13}/>, l: 'Vocal' },
+                  { k: 'voice', icon: <Mic size={13}/>, l: 'Mémo vocal' },
                 ].map(({ k, icon, l }) => (
                   <button key={k} type="button"
                     className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${mediaForm.type === k ? 'border-brand bg-orange-50 text-brand' : 'border-gray-200 text-gray-400'}`}
                     onClick={() => setMediaForm(f => ({ ...f, type: k }))}>{icon} {l}</button>
                 ))}
               </div>
-              {mediaForm.type === 'photo' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div><label className="label">URL de la photo *</label><input className="input" value={mediaForm.url} onChange={e => setMediaForm(f => ({ ...f, url: e.target.value, mime_type: 'image/jpeg' }))} placeholder="https://…" required/></div>
-                  <div><label className="label">Légende</label><input className="input" value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Fondation côté nord"/></div>
-                </div>
-              ) : mediaForm.type === 'voice' ? (
+
+              {mediaForm.type === 'voice' ? (
                 <div>
                   <label className="label">Transcription du mémo vocal *</label>
                   <textarea className="input" rows={2} value={mediaForm.transcript} onChange={e => setMediaForm(f => ({ ...f, transcript: e.target.value }))} placeholder="Transcrivez ou collez le contenu du mémo… (enregistrement audio à venir)" required/>
                 </div>
               ) : (
-                <div>
-                  <label className="label">Note de chantier *</label>
-                  <textarea className="input" rows={2} value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Coffrage mal aligné au coin sud-est…" required/>
-                </div>
+                <>
+                  <div>
+                    <label className="label">Observation ou note *</label>
+                    <textarea className="input" rows={2} value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Coffrage mal aligné au coin sud-est…"/>
+                  </div>
+                  {/* Photos associées */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="label" style={{ margin: 0 }}>Photos (optionnel)</label>
+                      <button type="button" className="flex items-center gap-1 text-xs text-brand font-semibold"
+                        onClick={() => setMediaForm(f => ({ ...f, photos: [...f.photos, { url: '' }] }))}>
+                        <Plus size={11}/> Ajouter une photo
+                      </button>
+                    </div>
+                    {mediaForm.photos.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 mb-1">
+                        <input className="input flex-1" value={p.url} onChange={e => setMediaForm(f => {
+                          const photos = [...f.photos]; photos[i] = { ...photos[i], url: e.target.value }; return { ...f, photos };
+                        })} placeholder="URL de la photo…"/>
+                        {p.url && <img src={p.url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #E8EAED', flexShrink: 0 }} onError={ev => { ev.target.style.display = 'none'; }}/>}
+                        <button type="button" className="text-gray-300 hover:text-red-400"
+                          onClick={() => setMediaForm(f => ({ ...f, photos: f.photos.filter((_, j) => j !== i) }))}>
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
-              <div className="flex justify-end"><button type="submit" className="btn-primary text-xs px-4">Ajouter</button></div>
+              <div className="flex justify-end">
+                <button type="submit" className="btn-primary text-xs px-4"
+                  disabled={mediaForm.type === 'voice' ? !mediaForm.transcript.trim() : (!mediaForm.caption.trim() && !mediaForm.photos.some(p => p.url.trim()))}>
+                  Ajouter
+                </button>
+              </div>
             </form>
           )}
 
           {media.length > 0 ? (
             <>
-              {/* Galerie horizontale */}
-              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
-                {media.map(m => (
-                  <div key={`gal-${m.id}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer' }}
-                    onClick={() => setLightboxItem(m)}>
-                    {m.type === 'photo' && m.url
-                      ? <img src={m.url} alt={m.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}/>
-                      : <div style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 28 }}>{m.type === 'voice' ? '🎙' : '📌'}</div>
-                    }
-                    <div style={{ padding: '8px 10px' }}>
-                      <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>{new Date(m.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}</p>
-                      <p style={{ fontSize: 12, color: '#15171C', margin: '2px 0 0', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{m.caption || m.transcript || '—'}</p>
+              {/* Galerie horizontale — photos de toutes les entrées */}
+              {media.some(m => m.url || (m.photos && m.photos.length > 0)) && (
+                <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
+                  {media.flatMap(m => {
+                    const photoList = m.photos && m.photos.length > 0
+                      ? m.photos.map((p, i) => ({ _key: `${m.id}-${i}`, url: p.url, caption: m.caption, created_at: m.created_at, _entry: m }))
+                      : m.url ? [{ _key: m.id, url: m.url, caption: m.caption, created_at: m.created_at, _entry: m }]
+                      : [];
+                    return photoList;
+                  }).map(item => (
+                    <div key={`gal-${item._key}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer' }}
+                      onClick={() => setLightboxItem(item._entry)}>
+                      <img src={item.url} alt={item.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}
+                        onError={ev => { ev.target.parentElement.querySelector('.gal-fallback').style.display = 'grid'; ev.target.style.display = 'none'; }}/>
+                      <div className="gal-fallback" style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'none', placeItems: 'center', fontSize: 28 }}>📷</div>
+                      <div style={{ padding: '8px 10px' }}>
+                        <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>{new Date(item.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}</p>
+                        <p style={{ fontSize: 12, color: '#15171C', margin: '2px 0 0', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{item.caption || '—'}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
               {/* Détails / analyse IA */}
               <div className="space-y-2">
               {media.map(m => {
@@ -8858,14 +9077,24 @@ Règles :
                 return (
                   <div key={m.id} className="border border-gray-100 rounded-xl p-3">
                     <div className="flex items-start gap-3">
+                      {/* Thumbnail(s) */}
                       <div className="flex-shrink-0 cursor-pointer" onClick={() => setLightboxItem(m)}>
-                        {m.type === 'photo' && m.url
-                          ? <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover border border-gray-100"/>
-                          : <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>}
+                        {m.photos && m.photos.length > 0 ? (
+                          <div style={{ display: 'flex', gap: 3 }}>
+                            {m.photos.slice(0, 3).map((p, i) => (
+                              <img key={i} src={p.url} alt="" style={{ width: m.photos.length === 1 ? 56 : 36, height: m.photos.length === 1 ? 56 : 36, objectFit: 'cover', borderRadius: 8, border: '1px solid #E8EAED' }}/>
+                            ))}
+                            {m.photos.length > 3 && <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700, color: '#7C8089', border: '1px solid #E8EAED' }}>+{m.photos.length - 3}</div>}
+                          </div>
+                        ) : m.url ? (
+                          <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover border border-gray-100"/>
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="badge badge-gray text-[10px] capitalize">{m.type}</span>
+                          <span className="badge badge-gray text-[10px]">{m.type === 'voice' ? 'vocal' : m.photos?.length > 0 ? `note · ${m.photos.length} photo${m.photos.length > 1 ? 's' : ''}` : m.url ? 'note · photo' : 'note'}</span>
                           {m.ai_status === 'done' && a?.overall_severity && <span className={`badge ${SEV[a.overall_severity]?.c || 'badge-gray'} text-[10px]`}>{issues > 0 ? `${issues} point(s)` : 'Conforme'}</span>}
                           <span className="text-[11px] text-gray-300 ml-auto">{m.author_name || ''} · {new Date(m.created_at).toLocaleDateString('fr-CA')}</span>
                         </div>
@@ -9877,7 +10106,7 @@ Règles :
                 )}
                 {media.length > 0 && (
                   <div style={{ marginTop: 14 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Photos pendant et post chantier ({media.length})</p>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#7C8089', margin: '0 0 8px' }}>Notes et photos ({media.length})</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
                       {media.slice(0, 8).map(m => (
                         <div key={m.id} style={{ borderRadius: 9, border: '1px solid #E5E7EB', overflow: 'hidden', background: '#FAFAFA' }}>
