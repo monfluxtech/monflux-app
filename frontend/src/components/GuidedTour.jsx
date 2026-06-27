@@ -1,55 +1,51 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { X, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../store';
 
-// Bumper ce numéro quand une nouvelle fonctionnalité mérite d'être présentée.
-// Tous les utilisateurs dont la version sauvegardée est inférieure verront le tour.
 const TOUR_VERSION = 1;
 
 const STEPS = [
   {
     target: null,
-    title: '👋 Bienvenue dans MONFLUX !',
-    desc: 'Cette visite guidée te montre les sections principales de l\'application en moins de 2 minutes. Tu peux la relancer à tout moment via le bouton ✦ en bas de la sidebar.',
+    title: 'Salut, moi c\'est Flo 👋',
+    desc: 'Je suis ton assistante IA intégrée à MONFLUX. Je vais te faire faire le tour en 2 minutes — tu pourras me retrouver en tout temps dans l\'application pour analyser tes projets ou générer des documents.',
     position: 'center',
   },
   {
     target: '.app-sidebar',
-    title: '🧭 La barre de navigation',
-    desc: 'À gauche : toutes les sections de l\'app. Le menu s\'adapte selon ton forfait et tes modules activés.',
+    title: 'Ton espace de navigation',
+    desc: 'Ce panneau te donne accès à toutes les sections de l\'app. Il s\'adapte à ton métier et à ce qu\'on a configuré ensemble lors de l\'onboarding — tu ne vois que ce qui est pertinent pour toi.',
     position: 'right',
   },
   {
     target: '[href="/projets"]',
-    title: '📁 Projets',
-    desc: 'Tous tes chantiers en un coup d\'œil. Vue liste, Kanban, Gantt, Calendrier ou Carte. Clique sur un projet pour voir sa fiche complète.',
+    title: 'Tes chantiers',
+    desc: 'Tous tes projets en cours et à venir, en un seul endroit. Tu peux les voir en liste, Kanban, Gantt, Calendrier ou sur une carte — comme tu préfères travailler.',
     position: 'right',
   },
   {
     target: '[href="/dashboard"]',
-    title: '📊 Tableau de bord',
-    desc: 'Ton aperçu financier : valeur portefeuille, facturé, marges, délais. Les chiffres se mettent à jour en temps réel.',
+    title: 'Ton tableau de bord',
+    desc: 'Une vue centralisée de ce qui compte pour toi — projets actifs, alertes et indicateurs clés. Son contenu s\'adapte à ton rôle dans l\'équipe, tout le monde ne voit pas la même chose.',
     position: 'right',
   },
   {
     target: '[href="/chat"]',
-    title: '✨ Florence — ton IA de chantier',
-    desc: 'Flo analyse tes projets, génère des soumissions, trouve des sous-traitants et rédige tes courriels. Tu peux aussi lui parler directement depuis n\'importe quelle fiche projet.',
+    title: 'Comment je travaille avec toi',
+    desc: 'Tu me parles ici directement — je lis tes projets, génère des soumissions, trouve des sous-traitants et rédige tes courriels. Essaie : « Résume mes chantiers actifs ».',
     position: 'right',
   },
   {
     target: null,
-    title: '🚀 Tu es prêt !',
-    desc: 'C\'est tout ! Explore à ton rythme. Si tu as des questions, demande à Flo — elle est là pour t\'aider. Bonne gestion de chantier !',
+    title: 'C\'est parti ! 🚀',
+    desc: 'Tu peux relancer ce tour en tout temps depuis le bas du menu. Et si tu as une question, tu sais où me trouver. Bonne gestion !',
     position: 'center',
   },
 ];
 
 function shouldAutoLaunch() {
   const savedVersion = parseInt(localStorage.getItem('mf_tour_v') || '0', 10);
-  // Pending = onboarding vient d'être complété
   if (localStorage.getItem('mf_tour_pending') === '1') return true;
-  // Nouvelle version du tour non encore vue
   if (savedVersion < TOUR_VERSION) return true;
   return false;
 }
@@ -58,7 +54,6 @@ export default function GuidedTour() {
   const { user } = useAuthStore();
   const [step, setStep] = useState(-1);
   const [targetRect, setTargetRect] = useState(null);
-  const overlayRef = useRef(null);
 
   const start = () => setStep(0);
 
@@ -70,20 +65,13 @@ export default function GuidedTour() {
   };
 
   useEffect(() => {
-    // Ne jamais lancer le tour si l'utilisateur n'est pas connecté
     if (!user) return;
-
     const handler = () => start();
     window.addEventListener('mf:start-tour', handler);
-
     if (shouldAutoLaunch()) {
       const timer = setTimeout(() => start(), 1400);
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener('mf:start-tour', handler);
-      };
+      return () => { clearTimeout(timer); window.removeEventListener('mf:start-tour', handler); };
     }
-
     return () => window.removeEventListener('mf:start-tour', handler);
   }, [user]);
 
@@ -103,76 +91,95 @@ export default function GuidedTour() {
   const s = STEPS[step];
   const isCentered = s.position === 'center' || !targetRect;
   const isLast = step === STEPS.length - 1;
+  const total = STEPS.length;
 
   const popupStyle = isCentered
     ? { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 9999 }
     : (() => {
-        const top = Math.max(8, Math.min(targetRect.top, window.innerHeight - 240));
-        const left = Math.min(targetRect.right + 16, window.innerWidth - 340);
-        return { position: 'fixed', top, left, zIndex: 9999 };
+        const gap = 20;
+        const popW = 300;
+        const top = Math.max(8, Math.min(targetRect.top, window.innerHeight - 260));
+        let left = targetRect.right + gap;
+        if (left + popW > window.innerWidth - 8) left = targetRect.left - popW - gap;
+        return { position: 'fixed', top, left: Math.max(8, left), zIndex: 9999 };
       })();
 
   return (
     <>
-      {/* Overlay */}
-      <div
-        onClick={stop}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9998, backdropFilter: 'blur(2px)' }}
-      />
-
-      {/* Highlight ring */}
-      {targetRect && (
+      {/* Overlay: full-screen for centered steps, spotlight ring for targeted steps */}
+      {isCentered ? (
+        <div
+          onClick={stop}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.48)', zIndex: 9998 }}
+        />
+      ) : targetRect && (
+        /* Spotlight ring — box-shadow darkens everything OUTSIDE, element stays clear */
         <div style={{
           position: 'fixed',
-          top: targetRect.top - 4,
-          left: targetRect.left - 4,
-          width: targetRect.width + 8,
-          height: targetRect.height + 8,
-          borderRadius: 12,
-          border: '2.5px solid #E8794E',
-          boxShadow: '0 0 0 4px rgba(232,121,78,0.25)',
-          zIndex: 9999,
+          top: targetRect.top - 6,
+          left: targetRect.left - 6,
+          width: targetRect.width + 12,
+          height: targetRect.height + 12,
+          borderRadius: 10,
+          border: '2px solid #E8794E',
+          boxShadow: '0 0 0 100vmax rgba(0,0,0,0.52), 0 0 0 4px rgba(232,121,78,0.18)',
+          animation: 'tour-spotlight-pulse 2s ease-in-out infinite',
+          zIndex: 9998,
           pointerEvents: 'none',
-          transition: 'all 0.3s ease',
         }} />
       )}
 
       {/* Card */}
-      <div ref={overlayRef} style={{
+      <div style={{
         ...popupStyle,
-        width: 320,
+        width: 300,
         background: '#fff',
         borderRadius: 16,
-        padding: '20px 20px 16px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        padding: '18px 18px 14px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.28)',
         border: '1px solid #E8EAED',
       }}>
-        <button onClick={stop} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
-          <X size={15} />
-        </button>
-
-        {/* Barre de progression */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-          {STEPS.map((_, i) => (
-            <div key={i} style={{ height: 3, flex: 1, borderRadius: 2, background: i <= step ? '#E8794E' : '#E8EAED', transition: 'background 0.3s' }} />
-          ))}
+        {/* Header: Flo avatar + counter + close */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%', background: '#E8794E',
+            color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0,
+          }}>F</div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#E8794E' }}>Florence — Flo</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>
+            {step + 1}/{total}
+          </span>
+          <button onClick={stop} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2, display: 'grid', placeItems: 'center' }}>
+            <X size={14} />
+          </button>
         </div>
 
-        <h3 style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: '0 0 8px', lineHeight: 1.3 }}>{s.title}</h3>
-        <p style={{ fontSize: 13, color: '#4B5563', margin: '0 0 18px', lineHeight: 1.5 }}>{s.desc}</p>
+        {/* Progress bar */}
+        <div style={{ height: 3, background: '#F3F4F6', borderRadius: 2, marginBottom: 14, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            width: `${((step + 1) / total) * 100}%`,
+            background: '#E8794E',
+            borderRadius: 2,
+            transition: 'width 0.35s ease',
+          }} />
+        </div>
+
+        <h3 style={{ fontSize: 14, fontWeight: 800, color: '#15171C', margin: '0 0 7px', lineHeight: 1.3 }}>{s.title}</h3>
+        <p style={{ fontSize: 12.5, color: '#4B5563', margin: '0 0 16px', lineHeight: 1.55 }}>{s.desc}</p>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button
             onClick={() => step > 0 ? setStep(n => n - 1) : stop()}
             style={{ fontSize: 12, fontWeight: 600, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
           >
-            {step > 0 ? <><ArrowLeft size={13}/> Précédent</> : 'Passer la visite'}
+            {step > 0 ? <><ArrowLeft size={12}/> Précédent</> : 'Passer'}
           </button>
           <button
             onClick={() => isLast ? stop() : setStep(n => n + 1)}
-            style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#E8794E', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+            style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#E8794E', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
           >
-            {isLast ? 'Terminer ✓' : <><ArrowRight size={13}/> Suivant</>}
+            {isLast ? 'Terminer ✓' : <><ArrowRight size={12}/> Suivant</>}
           </button>
         </div>
       </div>

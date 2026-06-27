@@ -810,7 +810,7 @@ function ProjectModal({ project, onClose, onSave }) {
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">{error}</div>}
         <div>
           <label className="label">Type de travaux *</label>
-          <select className="input" value={form.work_type} onChange={f('work_type')} required>
+          <select id="proj-work-type" name="work_type" className="input" value={form.work_type} onChange={f('work_type')} required>
             <option value="">— Sélectionner —</option>
             {WORK_TYPE_OPTIONS.map(({ group, items }) => (
               <optgroup key={group} label={group}>
@@ -820,15 +820,17 @@ function ProjectModal({ project, onClose, onSave }) {
           </select>
         </div>
         <div>
-          <label className="label flex items-center gap-1">
+          <label htmlFor="proj-description" className="label flex items-center gap-1">
             Description
             <span className="ml-1 text-[10px] text-brand font-medium flex items-center gap-0.5"><Sparkles size={9}/>{t('ai_phases')}</span>
           </label>
-          <textarea className="input resize-none" rows={3} placeholder="Description du chantier…" value={form.description} onChange={f('description')} />
+          <textarea id="proj-description" name="description" className="input resize-none" rows={3} placeholder="Description du chantier…" value={form.description} onChange={f('description')} />
         </div>
         <div>
-          <label className="label">{t('address')}</label>
+          <label htmlFor="proj-address" className="label">{t('address')}</label>
           <AddressInput
+            id="proj-address"
+            name="address"
             className="input"
             placeholder="123 rue Principale"
             value={form.address}
@@ -836,12 +838,12 @@ function ProjectModal({ project, onClose, onSave }) {
             onCityChange={city => setForm(p => ({ ...p, city }))}
           />
         </div>
-        <div><label className="label">{t('city')}</label><input className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
+        <div><label htmlFor="proj-city" className="label">{t('city')}</label><input id="proj-city" name="city" className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">{t('start_date')}</label><input className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
-          <div><label className="label">{t('end_date')}</label><input className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
+          <div><label htmlFor="proj-start" className="label">{t('start_date')}</label><input id="proj-start" name="start_date" className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
+          <div><label htmlFor="proj-end" className="label">{t('end_date')}</label><input id="proj-end" name="end_date" className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
         </div>
-        <div><label className="label">{t('contract_value')}</label><input className="input" type="number" value={form.contract_value} onChange={f('contract_value')} /></div>
+        <div><label htmlFor="proj-value" className="label">{t('contract_value')}</label><input id="proj-value" name="contract_value" className="input" type="number" value={form.contract_value} onChange={f('contract_value')} /></div>
       </form>
     </SlideOver>
   );
@@ -1288,9 +1290,9 @@ export default function Projets() {
         <div className="flex gap-2 mb-2 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300"/>
-            <input className="input pl-8" placeholder="Rechercher…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <input id="proj-search" name="search" className="input pl-8" placeholder="Rechercher…" value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
-          <select className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          <select id="proj-status" name="status_filter" className="input w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
             <option value="">{t('all_statuses')}</option>
             {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
@@ -1301,36 +1303,36 @@ export default function Projets() {
         {showFilters && (
           <div className="flex gap-2 mb-4 flex-wrap bg-gray-50 rounded-xl p-3">
             <div className="flex-1 min-w-32">
-              <label className="label text-[11px]">{t('filter_city')}</label>
-              <input className="input text-xs" placeholder="Montréal…" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}/>
+              <label htmlFor="f-city" className="label text-[11px]">{t('filter_city')}</label>
+              <input id="f-city" name="filter_city" className="input text-xs" placeholder="Montréal…" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-32">
-              <label className="label text-[11px]">Type de travaux</label>
-              <input className="input text-xs" placeholder="Rénovation…" value={workTypeFilter} onChange={e=>setWorkTypeFilter(e.target.value)}/>
+              <label htmlFor="f-work-type" className="label text-[11px]">Type de travaux</label>
+              <input id="f-work-type" name="filter_work_type" className="input text-xs" placeholder="Rénovation…" value={workTypeFilter} onChange={e=>setWorkTypeFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-32">
-              <label className="label text-[11px]">{t('filter_manager')}</label>
-              <input className="input text-xs" placeholder="Nom…" value={managerFilter} onChange={e=>setManagerFilter(e.target.value)}/>
+              <label htmlFor="f-manager" className="label text-[11px]">{t('filter_manager')}</label>
+              <input id="f-manager" name="filter_manager" className="input text-xs" placeholder="Nom…" value={managerFilter} onChange={e=>setManagerFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">Début après</label>
-              <input className="input text-xs" type="date" value={dateFromFilter} onChange={e=>setDateFromFilter(e.target.value)}/>
+              <label htmlFor="f-date-from" className="label text-[11px]">Début après</label>
+              <input id="f-date-from" name="filter_date_from" className="input text-xs" type="date" value={dateFromFilter} onChange={e=>setDateFromFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">Fin avant</label>
-              <input className="input text-xs" type="date" value={dateToFilter} onChange={e=>setDateToFilter(e.target.value)}/>
+              <label htmlFor="f-date-to" className="label text-[11px]">Fin avant</label>
+              <input id="f-date-to" name="filter_date_to" className="input text-xs" type="date" value={dateToFilter} onChange={e=>setDateToFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">{t('filter_value_min')}</label>
-              <input className="input text-xs" type="number" placeholder="0" value={valueMin} onChange={e=>setValueMin(e.target.value)}/>
+              <label htmlFor="f-val-min" className="label text-[11px]">{t('filter_value_min')}</label>
+              <input id="f-val-min" name="filter_value_min" className="input text-xs" type="number" placeholder="0" value={valueMin} onChange={e=>setValueMin(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">{t('filter_value_max')}</label>
-              <input className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
+              <label htmlFor="f-val-max" className="label text-[11px]">{t('filter_value_max')}</label>
+              <input id="f-val-max" name="filter_value_max" className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
-              <label className="label text-[11px]">Avancement min (%)</label>
-              <input className="input text-xs" type="number" min="0" max="100" placeholder="0" value={progressMinFilter} onChange={e=>setProgressMinFilter(e.target.value)}/>
+              <label htmlFor="f-progress" className="label text-[11px]">Avancement min (%)</label>
+              <input id="f-progress" name="filter_progress_min" className="input text-xs" type="number" min="0" max="100" placeholder="0" value={progressMinFilter} onChange={e=>setProgressMinFilter(e.target.value)}/>
             </div>
             {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].some(Boolean) && (
               <div className="flex items-end">
