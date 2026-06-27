@@ -11,6 +11,7 @@ import {
   LogOut, User, BookUser, BarChart3, Bell,
   AlertCircle, Clock, FileQuestion, Search, Sparkles,
   FileSignature, ShoppingCart, FileStack, Languages,
+  ToggleLeft, ToggleRight, Layers,
 } from 'lucide-react';
 
 const ICONS = {
@@ -56,7 +57,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
   const t = useT();
   const { lang, setLanguage } = useLang();
   const { user, logout, company } = useAuthStore();
-  const { modules, load } = useConfigStore();
+  const { modules, load, toggleModule } = useConfigStore();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -65,9 +66,11 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
   const [notifs, setNotifs] = useState([]);
   const [notifSeen, setNotifSeen] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(null);
+  const [modulesMenuOpen, setModulesMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
   const quickRef = useRef(null);
+  const modulesMenuRef = useRef(null);
 
   const role = company?.role;
   const coreNav = CORE_MODULES.filter((m) => roleAllows(role, m.key));
@@ -82,6 +85,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setUserMenuOpen(false);
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (quickRef.current && !quickRef.current.contains(e.target)) setQuickOpen(false);
+      if (modulesMenuRef.current && !modulesMenuRef.current.contains(e.target)) setModulesMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -247,7 +251,7 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             </div>
           )}
 
-          <div className="app-sidebar-mini-actions">
+          <div className="app-sidebar-mini-actions" ref={modulesMenuRef} style={{ position: 'relative' }}>
             <button
               type="button"
               className="mini"
@@ -265,6 +269,52 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
             >
               <Sparkles size={14} />
             </button>
+            <button
+              type="button"
+              className="mini"
+              title="Gérer les modules"
+              onClick={() => setModulesMenuOpen(o => !o)}
+              style={{ color: modulesMenuOpen ? '#E8794E' : undefined }}
+            >
+              <Layers size={14} />
+            </button>
+
+            {/* Module toggle popover */}
+            {modulesMenuOpen && (
+              <div style={{
+                position: 'absolute', bottom: '100%', left: 0, marginBottom: 8,
+                background: '#1C1F24', border: '1px solid rgba(255,255,255,.1)',
+                borderRadius: 12, padding: '10px 0', width: 216, zIndex: 50,
+                boxShadow: '0 8px 32px rgba(0,0,0,.45)',
+              }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.35)', padding: '0 12px 6px', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+                  Modules de navigation
+                </p>
+                {SECONDARY_MODULES.map(m => {
+                  const Icon = ICONS[m.icon] || FolderKanban;
+                  const on = modules?.[m.key] !== false;
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => toggleModule(m.key)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+                        padding: '7px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                        color: on ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.3)',
+                      }}
+                    >
+                      <Icon size={13} style={{ flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 12.5, textAlign: 'left' }}>{m.label}</span>
+                      {on
+                        ? <ToggleRight size={18} style={{ color: '#E8794E', flexShrink: 0 }} />
+                        : <ToggleLeft size={18} style={{ color: 'rgba(255,255,255,.2)', flexShrink: 0 }} />
+                      }
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="relative" ref={userMenuRef}>
@@ -345,16 +395,6 @@ export default function Layout({ children, toc = null, noTopbar = false }) {
           <>
             {!noTopbar && (
               <header className="app-topbar">
-                <button
-                  type="button"
-                  onClick={() => setLanguage(lang === 'fr' ? 'en' : 'fr')}
-                  className="flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-brand px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                  title={lang === 'fr' ? 'Switch to English' : 'Passer en français'}
-                >
-                  <Languages size={13} />
-                  <span>{lang === 'fr' ? 'EN' : 'FR'}</span>
-                </button>
-
                 <div style={{ flex: 1 }} />
 
                 <button

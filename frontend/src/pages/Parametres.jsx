@@ -297,6 +297,7 @@ function CompanyTab() {
       tps_number: data.tps_number || '',
       tvq_number: data.tvq_number || '',
       website: data.website || '',
+      logo: data.logo || '',
       facebook: data.social_links?.facebook || '',
       instagram: data.social_links?.instagram || '',
       linkedin: data.social_links?.linkedin || '',
@@ -320,6 +321,43 @@ function CompanyTab() {
 
   return (
     <form onSubmit={submit} className="space-y-4 max-w-lg">
+
+      {/* ── Logo ── */}
+      <div>
+        <label className="label">Logo de l'entreprise</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 76, height: 76, border: '1.5px dashed #D1D5DB', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#F9FAFB', flexShrink: 0 }}>
+            {form.logo
+              ? <img src={form.logo} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              : <Building2 size={26} style={{ color: '#D1D5DB' }} />
+            }
+          </div>
+          <div>
+            <label style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', background: '#F4F5F6', border: '1px solid #E8EAED', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', display: 'inline-block' }}>
+              {form.logo ? 'Changer le logo' : 'Ajouter un logo'}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setForm(p => ({ ...p, logo: ev.target.result }));
+                  reader.readAsDataURL(file);
+                }}
+              />
+            </label>
+            {form.logo && (
+              <button type="button" onClick={() => setForm(p => ({ ...p, logo: '' }))} style={{ marginLeft: 8, fontSize: 12, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                Retirer
+              </button>
+            )}
+            <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 5, lineHeight: 1.4 }}>PNG, JPG ou SVG · Apparaît sur vos PDF (soumissions, contrats, factures)</p>
+          </div>
+        </div>
+      </div>
+
       <div><label className="label">Nom de l'entreprise *</label><input className="input" value={form.name} onChange={f('name')} required placeholder="Constructions Tremblay inc."/></div>
       <div className="grid grid-cols-2 gap-4">
         <div><label className="label">Téléphone</label><input className="input" value={form.phone} onChange={f('phone')} placeholder="514-555-1234"/></div>
@@ -725,13 +763,31 @@ const ROLE_LIST = [
   { key: 'client',          label: 'Client' },
   { key: 'fournisseur',     label: 'Fournisseur' },
 ];
-const ACTION_LIST = ['voir', 'éditer', 'créer', 'supprimer'];
+const ACTION_LIST = ['voir', 'éditer', 'créer', 'suppr.'];
+
+const MODULE_WIDGETS = {
+  dashboard:          [{ key: 'kpi_finances', label: 'KPI Finances' }, { key: 'kpi_planning', label: 'KPI Planning' }, { key: 'ia_resume', label: 'Résumé IA' }, { key: 'alertes', label: 'Alertes' }],
+  projets:            [{ key: 'vue_liste', label: 'Vue liste' }, { key: 'vue_kanban', label: 'Vue Kanban' }, { key: 'vue_gantt', label: 'Vue Gantt' }, { key: 'vue_calendrier', label: 'Vue calendrier' }, { key: 'vue_carte', label: 'Vue carte' }, { key: 'vue_portefeuille', label: 'Vue portefeuille' }, { key: 'kpi_ligne', label: 'KPI par ligne' }],
+  chat:               [{ key: 'chat_flo', label: 'Chat Florence' }, { key: 'soumissions_ia', label: 'Soumissions IA' }, { key: 'analyse_fichiers', label: 'Analyse fichiers' }, { key: 'phases_ia', label: 'Phases IA' }],
+  leads:              [{ key: 'vue_liste', label: 'Vue liste' }, { key: 'pipeline', label: 'Pipeline vente' }],
+  soumissions:        [{ key: 'liste', label: 'Liste soumissions' }, { key: 'pdf', label: 'PDF soumission' }],
+  contrats:           [{ key: 'liste', label: 'Liste contrats' }, { key: 'signature', label: 'Signature électronique' }],
+  factures:           [{ key: 'liste', label: 'Liste factures' }, { key: 'pdf', label: 'PDF facture' }],
+  commandes:          [{ key: 'liste', label: 'Liste commandes' }],
+  sous_traitants:     [{ key: 'liste', label: 'Liste sous-traitants' }, { key: 'denonciations', label: 'Dénonciations' }],
+  punch:              [{ key: 'pointer', label: 'Pointer entrée/sortie' }, { key: 'feuilles', label: 'Feuilles de temps' }],
+  rapport:            [{ key: 'export', label: 'Export rapport' }],
+  portail_client:     [{ key: 'acces', label: 'Accès portail' }],
+  portail_fournisseur:[{ key: 'acces', label: 'Accès portail' }],
+};
 
 function RolesTab() {
   const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const [matrix, setMatrix] = useState(() => {
     try { return JSON.parse(localStorage.getItem('monflux-roles-matrix') || 'null') || null; } catch { return null; }
   });
+  const [expanded, setExpanded] = useState({});
+
   useEffect(() => {
     if (uiPrefs.roles_matrix) setMatrix(uiPrefs.roles_matrix);
   }, [uiPrefs.roles_matrix]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -761,6 +817,12 @@ function RolesTab() {
         ACTION_LIST.forEach(a => {
           m[r.key][mod.key][a] = r.key === 'owner' || r.key === 'chef_chantier';
         });
+        (MODULE_WIDGETS[mod.key] || []).forEach(w => {
+          m[r.key][`${mod.key}__${w.key}`] = {};
+          ACTION_LIST.forEach(a => {
+            m[r.key][`${mod.key}__${w.key}`][a] = r.key === 'owner' || r.key === 'chef_chantier';
+          });
+        });
       });
     });
     return m;
@@ -768,57 +830,98 @@ function RolesTab() {
 
   const mat = matrix || getDefault();
 
-  const toggle = (role, mod, action) => {
+  const toggle = (role, matKey, action) => {
     const next = JSON.parse(JSON.stringify(mat));
-    next[role][mod][action] = !next[role][mod][action];
+    if (!next[role]) next[role] = {};
+    if (!next[role][matKey]) next[role][matKey] = {};
+    next[role][matKey][action] = !next[role][matKey][action];
     setMatrix(next);
     localStorage.setItem('monflux-roles-matrix', JSON.stringify(next));
     setUiPref('roles_matrix', next);
   };
 
+  const toggleExpanded = (key) => setExpanded(e => ({ ...e, [key]: !e[key] }));
+
+  const CB = ({ role, matKey, action }) => {
+    const checked = mat[role]?.[matKey]?.[action] ?? false;
+    const fixed = role === 'owner';
+    return (
+      <td style={{ padding: '5px 3px', borderBottom: '1px solid #F3F4F6', textAlign: 'center' }}>
+        <input type="checkbox" checked={checked} disabled={fixed}
+          onChange={() => !fixed && toggle(role, matKey, action)}
+          style={{ accentColor: '#E8794E', cursor: fixed ? 'default' : 'pointer', width: 12, height: 12 }}
+        />
+      </td>
+    );
+  };
+
+  const colW = { minWidth: 38 };
+
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Lock size={16} style={{ color: '#E8794E' }}/>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Rôles & permissions</h2>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Définissez ce que chaque rôle peut voir et faire. Client et fournisseur incluent les portails publics.</p>
-        </div>
-      </div>
+      <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>
+        Définissez ce que chaque rôle peut voir et faire. Cliquez sur ▶ à côté d'un module pour afficher ses widgets.
+      </p>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', padding: '6px 8px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', position: 'sticky', left: 0, zIndex: 1 }}>Module</th>
+            <th style={{ textAlign: 'left', padding: '7px 10px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', position: 'sticky', left: 0, zIndex: 2, minWidth: 160 }}>Module / Widget</th>
             {ROLE_LIST.map(r => (
-              <th key={r.key} colSpan={ACTION_LIST.length} style={{ textAlign: 'center', padding: '6px 4px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>
+              <th key={r.key} colSpan={ACTION_LIST.length} style={{ textAlign: 'center', padding: '7px 2px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap', ...colW }}>
                 {r.label}
               </th>
             ))}
           </tr>
           <tr>
-            <th style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', position: 'sticky', left: 0, zIndex: 1 }} />
+            <th style={{ background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', position: 'sticky', left: 0, zIndex: 2 }} />
             {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => (
-              <th key={`${r.key}-${a}`} style={{ padding: '3px 2px', background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', textAlign: 'center', color: '#9CA3AF', fontWeight: 500, fontSize: 9, whiteSpace: 'nowrap' }}>{a}</th>
+              <th key={`${r.key}-${a}`} style={{ padding: '3px 2px', background: '#F9FAFB', borderBottom: '2px solid #E5E7EB', textAlign: 'center', color: '#9CA3AF', fontWeight: 500, fontSize: 9, whiteSpace: 'nowrap', ...colW }}>{a}</th>
             )))}
           </tr>
         </thead>
         <tbody>
-          {modules.map((mod, mi) => (
-            <tr key={mod.key} style={{ background: mi % 2 === 0 ? '#fff' : '#F9FAFB' }}>
-              <td style={{ padding: '6px 8px', fontWeight: 600, color: '#374151', borderBottom: '1px solid #F3F4F6', position: 'sticky', left: 0, background: mi % 2 === 0 ? '#fff' : '#F9FAFB', zIndex: 1, whiteSpace: 'nowrap' }}>{mod.label}</td>
-              {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => {
-                const checked = mat[r.key]?.[mod.key]?.[a] ?? false;
-                const isOwnerFixed = r.key === 'owner';
-                return (
-                  <td key={`${r.key}-${a}`} style={{ padding: '6px 4px', borderBottom: '1px solid #F3F4F6', textAlign: 'center' }}>
-                    <input type="checkbox" checked={checked} disabled={isOwnerFixed}
-                      onChange={() => !isOwnerFixed && toggle(r.key, mod.key, a)}
-                      style={{ accentColor: '#E8794E', cursor: isOwnerFixed ? 'default' : 'pointer' }}/>
+          {modules.map((mod, mi) => {
+            const isExp = !!expanded[mod.key];
+            const widgets = MODULE_WIDGETS[mod.key] || [];
+            const bg = mi % 2 === 0 ? '#fff' : '#F9FAFB';
+            return (
+              <>
+                {/* Module row */}
+                <tr key={mod.key} style={{ background: bg }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 700, color: '#15171C', borderBottom: '1px solid #F3F4F6', position: 'sticky', left: 0, background: bg, zIndex: 1, whiteSpace: 'nowrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => widgets.length > 0 && toggleExpanded(mod.key)}
+                      style={{ background: 'none', border: 'none', cursor: widgets.length > 0 ? 'pointer' : 'default', padding: 0, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#15171C' }}
+                    >
+                      {widgets.length > 0 && (
+                        <span style={{ display: 'inline-block', transform: isExp ? 'rotate(90deg)' : 'none', transition: 'transform .15s', fontSize: 9, color: '#9CA3AF' }}>▶</span>
+                      )}
+                      {mod.label}
+                    </button>
                   </td>
-                );
-              }))}
-            </tr>
-          ))}
+                  {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => (
+                    <CB key={`${r.key}-${a}`} role={r.key} matKey={mod.key} action={a} />
+                  )))}
+                </tr>
+
+                {/* Widget sub-rows */}
+                {isExp && widgets.map(w => {
+                  const wKey = `${mod.key}__${w.key}`;
+                  return (
+                    <tr key={wKey} style={{ background: '#FFFBF7' }}>
+                      <td style={{ padding: '5px 8px 5px 24px', color: '#6B7280', borderBottom: '1px solid #F3F4F6', position: 'sticky', left: 0, background: '#FFFBF7', zIndex: 1, whiteSpace: 'nowrap', fontSize: 10.5 }}>
+                        <span style={{ color: '#D1D5DB', marginRight: 6 }}>└</span>{w.label}
+                      </td>
+                      {ROLE_LIST.flatMap(r => ACTION_LIST.map(a => (
+                        <CB key={`${r.key}-${a}`} role={r.key} matKey={wKey} action={a} />
+                      )))}
+                    </tr>
+                  );
+                })}
+              </>
+            );
+          })}
         </tbody>
       </table>
       <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 12 }}>La matrice est enregistrée localement. L'intégration DB sera disponible dans une prochaine version.</p>
@@ -999,7 +1102,6 @@ const TABS = [
 export default function Parametres() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { enabled: devEnabled } = useDevStore();
-  const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
   const initialTab = searchParams.get('tab') || 'profil';
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -1010,41 +1112,60 @@ export default function Parametres() {
     setSearchParams({ tab: id });
   };
 
+  const active = tabs.find(t => t.id === activeTab);
+
   return (
     <Layout>
-      <div className="p-6 max-w-3xl mx-auto">
-        <h1 className="text-xl font-bold text-gray-900 mb-5 flex items-center gap-2">
-          <Settings size={20} /> Paramètres
+      <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: '#15171C', margin: '0 0 24px', display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Settings size={20} style={{ color: '#E8794E' }} /> Paramètres
         </h1>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-gray-100">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => switchTab(id)}
-              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === id
-                  ? 'border-brand text-brand'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Icon size={14} />
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* 2-column layout: vertical nav + content */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', background: '#fff', border: '1px solid #E8EAED', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.04)' }}>
 
-        <div className="card">
-          {activeTab === 'profil'       && <ProfileTab />}
-          {activeTab === 'company'      && <CompanyTab />}
-          {activeTab === 'team'         && <TeamTab />}
-          {activeTab === 'roles'        && <RolesTab />}
-          {activeTab === 'flo'          && <FloTab />}
-          {activeTab === 'flow'         && <FlowTab />}
-          {activeTab === 'sources'      && <LeadSourcesTab />}
-          {activeTab === 'fournisseurs' && <SuppliersTab />}
-          {activeTab === 'dev'          && devEnabled && <DevTab />}
+          {/* Left vertical nav */}
+          <nav style={{ width: 210, flexShrink: 0, borderRight: '1px solid #F3F4F6', paddingTop: 8, paddingBottom: 8, alignSelf: 'stretch' }}>
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => switchTab(id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+                  padding: '9px 18px', background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: activeTab === id ? 700 : 500,
+                  color: activeTab === id ? '#E8794E' : '#6B7280',
+                  borderLeft: `3px solid ${activeTab === id ? '#E8794E' : 'transparent'}`,
+                  textAlign: 'left', transition: 'all .12s',
+                }}
+              >
+                <Icon size={14} style={{ flexShrink: 0 }} />
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Content panel */}
+          <div style={{ flex: 1, padding: 32, minWidth: 0 }}>
+            {active && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <active.icon size={16} style={{ color: '#E8794E' }} />
+                  <h2 style={{ fontSize: 16, fontWeight: 800, color: '#15171C', margin: 0 }}>{active.label}</h2>
+                </div>
+                <div style={{ height: 1, background: '#F3F4F6', marginTop: 12 }} />
+              </div>
+            )}
+            {activeTab === 'profil'       && <ProfileTab />}
+            {activeTab === 'company'      && <CompanyTab />}
+            {activeTab === 'team'         && <TeamTab />}
+            {activeTab === 'roles'        && <RolesTab />}
+            {activeTab === 'flo'          && <FloTab />}
+            {activeTab === 'flow'         && <FlowTab />}
+            {activeTab === 'sources'      && <LeadSourcesTab />}
+            {activeTab === 'fournisseurs' && <SuppliersTab />}
+            {activeTab === 'dev'          && devEnabled && <DevTab />}
+          </div>
         </div>
       </div>
     </Layout>
