@@ -6,7 +6,7 @@ import { projects as projectsApi, ai as aiApi } from '../api';
 import { useConfigStore } from '../store';
 import { useT } from '../hooks/useT';
 import { DEFAULT_PIPELINE } from '../config/modules';
-import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, ChevronLeft, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles } from 'lucide-react';
+import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, ChevronLeft, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles, LayoutGrid, SlidersHorizontal, ChevronDown } from 'lucide-react';
 
 // Address autocomplete input with Nominatim suggestions (free, no API key)
 function AddressInput({ value, onChange, onCityChange, placeholder, className }) {
@@ -324,8 +324,8 @@ function CalendarView({ projects, stageMap }) {
   const dayEvents = {};
   projects.forEach(p => {
     if (!p.start_date && !p.end_date) return;
-    const start = p.start_date ? new Date(p.start_date + 'T00:00') : null;
-    const end   = p.end_date   ? new Date(p.end_date   + 'T00:00') : start;
+    const start = p.start_date ? new Date(String(p.start_date).slice(0, 10) + 'T00:00') : null;
+    const end   = p.end_date   ? new Date(String(p.end_date).slice(0, 10)   + 'T00:00') : start;
     for (let d = 1; d <= daysInMonth; d++) {
       const day = new Date(year, month, d);
       if (start && day >= start && day <= end) {
@@ -682,6 +682,123 @@ function ProjectModal({ project, onClose, onSave }) {
   );
 }
 
+// ── Vue Portefeuille ────────────────────────────────────────────────────────────
+function PortfolioView({ projects, stageMap, navigate }) {
+  const totContract = projects.reduce((s, p) => s + num(p.contract_value), 0);
+  const totInvoiced = projects.reduce((s, p) => s + num(p.invoiced_real), 0);
+  const totReal     = projects.reduce((s, p) => s + realMargin(p), 0);
+  const totTheo     = projects.reduce((s, p) => s + theoMargin(p), 0);
+  const active      = projects.filter(p => !stageMap[p.status]?.terminal);
+  const done        = projects.filter(p => stageMap[p.status]?.terminal);
+
+  const KPIBar = ({ label, value, total, color }) => {
+    const pct = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+          <span style={{ fontSize: 11, color: '#6B7280' }}>{label}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color }}>{money(value)}</span>
+        </div>
+        <div style={{ height: 4, background: '#F3F4F6', borderRadius: 2 }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width .4s' }}/>
+        </div>
+      </div>
+    );
+  };
+
+  const fmtD = (d) => {
+    if (!d) return null;
+    const parsed = new Date(String(d).slice(0, 10) + 'T00:00');
+    return isNaN(parsed) ? null : parsed.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+  };
+
+  return (
+    <div>
+      {/* Barre synthèse */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'Valeur portefeuille', val: totContract, color: '#374151' },
+          { label: 'Facturé',             val: totInvoiced, color: '#2563EB' },
+          { label: 'Marge théorique',     val: totTheo,     color: totTheo >= 0 ? '#16A34A' : '#DC2626' },
+          { label: 'Marge réelle',        val: totReal,     color: totReal >= 0  ? '#16A34A' : '#DC2626' },
+        ].map(({ label, val, color }) => (
+          <div key={label} style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 12, padding: '14px 16px' }}>
+            <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>{label}</p>
+            <p style={{ fontSize: 18, fontWeight: 800, color }}>{money(val)}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Grille projets */}
+      {[{ title: `En cours (${active.length})`, list: active }, { title: `Terminés (${done.length})`, list: done }].map(({ title, list }) =>
+        list.length > 0 && (
+          <div key={title} style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{title}</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
+              {list.map(p => {
+                const st = stageMap[p.status] || {};
+                const color = st.color || '#94a3b8';
+                const pct = p.progress_pct || 0;
+                const contract = num(p.contract_value);
+                const invoiced = num(p.invoiced_real);
+                const margin = invoiced > 0 ? realMargin(p) : theoMargin(p);
+                const marginLabel = invoiced > 0 ? 'réelle' : 'prév.';
+                const workType = p.field_assessment?.work_type || p.type || null;
+                const dateStr = [fmtD(p.start_date), fmtD(p.end_date)].filter(Boolean).join(' → ');
+                return (
+                  <div key={p.id}
+                    onClick={() => navigate(`/projets/${p.id}`)}
+                    style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: '16px', cursor: 'pointer', transition: 'box-shadow .15s' }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+                  >
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 4, minHeight: 44, borderRadius: 2, background: color, flexShrink: 0, marginTop: 2 }}/>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {workType || p.name}
+                        </p>
+                        {p.address && <p style={{ fontSize: 11, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.address}</p>}
+                        {dateStr && <p style={{ fontSize: 11, color: '#9CA3AF' }}>{dateStr}</p>}
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: `${color}1a`, color, flexShrink: 0 }}>{st.label || p.status}</span>
+                    </div>
+
+                    {/* KPI bars */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                      {contract > 0 && <KPIBar label="Contrat" value={contract} total={contract} color="#6366F1"/>}
+                      {contract > 0 && invoiced > 0 && <KPIBar label="Facturé" value={invoiced} total={contract} color="#2563EB"/>}
+                      {contract > 0 && <KPIBar label={`Marge ${marginLabel}`} value={Math.max(0, margin)} total={contract} color={margin >= 0 ? '#16A34A' : '#DC2626'}/>}
+                    </div>
+
+                    {/* Avancement */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, height: 5, background: '#F3F4F6', borderRadius: 3 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }}/>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color, flexShrink: 0 }}>{pct}%</span>
+                    </div>
+
+                    {/* Manager */}
+                    {p.project_manager && (
+                      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 8 }}>Resp. : {p.project_manager}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
+      )}
+
+      {projects.length === 0 && (
+        <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 14, padding: '40px 0' }}>Aucun projet à afficher.</p>
+      )}
+    </div>
+  );
+}
+
 export default function Projets() {
   const t = useT();
   const [searchParams] = useSearchParams();
@@ -696,8 +813,35 @@ export default function Projets() {
   const [managerFilter, setManagerFilter] = useState('');
   const [valueMin, setValueMin] = useState('');
   const [valueMax, setValueMax] = useState('');
+  const [workTypeFilter, setWorkTypeFilter] = useState('');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  const [progressMinFilter, setProgressMinFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [pipeOpen, setPipeOpen] = useState(false);
+  const [showKpiPanel, setShowKpiPanel] = useState(false);
+  const kpiPanelRef = useRef(null);
+
+  // KPIs actifs par ligne — persistés en localStorage
+  const ALL_KPIS = [
+    { key: 'contract', label: 'Valeur contrat', group: 'finances' },
+    { key: 'invoiced',  label: 'Facturé',         group: 'finances' },
+    { key: 'margin',    label: 'Marge',            group: 'finances' },
+    { key: 'dates',     label: 'Dates',            group: 'planning' },
+    { key: 'progress',  label: 'Avancement %',     group: 'planning' },
+    { key: 'manager',   label: 'Responsable',      group: 'equipe' },
+  ];
+  const [activeKpis, setActiveKpis] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mf_proj_kpis') || '["contract","margin","dates"]'); }
+    catch { return ['contract', 'margin', 'dates']; }
+  });
+  const toggleKpi = (key) => {
+    setActiveKpis(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      localStorage.setItem('mf_proj_kpis', JSON.stringify(next));
+      return next;
+    });
+  };
   const navigate = useNavigate();
 
   // Sélecteurs individuels (éviter de retourner un nouvel objet → boucle de rendu).
@@ -753,7 +897,11 @@ export default function Projets() {
     const matchManager = !managerFilter || (p.project_manager || '').toLowerCase().includes(managerFilter.toLowerCase());
     const matchValueMin = !valueMin || Number(p.contract_value) >= Number(valueMin);
     const matchValueMax = !valueMax || Number(p.contract_value) <= Number(valueMax);
-    return matchSearch && matchStatus && matchCity && matchManager && matchValueMin && matchValueMax;
+    const matchWorkType = !workTypeFilter || (p.field_assessment?.work_type || p.type || '').toLowerCase().includes(workTypeFilter.toLowerCase());
+    const matchDateFrom = !dateFromFilter || (p.start_date && String(p.start_date).slice(0, 10) >= dateFromFilter);
+    const matchDateTo = !dateToFilter || (p.end_date && String(p.end_date).slice(0, 10) <= dateToFilter);
+    const matchProgressMin = !progressMinFilter || Number(p.progress_pct || 0) >= Number(progressMinFilter);
+    return matchSearch && matchStatus && matchCity && matchManager && matchValueMin && matchValueMax && matchWorkType && matchDateFrom && matchDateTo && matchProgressMin;
   });
   const active = filtered.filter(p => !isTerminal(p));
   const others = filtered.filter(p => isTerminal(p));
@@ -832,10 +980,12 @@ export default function Projets() {
             </div>
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
               {isAutoTitle && p.name && <span className="text-gray-300 italic truncate max-w-[180px]">{p.name}</span>}
-              {!isAutoTitle && p.address && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
-              {!isAutoTitle && p.start_date && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(String(p.start_date).slice(0,10)+'T00:00').toLocaleDateString('fr-CA')}</span>}
-              {p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
-              {(() => {
+              {!isAutoTitle && p.address && activeKpis.includes('dates') && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
+              {!isAutoTitle && p.start_date && activeKpis.includes('dates') && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(String(p.start_date).slice(0,10)+'T00:00').toLocaleDateString('fr-CA')}</span>}
+              {activeKpis.includes('manager') && p.project_manager && <span className="flex items-center gap-1">👤 {p.project_manager}</span>}
+              {activeKpis.includes('contract') && p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
+              {activeKpis.includes('invoiced') && num(p.invoiced_real) > 0 && <span className="flex items-center gap-1 text-blue-500">Fact. {money(num(p.invoiced_real))}</span>}
+              {activeKpis.includes('margin') && (() => {
                 const hasReal = num(p.invoiced_real) > 0;
                 const m = hasReal ? realMargin(p) : theoMargin(p);
                 const rev = hasReal ? num(p.invoiced_real) : num(p.contract_value);
@@ -849,7 +999,7 @@ export default function Projets() {
                 );
               })()}
             </div>
-            {!st.terminal && (
+            {!st.terminal && activeKpis.includes('progress') && (
               <div
                 className="flex items-center gap-2 group"
                 onClick={e => { e.stopPropagation(); setSliderProject(isEditing ? null : p.id); }}
@@ -912,14 +1062,15 @@ export default function Projets() {
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-gray-900">Projets</h1>
           <div className="flex items-center gap-2">
-            {/* List / Kanban / Gantt / Map toggle */}
+            {/* Vues toggle */}
             <div className="flex bg-gray-100 rounded-lg p-0.5">
               {[
-                { key: 'list',     icon: <List size={13}/>,       label: 'Liste' },
-                { key: 'kanban',   icon: <Columns size={13}/>,    label: 'Kanban' },
-                { key: 'gantt',    icon: <GanttChart size={13}/>, label: 'Gantt' },
-                { key: 'calendar', icon: <Calendar size={13}/>,   label: 'Calendrier' },
-                { key: 'map',      icon: <MapIcon size={13}/>,    label: 'Carte' },
+                { key: 'list',        icon: <List size={13}/>,        label: 'Liste' },
+                { key: 'kanban',      icon: <Columns size={13}/>,     label: 'Kanban' },
+                { key: 'gantt',       icon: <GanttChart size={13}/>,  label: 'Gantt' },
+                { key: 'calendar',    icon: <Calendar size={13}/>,    label: 'Calendrier' },
+                { key: 'portefeuille',icon: <LayoutGrid size={13}/>,  label: 'Portefeuille' },
+                { key: 'map',         icon: <MapIcon size={13}/>,     label: 'Carte' },
               ].map(({ key, icon, label }) => (
                 <button
                   key={key}
@@ -928,7 +1079,38 @@ export default function Projets() {
                 >{icon} {label}</button>
               ))}
             </div>
-            <button className="btn-secondary" onClick={()=>setPipeOpen(true)} title="Personnaliser le pipeline"><Settings2 size={15}/> Pipeline</button>
+            {/* KPI toggle — seulement en vue liste */}
+            {view === 'list' && (
+              <div className="relative" ref={kpiPanelRef}>
+                <button
+                  className={`btn-secondary text-xs flex items-center gap-1 ${showKpiPanel ? 'bg-orange-50 border-brand text-brand' : ''}`}
+                  onClick={() => setShowKpiPanel(o => !o)}
+                  title="Colonnes KPI"
+                >
+                  <SlidersHorizontal size={13}/> KPI
+                </button>
+                {showKpiPanel && (
+                  <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, background: '#fff', borderRadius: 12, border: '1px solid #E8EAED', boxShadow: '0 8px 30px rgba(0,0,0,0.12)', padding: '12px 14px', minWidth: 200 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Métriques par ligne</p>
+                    {['finances', 'planning', 'equipe'].map(grp => {
+                      const kpis = ALL_KPIS.filter(k => k.group === grp);
+                      const grpLabel = { finances: 'Finances', planning: 'Planning', equipe: 'Équipe' }[grp];
+                      return (
+                        <div key={grp} style={{ marginBottom: 10 }}>
+                          <p style={{ fontSize: 10, fontWeight: 700, color: '#D1D5DB', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{grpLabel}</p>
+                          {kpis.map(k => (
+                            <label key={k.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', cursor: 'pointer', fontSize: 12, color: '#374151' }}>
+                              <input type="checkbox" checked={activeKpis.includes(k.key)} onChange={() => toggleKpi(k.key)} style={{ accentColor: '#E8794E' }}/>
+                              {k.label}
+                            </label>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <button className="btn-primary" onClick={()=>setShowNew(true)}><Plus size={15}/> Nouveau projet</button>
           </div>
         </div>
@@ -948,7 +1130,7 @@ export default function Projets() {
             {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <button className={`btn-secondary text-xs px-3 ${showFilters ? 'bg-orange-50 border-brand text-brand' : ''}`} onClick={()=>setShowFilters(o=>!o)}>
-            {t('filters')} {(cityFilter||managerFilter||valueMin||valueMax) ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax].filter(Boolean).length}</span> : null}
+            {t('filters')} {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].filter(Boolean).length > 0 ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].filter(Boolean).length}</span> : null}
           </button>
         </div>
         {showFilters && (
@@ -958,8 +1140,20 @@ export default function Projets() {
               <input className="input text-xs" placeholder="Montréal…" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-32">
+              <label className="label text-[11px]">Type de travaux</label>
+              <input className="input text-xs" placeholder="Rénovation…" value={workTypeFilter} onChange={e=>setWorkTypeFilter(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-32">
               <label className="label text-[11px]">{t('filter_manager')}</label>
               <input className="input text-xs" placeholder="Nom…" value={managerFilter} onChange={e=>setManagerFilter(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-28">
+              <label className="label text-[11px]">Début après</label>
+              <input className="input text-xs" type="date" value={dateFromFilter} onChange={e=>setDateFromFilter(e.target.value)}/>
+            </div>
+            <div className="flex-1 min-w-28">
+              <label className="label text-[11px]">Fin avant</label>
+              <input className="input text-xs" type="date" value={dateToFilter} onChange={e=>setDateToFilter(e.target.value)}/>
             </div>
             <div className="flex-1 min-w-28">
               <label className="label text-[11px]">{t('filter_value_min')}</label>
@@ -969,9 +1163,13 @@ export default function Projets() {
               <label className="label text-[11px]">{t('filter_value_max')}</label>
               <input className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
             </div>
-            {(cityFilter||managerFilter||valueMin||valueMax) && (
+            <div className="flex-1 min-w-28">
+              <label className="label text-[11px]">Avancement min (%)</label>
+              <input className="input text-xs" type="number" min="0" max="100" placeholder="0" value={progressMinFilter} onChange={e=>setProgressMinFilter(e.target.value)}/>
+            </div>
+            {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].some(Boolean) && (
               <div className="flex items-end">
-                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');}}>
+                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');setWorkTypeFilter('');setDateFromFilter('');setDateToFilter('');setProgressMinFilter('');}}>
                   {t('clear_filters')}
                 </button>
               </div>
@@ -995,6 +1193,8 @@ export default function Projets() {
           <GanttPortfolio projects={filtered} stageMap={stageMap} />
         ) : view === 'calendar' ? (
           <CalendarView projects={filtered} stageMap={stageMap} />
+        ) : view === 'portefeuille' ? (
+          <PortfolioView projects={filtered} stageMap={stageMap} navigate={navigate} />
         ) : loadError ? (
           <div className="text-center py-12">
             <p className="text-sm text-red-500 font-medium mb-2">Erreur de chargement</p>

@@ -530,6 +530,8 @@
   .project-toc-label                        { display: none; }
   .project-toc-badge                        { display: none; }
   .project-toc-icon                         { width: 22px; flex: 0 0 22px; }
+  /* Masquer le bloc test admin en mode icônes */
+  .app-sidebar-bottom > div:first-child     { display: none; }
 
   .app-topbar                               { padding: 0 20px; }
 }
