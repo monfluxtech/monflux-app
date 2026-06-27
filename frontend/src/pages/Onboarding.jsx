@@ -124,6 +124,8 @@ export default function Onboarding() {
       const { data } = await onboarding.complete({ profile: p || profile, session_id: sessionId });
       setCompany({ id: data.company_id });
       setDone(true);
+      // Signal GuidedTour to launch after redirect
+      localStorage.setItem('mf_tour_pending', '1');
       setTimeout(() => navigate('/dashboard'), 1800);
     } catch (err) {
       console.error(err);
