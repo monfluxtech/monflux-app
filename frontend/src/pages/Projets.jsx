@@ -509,7 +509,16 @@ function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
   );
 }
 
-const EMPTY = { name:'', address:'', city:'', start_date:'', end_date:'', contract_value:'', description:'' };
+const EMPTY = { work_type:'', address:'', city:'', start_date:'', end_date:'', contract_value:'', description:'' };
+
+const WORK_TYPE_OPTIONS = [
+  { group: 'Résidentiel — Intérieur', items: ['Cuisine','Salle de bain','Sous-sol','Planchers','Peinture intérieure','Rénovation complète','Fenêtres et portes','Escaliers','Armoires / cuisines'] },
+  { group: 'Résidentiel — Extérieur', items: ['Toiture','Agrandissement','Terrasse / balcon','Paysagement','Fondation','Piscine / spa','Revêtement extérieur','Clôture'] },
+  { group: 'Systèmes', items: ['Électricité','Plomberie','Chauffage / climatisation (CVC)','Isolation','Domotique / sécurité'] },
+  { group: 'Travaux spécialisés', items: ['Démolition','Excavation','Maçonnerie / béton','Construction neuve','Ingénierie structurelle'] },
+  { group: 'Commercial / Institutionnel', items: ['Commercial','Industriel','Institutionnel'] },
+  { group: 'Autre', items: ['Autre'] },
+];
 
 const slugify = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'etat';
@@ -582,7 +591,8 @@ function PipelineManager({ pipeline, onSave, onClose }) {
 function ProjectModal({ project, onClose, onSave }) {
   const t = useT();
   const [form, setForm] = useState(project ? {
-    name: project.name || '', address: project.address || '', city: project.city || '',
+    work_type: project.field_assessment?.work_type || project.type || '',
+    address: project.address || '', city: project.city || '',
     start_date: project.start_date ? project.start_date.slice(0, 10) : '',
     end_date: project.end_date ? project.end_date.slice(0, 10) : '',
     contract_value: project.contract_value || '', description: project.description || '',
@@ -594,14 +604,19 @@ function ProjectModal({ project, onClose, onSave }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.work_type) { return; }
     setError(null);
     setSaving(true);
     try {
+      // Nom auto-généré : Type · Adresse · Date début
+      const nameParts = [form.work_type, form.address, form.start_date].filter(Boolean);
+      const autoName = nameParts.join(' · ') || form.work_type || 'Projet';
       const payload = {
-        name: form.name, address: form.address || null, city: form.city || null,
+        name: autoName, address: form.address || null, city: form.city || null,
         description: form.description || null,
         start_date: form.start_date || null, end_date: form.end_date || null,
         contract_value: form.contract_value || null,
+        field_assessment: { ...(project?.field_assessment || {}), work_type: form.work_type },
       };
       const res = project
         ? await projectsApi.update(project.id, payload)
@@ -653,13 +668,23 @@ function ProjectModal({ project, onClose, onSave }) {
     >
       <form id="project-form" onSubmit={submit} className="space-y-3">
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">{error}</div>}
-        <div><label className="label">{t('project_name')} *</label><input className="input" value={form.name} onChange={f('name')} required /></div>
+        <div>
+          <label className="label">Type de travaux *</label>
+          <select className="input" value={form.work_type} onChange={f('work_type')} required>
+            <option value="">— Sélectionner —</option>
+            {WORK_TYPE_OPTIONS.map(({ group, items }) => (
+              <optgroup key={group} label={group}>
+                {items.map(v => <option key={v} value={v}>{v}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="label flex items-center gap-1">
-            {t('project_desc')}
+            Description
             <span className="ml-1 text-[10px] text-brand font-medium flex items-center gap-0.5"><Sparkles size={9}/>{t('ai_phases')}</span>
           </label>
-          <textarea className="input resize-none" rows={3} placeholder={t('project_desc') + '…'} value={form.description} onChange={f('description')} />
+          <textarea className="input resize-none" rows={3} placeholder="Description du chantier…" value={form.description} onChange={f('description')} />
         </div>
         <div>
           <label className="label">{t('address')}</label>
@@ -979,7 +1004,6 @@ export default function Projets() {
               )}
             </div>
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
-              {isAutoTitle && p.name && <span className="text-gray-300 italic truncate max-w-[180px]">{p.name}</span>}
               {!isAutoTitle && p.address && activeKpis.includes('dates') && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
               {!isAutoTitle && p.start_date && activeKpis.includes('dates') && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(String(p.start_date).slice(0,10)+'T00:00').toLocaleDateString('fr-CA')}</span>}
               {activeKpis.includes('manager') && p.project_manager && <span className="flex items-center gap-1">👤 {p.project_manager}</span>}

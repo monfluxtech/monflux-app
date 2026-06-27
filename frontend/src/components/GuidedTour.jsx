@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { X, ArrowRight, ArrowLeft } from 'lucide-react';
+import { useAuthStore } from '../store';
 
 // Bumper ce numéro quand une nouvelle fonctionnalité mérite d'être présentée.
 // Tous les utilisateurs dont la version sauvegardée est inférieure verront le tour.
@@ -54,6 +55,7 @@ function shouldAutoLaunch() {
 }
 
 export default function GuidedTour() {
+  const { user } = useAuthStore();
   const [step, setStep] = useState(-1);
   const [targetRect, setTargetRect] = useState(null);
   const overlayRef = useRef(null);
@@ -64,16 +66,17 @@ export default function GuidedTour() {
     setStep(-1);
     localStorage.setItem('mf_tour_v', String(TOUR_VERSION));
     localStorage.removeItem('mf_tour_pending');
-    // Compat: ancienne clé
     localStorage.removeItem('mf_tour_done');
   };
 
   useEffect(() => {
+    // Ne jamais lancer le tour si l'utilisateur n'est pas connecté
+    if (!user) return;
+
     const handler = () => start();
     window.addEventListener('mf:start-tour', handler);
 
     if (shouldAutoLaunch()) {
-      // Délai court pour laisser la page se rendre complètement
       const timer = setTimeout(() => start(), 1400);
       return () => {
         clearTimeout(timer);
@@ -82,7 +85,7 @@ export default function GuidedTour() {
     }
 
     return () => window.removeEventListener('mf:start-tour', handler);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (step < 0 || step >= STEPS.length) return;

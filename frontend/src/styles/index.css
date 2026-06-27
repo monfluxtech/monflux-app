@@ -504,36 +504,9 @@
   .ai-float-btn { bottom: 20px; right: 20px; }
 }
 
-/* ── Responsive: sidebar icon-only mode at < 1280px ── */
+/* ── Responsive: léger ajustement topbar < 1280px ── */
 @media (max-width: 1280px) {
-  :root { --sb: 60px; }
-
-  /* Sidebar: masquer les labels, centrer les icônes */
-  .app-sidebar { width: 60px; }
-  .app-sidebar-app                          { display: none; }
-  .app-sidebar-section-label                { display: none; }
-  .app-sidebar-section-title                { display: none; }
-  .app-sidebar-status-text                  { display: none; }
-  .app-sidebar-status                       { justify-content: center; padding: 6px 0 8px; }
-  .app-sidebar-status-dot                   { margin: 0 auto; }
-  .app-sidebar-user-meta                    { display: none; }
-  .app-sidebar-user-row                     { justify-content: center; }
-  .app-sidebar-header                       { justify-content: center; padding: 14px 8px; }
-  .app-sidebar-bottom                       { padding: 8px 6px 12px; }
-  .app-sidebar-mini-actions                 { flex-direction: column; align-items: center; gap: 6px; }
-
-  .app-sidebar-link                         { justify-content: center; padding: 9px 0; }
-  .app-sidebar-link span.truncate           { display: none; }
-  .app-sidebar-link-icon                    { width: 22px; flex: 0 0 22px; }
-
-  .project-toc-item                         { justify-content: center; padding: 9px 0; }
-  .project-toc-label                        { display: none; }
-  .project-toc-badge                        { display: none; }
-  .project-toc-icon                         { width: 22px; flex: 0 0 22px; }
-  /* Masquer le bloc test admin en mode icônes */
-  .app-sidebar-bottom > div:first-child     { display: none; }
-
-  .app-topbar                               { padding: 0 20px; }
+  .app-topbar { padding: 0 20px; }
 }
 
 /* ── Responsive: paddings réduits sur le contenu ProjectDetail ── */
