@@ -8,8 +8,8 @@ import { useT } from '../hooks/useT';
 import { DEFAULT_PIPELINE } from '../config/modules';
 import { Plus, Loader2, MapPin, Calendar, DollarSign, Pencil, Trash2, ChevronRight, ChevronLeft, Search, Clock, List, Map as MapIcon, TrendingUp, Settings2, ArrowUp, ArrowDown, Check, X, GanttChart, Columns, Sparkles, LayoutGrid, SlidersHorizontal, ChevronDown } from 'lucide-react';
 
-// Address autocomplete input with Nominatim suggestions (free, no API key)
-function AddressInput({ value, onChange, onCityChange, placeholder, className }) {
+// Address autocomplete input with Photon (free, OSM-based, suited to autocomplete)
+function AddressInput({ value, onChange, onCityChange, onSelect, placeholder, className, ...inputProps }) {
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const timerRef = useRef(null);
@@ -21,22 +21,34 @@ function AddressInput({ value, onChange, onCityChange, placeholder, className })
     timerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&countrycodes=ca&q=${encodeURIComponent(q)}`;
-        const resp = await fetch(url, { headers: { 'User-Agent': 'MONFLUX/2.0 (monflux.tech)' } });
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lang=fr`;
+        const resp = await fetch(url);
         const data = await resp.json();
-        setSuggestions(data || []);
+        setSuggestions(data?.features || []);
       } catch { setSuggestions([]); } finally { setSearching(false); }
     }, 420);
   };
 
   const selectSuggestion = (s) => {
     skipBlur.current = true;
-    const a = s.address || {};
-    const street = [a.house_number, a.road].filter(Boolean).join(' ');
-    const formatted = street || s.display_name.split(',')[0].trim();
-    const city = a.city || a.town || a.village || a.municipality || '';
+    const props = s.properties || {};
+    const street = [props.housenumber, props.street].filter(Boolean).join(' ').trim();
+    const formatted = street || props.name || value || '';
+    const city = props.city || props.locality || props.district || props.county || '';
+    const postalCode = props.postcode || '';
+    const lon = Array.isArray(s.geometry?.coordinates) ? Number(s.geometry.coordinates[0]) : null;
+    const lat = Array.isArray(s.geometry?.coordinates) ? Number(s.geometry.coordinates[1]) : null;
     onChange(formatted);
     if (onCityChange && city) onCityChange(city);
+    if (onSelect) {
+      onSelect({
+        address: formatted,
+        city,
+        postal_code: postalCode,
+        latitude: Number.isFinite(lat) ? lat : null,
+        longitude: Number.isFinite(lon) ? lon : null,
+      });
+    }
     setSuggestions([]);
     setTimeout(() => { skipBlur.current = false; }, 200);
   };
@@ -44,6 +56,7 @@ function AddressInput({ value, onChange, onCityChange, placeholder, className })
   return (
     <div style={{ position: 'relative' }}>
       <input
+        {...inputProps}
         className={className}
         placeholder={placeholder}
         value={value}
@@ -55,11 +68,11 @@ function AddressInput({ value, onChange, onCityChange, placeholder, className })
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.16)', zIndex: 200, overflow: 'hidden', border: '1px solid #E8EAED' }}>
           {searching && <div style={{ padding: '8px 12px', fontSize: 12, color: '#9CA3AF' }}>Recherche…</div>}
           {suggestions.map((s, i) => {
-            const a = s.address || {};
-            const street = [a.house_number, a.road].filter(Boolean).join(' ');
-            const city = a.city || a.town || a.village || a.municipality || '';
-            const postal = a.postcode || '';
-            const line1 = street || s.display_name.split(',')[0].trim();
+            const props = s.properties || {};
+            const street = [props.housenumber, props.street].filter(Boolean).join(' ').trim();
+            const city = props.city || props.locality || props.district || props.county || '';
+            const postal = props.postcode || '';
+            const line1 = street || props.name || 'Adresse suggérée';
             const line2 = [city, postal].filter(Boolean).join(', ');
             return (
               <div key={i} onMouseDown={() => selectSuggestion(s)}
@@ -212,35 +225,37 @@ function GanttPortfolio({ projects, stageMap }) {
   }
 
   const allDates = withDates.flatMap(p => [p.start_date, p.end_date].filter(Boolean)).map(d => new Date(d));
-  const minD = new Date(Math.min(...allDates));
-  const maxD = new Date(Math.max(...allDates));
+  const today = new Date();
+  const minD = new Date(Math.min(...allDates, today));
+  const maxD = new Date(Math.max(...allDates, today));
   // Extend range to full months for a cleaner view
   const refStart = new Date(minD.getFullYear(), minD.getMonth(), 1);
   const refEnd   = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0);
   const totalMs  = Math.max(refEnd - refStart, 1);
-  const pct      = (d) => Math.max(0, Math.min(100, (new Date(d) - refStart) / totalMs * 100));
-  const barWidth = (s, e) => Math.max(0.8, pct(e) - pct(s));
-  const todayPct = pct(new Date());
 
   const months = [];
   const cur = new Date(refStart);
   while (cur <= refEnd) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
 
-  const ROW_H = 44;
-  const LABEL_W = 200;
+  const ROW_H = 56;
+  const LABEL_W = 250;
+  const timelineWidth = Math.max(960, months.length * 220);
+  const xAt = (d) => Math.max(0, Math.min(timelineWidth, ((new Date(d) - refStart) / totalMs) * timelineWidth));
+  const widthBetween = (s, e) => Math.max(10, xAt(e) - xAt(s));
+  const todayX = xAt(today);
 
   return (
     <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #E8EAED', overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: 640, padding: '0 0 16px' }}>
+        <div style={{ width: LABEL_W + timelineWidth, minWidth: LABEL_W + timelineWidth, padding: '0 0 16px' }}>
 
           {/* ── Header months ── */}
           <div style={{ display: 'flex', marginLeft: LABEL_W, borderBottom: '1px solid #F0F2F4', background: '#FAFAFA' }}>
             {months.map((m, i) => {
               const nextM = new Date(m.getFullYear(), m.getMonth() + 1, 1);
-              const w = Math.min(pct(nextM), 100) - pct(m);
+              const w = Math.max(36, xAt(nextM) - xAt(m));
               return (
-                <div key={i} style={{ width: `${Math.max(w, 0)}%`, minWidth: 36, padding: '7px 0 7px 10px', borderLeft: '1px solid #E8EAED', flexShrink: 0 }}>
+                <div key={i} style={{ width: w, minWidth: 36, padding: '7px 0 7px 10px', borderLeft: '1px solid #E8EAED', flexShrink: 0 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em' }}>
                     {m.toLocaleDateString('fr-CA', { month: 'short' })} <span style={{ fontWeight: 400, opacity: 0.6 }}>{m.getFullYear()}</span>
                   </span>
@@ -253,10 +268,10 @@ function GanttPortfolio({ projects, stageMap }) {
           <div style={{ position: 'relative' }}>
             {/* Month grid lines */}
             {months.map((m, i) => (
-              <div key={i} style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LABEL_W}px + ${pct(m)}%)`, width: 1, background: i === 0 ? 'transparent' : '#F0F2F4', pointerEvents: 'none' }} />
+              <div key={i} style={{ position: 'absolute', top: 0, bottom: 0, left: LABEL_W + xAt(m), width: 1, background: i === 0 ? 'transparent' : '#F0F2F4', pointerEvents: 'none' }} />
             ))}
             {/* Today line */}
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${LABEL_W}px + ${todayPct}%)`, width: 2, background: '#F26522', opacity: 0.7, pointerEvents: 'none', zIndex: 4 }}>
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: LABEL_W + todayX, width: 2, background: '#F26522', opacity: 0.7, pointerEvents: 'none', zIndex: 4 }}>
               <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 9, fontWeight: 800, color: '#F26522', background: '#FFF0E8', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap' }}>Aujourd'hui</span>
             </div>
 
@@ -264,8 +279,8 @@ function GanttPortfolio({ projects, stageMap }) {
               const start = p.start_date ? new Date(p.start_date) : new Date();
               const end   = p.end_date   ? new Date(p.end_date)   : new Date(start.getTime() + 30 * 86400000);
               const color = stageMap[p.status]?.color || '#6366f1';
-              const pLeft = pct(start);
-              const pW    = barWidth(start, end);
+              const pLeft = xAt(start);
+              const pW    = widthBetween(start, end);
               const prog  = p.progress_pct || 0;
               const isEven = rowIdx % 2 === 0;
 
@@ -278,24 +293,28 @@ function GanttPortfolio({ projects, stageMap }) {
                   onMouseLeave={e => e.currentTarget.style.background = isEven ? '#FAFAFA' : '#fff'}
                 >
                   {/* Project label */}
-                  <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, borderRight: '1px solid #E8EAED' }}>
+                  <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, borderRight: '1px solid #E8EAED' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectTitle(p)}</span>
-                    <span style={{ fontSize: 10, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectMeta(p) || stageMap[p.status]?.label || p.status}</span>
+                    {getProjectAddress(p) && <span style={{ fontSize: 10, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectAddress(p)}</span>}
+                    <span style={{ fontSize: 10, color: '#B0B3BA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectDateRange(p) || stageMap[p.status]?.label || p.status}</span>
                   </div>
 
                   {/* Gantt track */}
                   <div style={{ flex: 1, position: 'relative', height: '100%', padding: '10px 0' }}>
                     <div
-                      style={{ position: 'absolute', top: 10, bottom: 10, left: `${pLeft}%`, width: `${pW}%`, minWidth: 6, borderRadius: 6, background: color + '18', border: `2px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
+                      style={{ position: 'absolute', top: 10, bottom: 10, left: pLeft, width: pW, minWidth: 10, borderRadius: 6, background: color + '18', border: `2px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
                       title={`${getProjectTitle(p)} · du ${new Date(start).toLocaleDateString('fr-CA')} au ${new Date(end).toLocaleDateString('fr-CA')}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`}
                     >
                       {/* Progress fill */}
                       {prog > 0 && <div style={{ position: 'absolute', inset: 0, width: `${prog}%`, background: color + '45', borderRadius: 4 }} />}
                       {/* Label inside bar */}
-                      {pW > 8 && (
-                        <span style={{ position: 'relative', fontSize: 10, fontWeight: 700, color, paddingLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
-                          {getProjectTitle(p)}
-                          {prog > 0 && <span style={{ opacity: 0.7 }}> · {prog}%</span>}
+                      {pW > 110 && (
+                        <span style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 1, fontSize: 10, color, paddingLeft: 8, overflow: 'hidden', maxWidth: '92%' }}>
+                          <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {getProjectTitle(p)}
+                            {prog > 0 && <span style={{ opacity: 0.7 }}> · {prog}%</span>}
+                          </span>
+                          {getProjectAddress(p) && <span style={{ fontSize: 9, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectAddress(p)}</span>}
                         </span>
                       )}
                     </div>
@@ -638,9 +657,14 @@ function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
                   onClick={() => navigate(`/projets/${p.id}`)}
                 >
                   <p className="text-sm font-semibold text-gray-900 mb-1 truncate">{getProjectTitle(p)}</p>
-                  {getProjectMeta(p) && (
-                    <p className="text-[11px] text-gray-400 truncate mb-1.5 flex items-center gap-1">
-                      <MapPin size={9}/>{getProjectMeta(p)}
+                  {getProjectAddress(p) && (
+                    <p className="text-[11px] text-gray-400 truncate flex items-center gap-1">
+                      <MapPin size={9}/>{getProjectAddress(p)}
+                    </p>
+                  )}
+                  {getProjectDateRange(p) && (
+                    <p className="text-[10px] text-gray-300 truncate mb-1.5 flex items-center gap-1">
+                      <Calendar size={9}/>{getProjectDateRange(p)}
                     </p>
                   )}
                   <div className="flex items-center justify-between gap-2">
@@ -677,7 +701,7 @@ function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
   );
 }
 
-const EMPTY = { work_type:'', address:'', city:'', start_date:'', end_date:'', contract_value:'', description:'' };
+const EMPTY = { work_type:'', address:'', city:'', postal_code:'', latitude:null, longitude:null, start_date:'', end_date:'', contract_value:'', description:'' };
 
 const WORK_TYPE_OPTIONS = [
   { group: 'Résidentiel — Intérieur', items: ['Cuisine','Salle de bain','Sous-sol','Planchers','Peinture intérieure','Rénovation complète','Fenêtres et portes','Escaliers','Armoires / cuisines'] },
@@ -760,7 +784,9 @@ function ProjectModal({ project, onClose, onSave }) {
   const t = useT();
   const [form, setForm] = useState(project ? {
     work_type: project.field_assessment?.work_type || project.type || '',
-    address: project.address || '', city: project.city || '',
+    address: project.address || '', city: project.city || '', postal_code: project.postal_code || '',
+    latitude: project.latitude != null ? Number(project.latitude) : null,
+    longitude: project.longitude != null ? Number(project.longitude) : null,
     start_date: project.start_date ? project.start_date.slice(0, 10) : '',
     end_date: project.end_date ? project.end_date.slice(0, 10) : '',
     contract_value: project.contract_value || '', description: project.description || '',
@@ -780,7 +806,8 @@ function ProjectModal({ project, onClose, onSave }) {
       const nameParts = [form.work_type, form.address, form.start_date].filter(Boolean);
       const autoName = nameParts.join(' · ') || form.work_type || 'Projet';
       const payload = {
-        name: autoName, address: form.address || null, city: form.city || null,
+        name: autoName, address: form.address || null, city: form.city || null, postal_code: form.postal_code || null,
+        latitude: form.latitude, longitude: form.longitude,
         description: form.description || null,
         start_date: form.start_date || null, end_date: form.end_date || null,
         contract_value: form.contract_value || null,
@@ -791,6 +818,14 @@ function ProjectModal({ project, onClose, onSave }) {
         : await projectsApi.create(payload);
       const proj = res?.data ?? res;
       if (!proj?.id) throw new Error('Réponse invalide du serveur');
+
+      if (form.address && (!form.latitude || !form.longitude)) {
+        try {
+          const { data: geo } = await projectsApi.geocode(proj.id);
+          proj.latitude = geo.latitude;
+          proj.longitude = geo.longitude;
+        } catch {}
+      }
 
       // On création avec description → générer phases IA en arrière-plan
       if (!project && form.description) {
@@ -862,11 +897,20 @@ function ProjectModal({ project, onClose, onSave }) {
             className="input"
             placeholder="123 rue Principale"
             value={form.address}
-            onChange={v => setForm(p => ({ ...p, address: v }))}
+            onChange={v => setForm(p => ({ ...p, address: v, latitude: null, longitude: null }))}
             onCityChange={city => setForm(p => ({ ...p, city }))}
+            onSelect={(selection) => setForm(p => ({
+              ...p,
+              address: selection.address || p.address,
+              city: selection.city || p.city,
+              postal_code: selection.postal_code || p.postal_code,
+              latitude: selection.latitude,
+              longitude: selection.longitude,
+            }))}
           />
         </div>
-        <div><label htmlFor="proj-city" className="label">{t('city')}</label><input id="proj-city" name="city" className="input" placeholder="Montréal" value={form.city} onChange={f('city')} /></div>
+        <div><label htmlFor="proj-city" className="label">{t('city')}</label><input id="proj-city" name="city" className="input" placeholder="Montréal" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value, latitude: null, longitude: null }))} /></div>
+        <div><label htmlFor="proj-postal" className="label">Code postal</label><input id="proj-postal" name="postal_code" className="input" placeholder="H7L 1M7" value={form.postal_code || ''} onChange={e => setForm(p => ({ ...p, postal_code: e.target.value, latitude: null, longitude: null }))} /></div>
         <div className="grid grid-cols-2 gap-3">
           <div><label htmlFor="proj-start" className="label">{t('start_date')}</label><input id="proj-start" name="start_date" className="input" type="date" value={form.start_date} onChange={f('start_date')} /></div>
           <div><label htmlFor="proj-end" className="label">{t('end_date')}</label><input id="proj-end" name="end_date" className="input" type="date" value={form.end_date} onChange={f('end_date')} /></div>
@@ -1145,20 +1189,17 @@ export default function Projets() {
       ? Math.ceil((new Date(p.end_date) - Date.now()) / 86400000)
       : null;
 
-    // Titre composé : type travaux · adresse · dates
-    const workType = p.field_assessment?.work_type || p.type || null;
-    const dateStr = getProjectDateRange(p);
-    const titleParts = [workType, p.address, dateStr].filter(Boolean);
-    const displayTitle = titleParts.length > 0 ? titleParts.join('  ·  ') : p.name;
-    const isAutoTitle = titleParts.length > 0;
-
     return (
       <div className="card hover:shadow-md transition-shadow" onClick={() => { if (!isEditing) navigate(`/projets/${p.id}`); }}>
         <div className="flex items-center gap-4 cursor-pointer">
           <div className="w-2 h-10 rounded-full flex-shrink-0" style={{ background: color }}/>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
-              <p className="font-medium text-gray-900 text-sm truncate">{displayTitle}</p>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-gray-900 text-sm truncate">{getProjectTitle(p)}</p>
+                {getProjectAddress(p) && <p className="text-xs text-gray-400 truncate">{getProjectAddress(p)}</p>}
+                {getProjectDateRange(p) && <p className="text-[11px] text-gray-300 truncate">{getProjectDateRange(p)}</p>}
+              </div>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: `${color}1a`, color }}>{st.label || p.status}</span>
               {daysLeft !== null && daysLeft <= 7 && (
                 <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${daysLeft < 0 ? 'text-red-500' : 'text-orange-500'}`}>
@@ -1167,8 +1208,6 @@ export default function Projets() {
               )}
             </div>
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
-              {!isAutoTitle && p.address && activeKpis.includes('dates') && <span className="flex items-center gap-1"><MapPin size={11}/>{p.address}</span>}
-              {!isAutoTitle && p.start_date && activeKpis.includes('dates') && <span className="flex items-center gap-1"><Calendar size={11}/>{new Date(String(p.start_date).slice(0,10)+'T00:00').toLocaleDateString('fr-CA')}</span>}
               {activeKpis.includes('manager') && p.project_manager && <span className="flex items-center gap-1">👤 {p.project_manager}</span>}
               {activeKpis.includes('contract') && p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
               {activeKpis.includes('invoiced') && num(p.invoiced_real) > 0 && <span className="flex items-center gap-1 text-blue-500">Fact. {money(num(p.invoiced_real))}</span>}

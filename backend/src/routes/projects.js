@@ -127,6 +127,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const {
     name, description, type, status, address, city, postal_code,
+    latitude, longitude,
     client_id, lead_id, start_date, end_date, contract_value,
     budget_materials, budget_labor, created_from_project,
   } = req.body;
@@ -137,14 +138,15 @@ router.post('/', async (req, res) => {
     const { rows: [project] } = await query(
       `INSERT INTO projects
          (company_id, name, description, type, status, address, city, postal_code,
+          latitude, longitude,
           client_id, lead_id, start_date, end_date, contract_value,
           budget_materials, budget_labor)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING *`,
       [
         req.company_id, name, description, type || 'other', status || 'brouillon',
-        address, city, postal_code, client_id || null, lead_id || null,
-        start_date || null, end_date || null, contract_value || null,
+        address, city, postal_code, latitude || null, longitude || null,
+        client_id || null, lead_id || null, start_date || null, end_date || null, contract_value || null,
         budget_materials || null, budget_labor || null,
       ]
     );
@@ -184,7 +186,7 @@ router.post('/', async (req, res) => {
 
 // PATCH /api/projects/:id
 router.patch('/:id', async (req, res) => {
-  const allowed = ['name','description','type','status','address','city','postal_code',
+  const allowed = ['name','description','type','status','address','city','postal_code','latitude','longitude',
     'start_date','end_date','contract_value','budget_materials','budget_labor','progress_pct','notes',
     // Infos client directes (sans contact lié)
     'client_name','client_email','client_phone',
@@ -370,6 +372,17 @@ function normalizeAddress(addr) {
     .trim();
 }
 
+function splitTrailingCityFromAddress(addr) {
+  if (!addr) return null;
+  const cityPattern = /(laval|montreal|montréal|longueuil|brossard|terrebonne|repentigny|blainville|mirabel|gatineau|sherbrooke|quebec|québec|granby|drummondville|chambly|boisbriand|saint-eustache|saint-jérôme|saint-jerome)$/i;
+  const match = String(addr).trim().match(cityPattern);
+  if (!match) return null;
+  const city = match[1].trim();
+  const street = String(addr).trim().slice(0, match.index).trim().replace(/[,\-–—]\s*$/, '').trim();
+  if (!street) return null;
+  return { street, city };
+}
+
 // Geocode an address via OpenStreetMap Nominatim (free, no API key). Best-effort.
 async function geocodeAddress(parts) {
   const cleanParts = parts.map(p => String(p || '').trim()).filter(Boolean);
@@ -395,6 +408,15 @@ async function geocodeAddress(parts) {
   if (withoutNumber !== normalizedAddress) {
     pushQuery(queries, [withoutNumber, city, province, country].filter(Boolean).join(', '));
     pushQuery(queries, [withoutNumber, province, country].filter(Boolean).join(', '));
+  }
+
+  if (!city) {
+    const split = splitTrailingCityFromAddress(normalizedAddress) || splitTrailingCityFromAddress(address);
+    if (split) {
+      pushQuery(queries, [split.street, split.city, province, country].filter(Boolean).join(', '));
+      pushQuery(queries, [split.street, split.city].filter(Boolean).join(', '));
+      pushQuery(queries, `${split.street}, ${split.city}`);
+    }
   }
 
   for (const q of queries) {
