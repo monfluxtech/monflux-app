@@ -89,6 +89,7 @@ const fmtProjectDate = (d) => {
   return isNaN(parsed) ? null : parsed.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
 };
 const getProjectTitle = (p) => p?.field_assessment?.work_type || p?.type || p?.name || 'Projet';
+const getProjectAddress = (p) => p?.address || '';
 const getProjectDateRange = (p) => {
   const start = fmtProjectDate(p?.start_date);
   const end = fmtProjectDate(p?.end_date);
@@ -351,18 +352,31 @@ function CalendarView({ projects, stageMap }) {
     const color = stageMap[p.status]?.color || '#94a3b8';
     const label = getProjectTitle(p);
     const meta = getProjectMeta(p);
+    const address = getProjectAddress(p);
+    const dateRange = getProjectDateRange(p);
     return (
       <button onClick={() => navigate(`/projets/${p.id}`)}
-        style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left',
+        style={{ display: 'flex', alignItems: size === 'lg' ? 'flex-start' : 'center', gap: 5, width: '100%', textAlign: 'left',
           fontSize: size === 'lg' ? 12 : 9, fontWeight: 700, color,
           background: color + '18', border: `1px solid ${color}33`,
           borderRadius: 5, padding: size === 'lg' ? '6px 10px' : '2px 5px',
-          overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'pointer' }}
+          overflow: 'hidden', cursor: 'pointer' }}
         title={`${label}${meta ? ' · ' + meta : ''}`}
       >
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }}/>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-        {size === 'lg' && meta && <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11 }}>· {meta}</span>}
+        <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: size === 'lg' ? 1 : 0, overflow: 'hidden' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+          {size === 'lg' && address && (
+            <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {address}
+            </span>
+          )}
+          {size === 'lg' && dateRange && (
+            <span style={{ fontWeight: 400, color: '#B0B3BA', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {dateRange}
+            </span>
+          )}
+        </span>
       </button>
     );
   };
