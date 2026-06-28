@@ -4,6 +4,7 @@ import { useUiPrefs } from '../hooks/useUiPrefs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
+import ProjectSection from '../components/project/ProjectSection';
 import { isSectionAvailable, unavailableReason } from '../config/projectSections';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi, activityLog as activityLogApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin, Save } from 'lucide-react';
@@ -94,6 +95,30 @@ const normalizeContractHtml = (content) => {
     .map((line) => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
     .join('');
 };
+
+const PROJECT_SECTION_DEFAULTS = {
+  's-estimation': true,
+  's-pipeline': true,
+  's-equipe': false,
+  's-materiaux': false,
+  's-soumission': true,
+  's-media': false,
+  's-expenses': false,
+  's-punch': false,
+  's-invoices': false,
+  's-extras': false,
+  's-quittances': false,
+  's-denonciations': false,
+};
+
+const formatCompactDate = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+};
+
+const formatSectionMoney = (value) => `${(Number(value) || 0).toLocaleString('fr-CA', { maximumFractionDigits: 0 })}$`;
 
 // Stub affiché dans le corps quand une section est désactivée (par état ou par module).
 // SectionStub kept for DOM presence (section is hidden via CSS, not removed)
@@ -3032,6 +3057,15 @@ export default function ProjectDetail() {
   const { user: currentUser } = useAuthStore();
   const { pipeline: configPipeline, modules: configModules } = useConfigStore();
   const { prefs: uiPrefs, setPref: setUiPref } = useUiPrefs();
+  const sectionPrefKey = `monflux-project-sections-${id}`;
+  const [sectionExpanded, setSectionExpanded] = useState(() => {
+    try {
+      const raw = localStorage.getItem(sectionPrefKey);
+      return raw ? { ...PROJECT_SECTION_DEFAULTS, ...JSON.parse(raw) } : PROJECT_SECTION_DEFAULTS;
+    } catch {
+      return PROJECT_SECTION_DEFAULTS;
+    }
+  });
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [qrData, setQrData] = useState(null);
@@ -3043,6 +3077,14 @@ export default function ProjectDetail() {
   const [tradeRecos, setTradeRecos] = useState(null);
   const [loadingTradeRecos, setLoadingTradeRecos] = useState(false);
   const [showFloPanel, setShowFloPanel] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(sectionPrefKey);
+      setSectionExpanded(raw ? { ...PROJECT_SECTION_DEFAULTS, ...JSON.parse(raw) } : PROJECT_SECTION_DEFAULTS);
+    } catch {
+      setSectionExpanded(PROJECT_SECTION_DEFAULTS);
+    }
+  }, [sectionPrefKey]);
   const [floMergePending, setFloMergePending] = useState(null); // recos en attente de choix merge/reset
   const [autoAddingTrades, setAutoAddingTrades] = useState(false);
   const [tradeCertifs, setTradeCertifs] = useState(() => { try { return JSON.parse(localStorage.getItem(`monflux-trade-certifs-${id}`) || '{}'); } catch { return {}; } });
@@ -3414,6 +3456,13 @@ export default function ProjectDetail() {
   };
 
   const salesLocked = quoteBuilderQuote?.status === 'signed' || (projectContracts || []).some((contract) => contract.status === 'signed');
+  const toggleProjectSection = useCallback((sectionId) => {
+    setSectionExpanded((prev) => {
+      const next = { ...prev, [sectionId]: !prev[sectionId] };
+      try { localStorage.setItem(sectionPrefKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [sectionPrefKey]);
   const resolvedContractTemplateKey = guessProjectContractTemplateKey(project, companyConfig?.contract_templates);
 
   useEffect(() => {
@@ -5712,6 +5761,107 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0] || null;
   const heroNextPaymentAmount = nextInstallment?.amount || totalOutstanding || Math.max(contractValue - totalCollected, 0);
   const heroDueDate = nextDueInvoice?.due_date || project.end_date || null;
+  const phaseCount = project.phases?.length || 0;
+  const plannedHours = (project.phases || []).reduce((sum, phase) => sum + (Number(phase.duration_hours) || 0), 0);
+  const loggedHours = timesheets.reduce((sum, entry) => sum + (Number(entry.hours_total || entry.hours) || 0), 0);
+  const overdueInvoices = projectInvoices.filter((inv) => inv.status === 'overdue').length;
+  const draftContracts = projectContracts.filter((contract) => contract.status === 'draft').length;
+  const signedContracts = projectContracts.filter((contract) => contract.status === 'signed').length;
+  const mediaPhotos = media.filter((item) => item.type === 'photo').length;
+  const mediaNotes = media.filter((item) => item.type !== 'photo').length;
+  const supplierExpenseTotal = (profit?.actual?.cost_breakdown?.expenses || 0);
+  const quittanceCount = quittance ? 1 : 0;
+  const denunciationCount = (project.field_assessment?.denonciations || []).length;
+  const sectionSummaries = {
+    's-estimation': {
+      summary: `${project.type || project.field_assessment?.work_type || 'Projet'} · ${project.address || 'Adresse à confirmer'}${project.start_date || project.end_date ? ` · ${[formatCompactDate(project.start_date), formatCompactDate(project.end_date)].filter(Boolean).join(' → ')}` : ''}`,
+      stats: [
+        project.estimated_price ? `Estimé ${formatSectionMoney(project.estimated_price)}` : 'Estimation à compléter',
+        project.status ? `Statut ${project.status.replace(/_/g, ' ')}` : null,
+      ],
+    },
+    's-pipeline': {
+      summary: `${phaseCount} phase(s) planifiée(s) · prévision et réel comparés dans le même écran`,
+      stats: [
+        phaseCount ? `${phaseCount} phase(s)` : 'Aucune phase',
+        plannedHours ? `${plannedHours}h prévues` : null,
+        loggedHours ? `${loggedHours}h punchées` : null,
+      ],
+    },
+    's-equipe': {
+      summary: `Affectations, responsables et conformité par corps de métier`,
+      stats: [
+        (project.trades || []).length ? `${project.trades.length} métier(s)` : null,
+        (project.phases || []).filter((phase) => phase.assigned_to_name).length ? `${(project.phases || []).filter((phase) => phase.assigned_to_name).length} assignation(s)` : null,
+      ],
+    },
+    's-materiaux': {
+      summary: `Recherche, présélection et commandes liées au projet`,
+      stats: [
+        matSearchResults.length ? `${matSearchResults.length} résultat(s)` : 'Aucune recherche',
+        matWishlist.length ? `${matWishlist.length} favori(s)` : null,
+        materialOrders.length ? `${materialOrders.length} commande(s)` : null,
+      ],
+    },
+    's-soumission': {
+      summary: `${project.type || project.field_assessment?.work_type || 'Projet'} · ${project.address || 'Adresse à confirmer'}${project.start_date || project.end_date ? ` · ${[formatCompactDate(project.start_date), formatCompactDate(project.end_date)].filter(Boolean).join(' → ')}` : ''}`,
+      stats: [
+        quoteBuilderItems.length ? `${quoteBuilderItems.length} ligne(s)` : 'Aucun poste',
+        quoteBuilderQuote?.total ? `Devis ${formatSectionMoney(quoteBuilderQuote.total)}` : null,
+        signedContracts ? `${signedContracts} contrat signé` : (draftContracts ? `${draftContracts} brouillon contrat` : null),
+      ],
+    },
+    's-media': {
+      summary: `Journal terrain, visuels et mémos d’exécution`,
+      stats: [
+        media.length ? `${media.length} élément(s)` : 'Aucun média',
+        mediaPhotos ? `${mediaPhotos} photo(s)` : null,
+        mediaNotes ? `${mediaNotes} note(s)` : null,
+      ],
+    },
+    's-expenses': {
+      summary: `Factures fournisseurs et dépenses réelles du chantier`,
+      stats: [
+        profit?.actual?.supplier_invoices_count ? `${profit.actual.supplier_invoices_count} facture(s)` : null,
+        supplierExpenseTotal ? `${formatSectionMoney(supplierExpenseTotal)} dépensés` : null,
+      ],
+    },
+    's-punch': {
+      summary: `Temps réel et dépenses terrain pour comparer le prévu au réalisé`,
+      stats: [
+        timesheets.length ? `${timesheets.length} entrée(s)` : 'Aucun punch',
+        loggedHours ? `${loggedHours}h` : null,
+        activeTs.length ? `${activeTs.length} en cours` : null,
+      ],
+    },
+    's-invoices': {
+      summary: `Facturation client, encaissé et soldes à suivre`,
+      stats: [
+        projectInvoices.length ? `${projectInvoices.length} facture(s)` : 'Aucune facture',
+        totalCollected ? `${formatSectionMoney(totalCollected)} encaissés` : null,
+        overdueInvoices ? `${overdueInvoices} en retard` : null,
+      ],
+    },
+    's-extras': {
+      summary: `Travaux hors contrat et ajustements demandés par le client`,
+      stats: [
+        changeOrdersList.length ? `${changeOrdersList.length} demande(s)` : 'Aucune demande',
+        changeOrdersList.reduce((sum, co) => sum + Number(co.amount || 0), 0) ? `${formatSectionMoney(changeOrdersList.reduce((sum, co) => sum + Number(co.amount || 0), 0))}` : null,
+      ],
+    },
+    's-quittances': {
+      summary: `Suivi des quittances et confirmations de paiement`,
+      stats: [
+        quittanceCount ? `${quittanceCount} quittance` : 'Aucune quittance',
+      ],
+    },
+    's-denonciations': {
+      summary: `Documents légaux QC liés aux avis et dénonciations`,
+      stats: [
+        denunciationCount ? `${denunciationCount} entrée(s)` : 'Aucune dénonciation',
+      ],
+    },
+  };
 
   const PIPELINE_LABELS = {
     brouillon: 'Brouillon', estimation: 'Estimation terrain', prix_envoye: 'Prix envoyé',
@@ -7330,16 +7480,18 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           const visiteAnswered = Object.keys(visiteAnswers).length;
 
           return (
-            <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: salesLocked ? 0.7 : 1, pointerEvents: salesLocked ? 'none' : 'auto' }}>
+            <ProjectSection
+              sectionId="s-estimation"
+              icon="📊"
+              title="Estimation approximative"
+              summary={sectionSummaries['s-estimation']?.summary}
+              stats={sectionSummaries['s-estimation']?.stats}
+              expanded={!!sectionExpanded['s-estimation']}
+              onToggle={() => toggleProjectSection('s-estimation')}
+              background="#E9F3EC"
+              bodyStyle={{ opacity: salesLocked ? 0.7 : 1, pointerEvents: salesLocked ? 'none' : 'auto' }}
+            >
               {sectionGuard('s-estimation')}
-              {/* En-tête */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📊</div>
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Estimation approximative</h2>
-                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4, maxWidth: 560 }}>Qualifiez le projet sans perdre de temps. Envoyez un message au client, visitez sur place ou laissez Florence estimer les coûts — dans l'ordre qui vous convient, aucune étape obligatoire.</div>
-                </div>
-              </div>
 
               {/* Bannière profil métier */}
               <div style={{ padding: '10px 16px', background: 'rgba(232,121,78,.08)', border: '1px solid rgba(232,121,78,.2)', borderRadius: 10, marginBottom: 20, fontSize: 13, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -7911,22 +8063,22 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   )}
                 </div>
               </div>
-            </div>
+            </ProjectSection>
           );
         })()}
 
 
         {/* ── Phases du projet ── */}
-        <div id="s-pipeline" style={{ background: '#E7EFF4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🏗️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Phases du projet</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Calendrier des travaux, Gantt et dépendances</div>
-            </div>
-          </div>
+        <ProjectSection
+          sectionId="s-pipeline"
+          icon="🏗️"
+          title="Phases du projet"
+          summary={sectionSummaries['s-pipeline']?.summary}
+          stats={sectionSummaries['s-pipeline']?.stats}
+          expanded={!!sectionExpanded['s-pipeline']}
+          onToggle={() => toggleProjectSection('s-pipeline')}
+          background="#E7EFF4"
+        >
 
           {(showPhase || editPhase) && (
             <PhaseModal projectId={id} phase={editPhase} trades={project.trades || []}
@@ -8080,19 +8232,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           </div>
           </div>{/* fin carte blanche Gantt+Florence */}
 
-        </div>{/* fin s-pipeline */}
+        </ProjectSection>{/* fin s-pipeline */}
 
         {/* ── Équipe & conformité ── */}
-        <div id="s-equipe" style={{ background: '#F5F0FF', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🤝</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Équipe et conformité</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Corps de métier, disponibilités et suivi de la conformité</div>
-            </div>
-          </div>
+        <ProjectSection
+          sectionId="s-equipe"
+          icon="🤝"
+          title="Équipe et conformité"
+          summary={sectionSummaries['s-equipe']?.summary}
+          stats={sectionSummaries['s-equipe']?.stats}
+          expanded={!!sectionExpanded['s-equipe']}
+          onToggle={() => toggleProjectSection('s-equipe')}
+          background="#F5F0FF"
+        >
 
           {/* Bannière confirmation merge/reset */}
           {floMergePending && (
@@ -8821,10 +8973,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
 
 
-        </div>{/* fin s-equipe */}
+        </ProjectSection>{/* fin s-equipe */}
 
         {/* ── Recherche de matériaux ── */}
-        <div id="s-materiaux" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', background: '#F0F5FF' }}>
+        <ProjectSection
+          sectionId="s-materiaux"
+          icon="🔍"
+          title="Recherche de matériaux"
+          summary={sectionSummaries['s-materiaux']?.summary}
+          stats={sectionSummaries['s-materiaux']?.stats}
+          expanded={!!sectionExpanded['s-materiaux']}
+          onToggle={() => toggleProjectSection('s-materiaux')}
+          background="#F0F5FF"
+        >
           {sectionGuard('s-materiaux')}
           {(() => {
             const warnings = (() => { try { return JSON.parse(localStorage.getItem(`monflux-mat-warnings-${id}`) || '[]'); } catch { return []; } })();
@@ -8833,16 +8994,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             displayed.forEach(it => { if (!byCategory[it.categorie]) byCategory[it.categorie] = []; byCategory[it.categorie].push(it); });
             return (
               <>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-                  <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🔍</div>
-                  <div style={{ flex: 1 }}>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', margin: '0 0 3px' }}>Recherche de matériaux</h2>
-                    <p style={{ fontSize: 12.5, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
-                      Flo analyse le projet et cherche les matériaux adaptés chez tes fournisseurs. Ajoute à la wishlist, compare, puis importe dans le devis.
-                    </p>
-                  </div>
-                </div>
-
                 {/* Barre de recherche */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
                   <input value={matSearchQuery} onChange={e => setMatSearchQuery(e.target.value)}
@@ -9029,23 +9180,26 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               </>
             );
           })()}
-        </div>
+        </ProjectSection>
 
         {/* ── Devis détaillé ── */}
-        <div id="s-soumission" style={{ borderTop: '2px solid #E8EAED', padding: '36px 56px 44px', background: '#fff' }}>
+        <ProjectSection
+          sectionId="s-soumission"
+          icon="📄"
+          title="Devis & contrat"
+          summary={sectionSummaries['s-soumission']?.summary}
+          stats={sectionSummaries['s-soumission']?.stats}
+          expanded={!!sectionExpanded['s-soumission']}
+          onToggle={() => toggleProjectSection('s-soumission')}
+          background="#fff"
+          borderTop="2px solid #E8EAED"
+        >
           {salesLocked && (
             <div style={{ marginBottom: 18, padding: '10px 14px', borderRadius: 10, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', fontSize: 12.5, fontWeight: 600 }}>
               Le devis, le contrat et l’estimation approximative sont maintenant verrouillés, car le client a signé/accepté.
             </div>
           )}
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Devis détaillé</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Matériaux · Main d'œuvre · Sous-traitants · Génération contrat</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 20 }}>
               {/* Markup */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
@@ -9063,7 +9217,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
               {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
               {quoteSaving && <span style={{ fontSize: 11, color: '#9CA3AF' }}>Enreg…</span>}
-            </div>
           </div>
 
           {/* Panneau Flo */}
@@ -9514,17 +9667,21 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               </div>
             )}
           </div>
-        </div>
+        </ProjectSection>
 
         {/* s-feed et s-comms sont maintenant dans leurs propres onglets */}
 
-        <div id="s-media" style={{ background: '#F4EFE4', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📷</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Notes et photos</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Pendant et post chantier · L'IA détecte non-conformités (RBQ) et risques CNESST</div>
-            </div>
+        <ProjectSection
+          sectionId="s-media"
+          icon="📷"
+          title="Notes et photos"
+          summary={sectionSummaries['s-media']?.summary}
+          stats={sectionSummaries['s-media']?.stats}
+          expanded={!!sectionExpanded['s-media']}
+          onToggle={() => toggleProjectSection('s-media')}
+          background="#F4EFE4"
+        >
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
             <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
           </div>
 
@@ -9705,18 +9862,22 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <p className="text-sm text-gray-400">Aucun média. Ajoutez photos et notes de chantier pour l'analyse IA.</p>
             </div>
           )}
-        </div>
+        </ProjectSection>
 
 
         {/* ── Dépenses ── (violet) */}
-        <div id="s-expenses" style={{ background: '#F0EBFD', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        <ProjectSection
+          sectionId="s-expenses"
+          icon="💸"
+          title="Factures fournisseurs"
+          summary={sectionSummaries['s-expenses']?.summary}
+          stats={sectionSummaries['s-expenses']?.stats}
+          expanded={!!sectionExpanded['s-expenses']}
+          onToggle={() => toggleProjectSection('s-expenses')}
+          background="#F0EBFD"
+        >
           {sectionGuard('s-expenses')}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>💸</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures fournisseurs</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures et dépenses fournisseurs · coûts réels du chantier{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
             <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
@@ -9774,18 +9935,20 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           ) : !showExpenseForm && (
             <p className="text-sm text-gray-400 text-center py-4">Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.</p>
           )}
-        </div>
+        </ProjectSection>
 
         {/* ── Feuilles de temps ── (mint) */}
-        <div id="s-punch" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        <ProjectSection
+          sectionId="s-punch"
+          icon="⏱️"
+          title="Punch et dépenses"
+          summary={sectionSummaries['s-punch']?.summary}
+          stats={sectionSummaries['s-punch']?.stats}
+          expanded={!!sectionExpanded['s-punch']}
+          onToggle={() => toggleProjectSection('s-punch')}
+          background="#E9F3EC"
+        >
           {sectionGuard('s-punch')}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⏱️</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Punch et dépenses</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Feuilles de temps · Dépenses de chantier{timesheets.length > 0 ? ` · ${timesheets.length} punch(es) · ${activeTs.length} en cours` : ''}</div>
-            </div>
-          </div>
           {timesheets.length > 0 ? (
             <>
               {/* Totaux agrégés */}
@@ -9902,7 +10065,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <p className="text-sm text-gray-400 text-center py-3">Aucune dépense enregistrée pour ce projet.</p>
             )}
           </div>
-        </div>
+        </ProjectSection>
 
         {/* ── Soumission détaillée ── (white) */}
         {/* Invite modal */}
@@ -9939,14 +10102,18 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         )}
 
         {/* ── Factures client ── (mint) */}
-        <div id="s-invoices" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+        <ProjectSection
+          sectionId="s-invoices"
+          icon="🧾"
+          title="Factures client"
+          summary={sectionSummaries['s-invoices']?.summary}
+          stats={sectionSummaries['s-invoices']?.stats}
+          expanded={!!sectionExpanded['s-invoices']}
+          onToggle={() => toggleProjectSection('s-invoices')}
+          background="#E9F3EC"
+        >
           {sectionGuard('s-invoices')}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>🧾</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Factures client</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Factures émises au client · {projectInvoices.length} facture(s)</div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
             <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(v => !v)}>
               <Plus size={13}/> Nouvelle facture
             </button>
@@ -10100,17 +10267,22 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             </div>
           )}
 
-        </div>
+        </ProjectSection>
 
         {/* ── Demandes de modification ── */}
-        <div id="s-extras" style={{ background: '#FFF7ED', borderTop: '1px solid #FED7AA', padding: '36px 56px 44px' }}>
+        <ProjectSection
+          sectionId="s-extras"
+          icon="⚡"
+          title="Demandes de modification"
+          summary={sectionSummaries['s-extras']?.summary}
+          stats={sectionSummaries['s-extras']?.stats}
+          expanded={!!sectionExpanded['s-extras']}
+          onToggle={() => toggleProjectSection('s-extras')}
+          background="#FFF7ED"
+          borderTop="1px solid #FED7AA"
+        >
           {sectionGuard('s-extras')}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #FED7AA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⚡</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de modification</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Travaux hors contrat · ajustements client · {changeOrdersList.length} demande(s)</div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
             <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}>
               <Plus size={13}/> Nouvelle demande
             </button>
@@ -10168,17 +10340,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             </div>
           )}
 
-        </div>
+        </ProjectSection>
 
         {/* ── Quittance ── (mint) */}
-        <div id="s-quittances" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>✅</div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Quittances</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Certificat de satisfaction client · clôture du projet (Québec)</div>
-            </div>
-          </div>
+        <ProjectSection
+          sectionId="s-quittances"
+          icon="✅"
+          title="Quittances"
+          summary={sectionSummaries['s-quittances']?.summary}
+          stats={sectionSummaries['s-quittances']?.stats}
+          expanded={!!sectionExpanded['s-quittances']}
+          onToggle={() => toggleProjectSection('s-quittances')}
+          background="#E9F3EC"
+        >
 
           {!quittance && !showQuittanceForm && (
             <div className="text-center py-6">
@@ -10269,7 +10443,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               )}
             </div>
           )}
-        </div>
+        </ProjectSection>
 
         {/* ── Section Dénonciations (hypothèques légales QC) ── */}
         {(() => {
@@ -10309,16 +10483,16 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           ];
 
           return (
-            <div id="s-denonciations" style={{ borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <ProjectSection
+              sectionId="s-denonciations"
+              icon="⚖️"
+              title="Dénonciations"
+              summary={sectionSummaries['s-denonciations']?.summary}
+              stats={sectionSummaries['s-denonciations']?.stats}
+              expanded={!!sectionExpanded['s-denonciations']}
+              onToggle={() => toggleProjectSection('s-denonciations')}
+            >
               {sectionGuard('s-denonciations')}
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-                <div style={{ width: 46, height: 46, borderRadius: 13, background: '#FEF2F2', border: '1px solid #FECACA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0 }}>⚖️</div>
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Dénonciations</h2>
-                  <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Hypothèques légales de la construction · Avis aux parties · Québec</div>
-                </div>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', alignSelf: 'center' }}>QC</span>
-              </div>
 
               <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, padding: '12px 16px', marginBottom: 20 }}>
                 <p style={{ fontSize: 12, color: '#92400E', margin: 0, lineHeight: 1.6 }}>
@@ -10408,7 +10582,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 style={{ fontSize: 12.5, fontWeight: 700, padding: '9px 20px', borderRadius: 10, border: '1.5px dashed #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Ajouter une dénonciation
               </button>
-            </div>
+            </ProjectSection>
           );
         })()}
 
