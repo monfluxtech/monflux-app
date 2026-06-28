@@ -97,6 +97,7 @@ const normalizeContractHtml = (content) => {
 };
 
 const PROJECT_SECTION_DEFAULTS = {
+  's-description': true,
   's-estimation': true,
   's-pipeline': true,
   's-equipe': false,
@@ -5780,6 +5781,15 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         project.status ? `Statut ${project.status.replace(/_/g, ' ')}` : null,
       ],
     },
+    's-description': {
+      summary: project.description
+        ? project.description.slice(0, 160) + (project.description.length > 160 ? '…' : '')
+        : `Décrire la portée des travaux, les contraintes et les besoins du client`,
+      stats: [
+        (project.field_assessment?.vision?.inspirations || []).length ? `${project.field_assessment.vision.inspirations.length} inspiration(s)` : null,
+        project.field_assessment?.plan_url ? 'Plan joint' : null,
+      ],
+    },
     's-pipeline': {
       summary: `${phaseCount} phase(s) planifiée(s) · prévision et réel comparés dans le même écran`,
       stats: [
@@ -7210,7 +7220,17 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           };
 
           return (
-            <div style={{ background: '#fff', borderBottom: '1px solid #E8EAED' }}>
+            <ProjectSection
+              sectionId="s-description"
+              icon="📝"
+              title="Descriptif de la demande"
+              summary={sectionSummaries['s-description']?.summary}
+              stats={sectionSummaries['s-description']?.stats}
+              expanded={!!sectionExpanded['s-description']}
+              onToggle={() => toggleProjectSection('s-description')}
+              background="#fff"
+              borderTop="1px solid #E8EAED"
+            >
 
               {/* ─── 1. Description des besoins ─── */}
               <div style={{ padding: '22px 56px 18px' }}>
@@ -7430,7 +7450,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 )}
               </div>
 
-            </div>
+            </ProjectSection>
           );
         })()}
 
