@@ -3264,6 +3264,9 @@ export default function ProjectDetail() {
   const [allOperationalAlerts, setAllOperationalAlerts] = useState([]); // toutes les alertes calculées
   const [showManualPunch, setShowManualPunch] = useState(false);
   const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', work_date: new Date().toISOString().slice(0,10), hours: '', notes: '', trade: '' });
+  const [quickPunch, setQuickPunch] = useState({ worker_name: '', phase_name: '', notes: '' });
+  const [startingPunch, setStartingPunch] = useState(false);
+  const [stoppingPunchId, setStoppingPunchId] = useState(null);
   const [ganttSnapshots, setGanttSnapshots] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`mf-gantt-snaps-${id}`) || '[]'); } catch { return []; }
   });
@@ -3292,6 +3295,15 @@ export default function ProjectDetail() {
   const [matSearchResults, setMatSearchResults] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`monflux-mat-results-${id}`) || '[]'); } catch { return []; }
   });
+  useEffect(() => {
+    const defaultWorker = currentUser?.name || currentUser?.email || '';
+    const defaultPhase = (project?.phases || []).find((phase) => (phase?.name || '').trim())?.name || '';
+    setQuickPunch((prev) => ({
+      worker_name: prev.worker_name || defaultWorker,
+      phase_name: prev.phase_name || defaultPhase,
+      notes: prev.notes || '',
+    }));
+  }, [currentUser?.name, currentUser?.email, project?.phases]);
   const [matWishlist, setMatWishlist] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`monflux-mat-wishlist-${id}`) || '[]'); } catch { return []; }
   });
@@ -5656,6 +5668,36 @@ Règles :
     } catch {}
   };
 
+  const startProjectPunch = async () => {
+    const worker_name = quickPunch.worker_name.trim() || currentUser?.name || currentUser?.email || '';
+    const phase_name = quickPunch.phase_name.trim();
+    if (!worker_name || !phase_name) return;
+    setStartingPunch(true);
+    try {
+      const { data } = await tsApi.start({
+        project_id: id,
+        worker_name,
+        phase_name,
+        notes: quickPunch.notes.trim(),
+      });
+      setTimesheets(prev => [data, ...prev]);
+      setQuickPunch(prev => ({ ...prev, worker_name, notes: '' }));
+    } catch {}
+    finally { setStartingPunch(false); }
+  };
+
+  const stopProjectPunch = async (timesheet) => {
+    setStoppingPunchId(timesheet.id);
+    try {
+      const { data } = await tsApi.stop(timesheet.id, {
+        phase_name: timesheet.phase_name || quickPunch.phase_name || null,
+        notes: timesheet.notes || null,
+      });
+      setTimesheets(prev => prev.map(t => t.id === timesheet.id ? { ...t, ...data } : t));
+    } catch {}
+    finally { setStoppingPunchId(null); }
+  };
+
   // Entrée manuelle de temps (stockée dans field_assessment pour ne pas nécessiter de route supplémentaire)
   const addManualPunch = async (e) => {
     e.preventDefault();
@@ -5828,6 +5870,13 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
   const pct = project.progress_pct || 0;
   const activeTs = timesheets.filter(t=>!t.clock_out);
+  const completedTs = timesheets.filter(t => t.clock_out);
+  const pendingApprovalTs = completedTs.filter(t => !t.approved_at);
+  const totalPointedHours = completedTs.reduce((sum, ts) => {
+    if (Number.isFinite(Number(ts.hours_total))) return sum + Number(ts.hours_total);
+    if (!ts.clock_in || !ts.clock_out) return sum;
+    return sum + ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000);
+  }, 0);
   const contractValue = Number(project.contract_value || 0);
   const billedInvoices = projectInvoices.filter((inv) => inv.status !== 'cancelled');
   const totalBilled = billedInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
@@ -5853,6 +5902,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       current,
     };
   });
+
   const nextInstallment = installments.find((item) => !item.paid) || null;
   const nextDueInvoice = billedInvoices
     .filter((inv) => ['sent', 'viewed', 'partial', 'overdue'].includes(inv.status) && inv.due_date)
@@ -10066,78 +10116,165 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           background="#E9F3EC"
         >
           {sectionGuard('s-punch')}
-          {timesheets.length > 0 ? (
-            <>
-              {/* Totaux agrégés */}
-              {(() => {
-                const done = timesheets.filter(t => t.clock_out);
-                const byWorker = {};
-                let totalH = 0;
-                done.forEach(ts => {
-                  const h = (new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000;
-                  totalH += h;
-                  const key = ts.user_name || ts.sub_name || 'Inconnu';
-                  byWorker[key] = (byWorker[key] || 0) + h;
-                });
-                return (
-                  <div className="bg-gray-50 rounded-xl p-3 mb-3">
-                    <div className="flex items-center gap-6 mb-3 flex-wrap">
-                      <div className="text-center">
-                        <p className="text-xl font-bold text-gray-900">{totalH.toFixed(1)}h</p>
-                        <p className="text-xs text-gray-400">Total pointé</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xl font-bold text-brand">{timesheets.filter(t => !t.approved_at).length}</p>
-                        <p className="text-xs text-gray-400">En attente</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xl font-bold text-green-600">{timesheets.filter(t => t.approved_at).length}</p>
-                        <p className="text-xs text-gray-400">Approuvé</p>
-                      </div>
+          <div className="bg-white rounded-2xl border border-green-100 p-3 sm:p-4 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div>
+                <p className="text-sm font-bold text-gray-900">Pointer directement dans le projet</p>
+                <p className="text-xs text-gray-400">Démarrer et arrêter un punch ici, avec le moins de clic possible.</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="px-3 py-2 rounded-xl bg-green-50 min-w-[96px] text-center">
+                  <p className="text-lg font-bold text-green-700">{activeTs.length}</p>
+                  <p className="text-[11px] text-green-700/80">En cours</p>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-gray-50 min-w-[96px] text-center">
+                  <p className="text-lg font-bold text-gray-900">{totalPointedHours.toFixed(1)}h</p>
+                  <p className="text-[11px] text-gray-500">Total pointé</p>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-amber-50 min-w-[96px] text-center">
+                  <p className="text-lg font-bold text-amber-700">{pendingApprovalTs.length}</p>
+                  <p className="text-[11px] text-amber-700/80">À approuver</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1.6fr_auto] gap-2">
+              <input
+                className="input"
+                placeholder="Travailleur"
+                value={quickPunch.worker_name}
+                onChange={(e) => setQuickPunch((prev) => ({ ...prev, worker_name: e.target.value }))}
+              />
+              <select
+                className="input"
+                value={quickPunch.phase_name}
+                onChange={(e) => setQuickPunch((prev) => ({ ...prev, phase_name: e.target.value }))}
+              >
+                <option value="">Choisir une phase…</option>
+                {(project.phases || []).map((phase) => (
+                  <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
+                ))}
+              </select>
+              <input
+                className="input"
+                placeholder="Note rapide optionnelle"
+                value={quickPunch.notes}
+                onChange={(e) => setQuickPunch((prev) => ({ ...prev, notes: e.target.value }))}
+              />
+              <button
+                className="btn-primary justify-center min-w-[140px]"
+                onClick={startProjectPunch}
+                disabled={startingPunch || !quickPunch.worker_name.trim() || !quickPunch.phase_name.trim()}
+              >
+                {startingPunch ? <Loader2 size={15} className="animate-spin" /> : <Clock size={15} />}
+                Démarrer
+              </button>
+            </div>
+          </div>
+
+          {activeTs.length > 0 && (
+            <div className="bg-green-50 border border-green-100 rounded-2xl p-3 sm:p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <p className="text-sm font-bold text-gray-900">Punchs en cours</p>
+              </div>
+              <div className="space-y-2">
+                {activeTs.map((ts) => (
+                  <div key={ts.id} className="bg-white rounded-xl border border-green-100 px-3 py-2.5 flex items-center gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-900">{ts.user_name || ts.sub_name || ts.worker_name || 'Travailleur'}</p>
+                      <p className="text-xs text-gray-500">{ts.phase_name || 'Phase à confirmer'}{ts.notes ? ` · ${ts.notes}` : ''}</p>
+                      <p className="text-[11px] text-gray-400">
+                        Début {new Date(ts.clock_in).toLocaleDateString('fr-CA')} · {new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
-                    {Object.keys(byWorker).length > 0 && (
-                      <div className="space-y-1.5">
-                        {Object.entries(byWorker).sort((a, b) => b[1] - a[1]).map(([name, h]) => (
-                          <div key={name} className="flex items-center gap-2">
-                            <p className="text-xs text-gray-600 w-28 truncate">{name}</p>
-                            <div className="flex-1 h-1.5 bg-gray-200 rounded-full">
-                              <div className="h-full bg-brand rounded-full" style={{ width: `${Math.min(100, (h / (totalH || 1)) * 100)}%` }}/>
-                            </div>
-                            <p className="text-xs font-semibold text-gray-700 w-10 text-right">{h.toFixed(1)}h</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <button
+                      className="btn-secondary text-xs"
+                      onClick={() => stopProjectPunch(ts)}
+                      disabled={stoppingPunchId === ts.id}
+                    >
+                      {stoppingPunchId === ts.id ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
+                      Arrêter
+                    </button>
                   </div>
-                );
-              })()}
-              {/* Lignes détail */}
-              <div className="space-y-1">
-                {timesheets.map(ts => {
-                  const hours = ts.clock_out ? ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1) : null;
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-green-100 overflow-hidden">
+            <div className="hidden md:grid grid-cols-[1.2fr_1fr_1.1fr_1.1fr_90px_120px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Travailleur</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Phase</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Début</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Fin</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 text-right">Total</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 text-right">Actions</p>
+            </div>
+            {timesheets.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {timesheets.map((ts) => {
+                  const hours = ts.clock_out
+                    ? Number.isFinite(Number(ts.hours_total))
+                      ? Number(ts.hours_total).toFixed(1)
+                      : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1)
+                    : null;
                   return (
-                    <div key={ts.id} className={`flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 ${!ts.clock_out ? 'bg-green-50/50 rounded-lg px-2' : ''}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-800">{ts.user_name || ts.sub_name || 'Travailleur'}</p>
-                        <p className="text-[11px] text-gray-400">
-                          {new Date(ts.clock_in).toLocaleDateString('fr-CA')} · {new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
-                          {ts.clock_out && ` → ${new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}`}
-                        </p>
+                    <div key={ts.id} className={`grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1.1fr_1.1fr_90px_120px] gap-2 md:gap-3 px-4 py-3 ${!ts.clock_out ? 'bg-green-50/60' : 'bg-white'}`}>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{ts.user_name || ts.sub_name || ts.worker_name || 'Travailleur'}</p>
+                        {ts.notes && <p className="text-[11px] text-gray-400 truncate">{ts.notes}</p>}
                       </div>
-                      {hours
-                        ? <span className="text-xs font-semibold text-gray-700 w-12 text-right flex-shrink-0">{hours}h</span>
-                        : <span className="badge badge-green text-[10px] flex-shrink-0">En cours</span>}
-                      {ts.approved_at
-                        ? <CheckCircle size={13} className="text-green-400 flex-shrink-0" title="Approuvé"/>
-                        : <button className="text-[10px] text-gray-400 hover:text-brand border border-gray-200 rounded-md px-1.5 py-0.5 flex-shrink-0 transition-colors" onClick={() => approveTs(ts.id)}>Approuver</button>}
+                      <div className="min-w-0">
+                        <p className="text-sm text-gray-700">{ts.phase_name || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-700">{new Date(ts.clock_in).toLocaleDateString('fr-CA')}</p>
+                        <p className="text-[11px] text-gray-400">{new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                      <div>
+                        {ts.clock_out ? (
+                          <>
+                            <p className="text-sm text-gray-700">{new Date(ts.clock_out).toLocaleDateString('fr-CA')}</p>
+                            <p className="text-[11px] text-gray-400">{new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</p>
+                          </>
+                        ) : (
+                          <span className="badge badge-green text-[10px]">En cours</span>
+                        )}
+                      </div>
+                      <div className="md:text-right">
+                        {hours
+                          ? <p className="text-sm font-bold text-gray-900">{hours}h</p>
+                          : <p className="text-sm font-bold text-green-700">—</p>}
+                      </div>
+                      <div className="flex items-center justify-start md:justify-end gap-2">
+                        {!ts.clock_out ? (
+                          <button
+                            className="text-[11px] font-medium text-green-700 hover:text-green-800 border border-green-200 rounded-md px-2 py-1 transition-colors"
+                            onClick={() => stopProjectPunch(ts)}
+                            disabled={stoppingPunchId === ts.id}
+                          >
+                            {stoppingPunchId === ts.id ? 'Arrêt…' : 'Arrêter'}
+                          </button>
+                        ) : ts.approved_at ? (
+                          <CheckCircle size={14} className="text-green-500" title="Approuvé" />
+                        ) : (
+                          <button
+                            className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors"
+                            onClick={() => approveTs(ts.id)}
+                          >
+                            Approuver
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </>
-          ) : (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun punch enregistré. Générez un QR ci-dessous pour commencer.</p>
-          )}
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-6">Aucun punch enregistré pour ce projet.</p>
+            )}
+          </div>
 
           {/* ── Dépenses de chantier (dans Punch et dépenses) ── */}
           <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1.5px solid #D1FAE5' }}>

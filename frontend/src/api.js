@@ -139,6 +139,8 @@ export const punch = {
 
 export const timesheets = {
   list:    (params)     => http.get('/timesheets', { params }),
+  start:   (data)       => http.post('/timesheets/start', data),
+  stop:    (id, data)   => http.patch(`/timesheets/${id}/stop`, data),
   approve: (id)         => http.patch(`/timesheets/${id}/approve`),
 };
 
