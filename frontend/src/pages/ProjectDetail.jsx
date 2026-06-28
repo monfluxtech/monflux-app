@@ -3157,8 +3157,14 @@ export default function ProjectDetail() {
   const [floEmailLoading, setFloEmailLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('s-ai');
   const [activeTab, setActiveTab] = useState('detail'); // 'detail' | 'memoire' | 'communication'
-  const [proactiveTip, setProactiveTip] = useState(null); // { text, type: 'regulatory'|'deadline'|'tip' }
+  const [proactiveTip, setProactiveTip] = useState(null);
   const [proactiveDismissedSections, setProactiveDismissedSections] = useState(new Set());
+  const [allOperationalAlerts, setAllOperationalAlerts] = useState([]); // toutes les alertes calculées
+  const [showManualPunch, setShowManualPunch] = useState(false);
+  const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', work_date: new Date().toISOString().slice(0,10), hours: '', notes: '', trade: '' });
+  const [ganttSnapshots, setGanttSnapshots] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`mf-gantt-snaps-${id}`) || '[]'); } catch { return []; }
+  });
   const [showTopMenu, setShowTopMenu] = useState(false);
   const topMenuRef = useRef(null);
   const [portalCopyTarget, setPortalCopyTarget] = useState(null); // null | 'client' | 'supplier'
@@ -3358,7 +3364,7 @@ export default function ProjectDetail() {
   // ── Alertes opérationnelles Flo ──────────────────────────────────────────
   // Alertes dynamiques basées sur les données réelles du projet (retard, équipe, matériaux, tickets)
   useEffect(() => {
-    if (showAIChat) return;
+    if (showAIChat || !project || typeof project === 'string') return;
 
     const todayMs = Date.now();
     const alerts = [];
@@ -3453,8 +3459,9 @@ export default function ProjectDetail() {
       });
     }
 
-    // Trier par priorité et choisir la plus urgente non-ignorée
+    // Trier par priorité, exposer toutes les alertes + choisir la plus urgente non-ignorée
     alerts.sort((a, b) => a.priority - b.priority);
+    setAllOperationalAlerts(alerts);
     const pick = alerts.find(a => !proactiveDismissedSections.has(a.id));
     if (!pick) { setProactiveTip(null); return; }
     setProactiveTip({ ...pick, section: pick.id });
@@ -4638,10 +4645,34 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     } finally { setGeneratingPhases(false); }
   };
 
+  // Sauvegarder un snapshot Gantt (avant toute modification IA)
+  const saveGanttSnapshot = (phases) => {
+    const snapKey = `mf-gantt-snaps-${id}`;
+    const existing = JSON.parse(localStorage.getItem(snapKey) || '[]');
+    const snap = { ts: new Date().toISOString(), phases: phases.map(ph => ({ ...ph })) };
+    const next = [snap, ...existing].slice(0, 5);
+    localStorage.setItem(snapKey, JSON.stringify(next));
+    setGanttSnapshots(next);
+  };
+
+  const restoreGanttSnapshot = async (snap) => {
+    if (!confirm(`Restaurer le Gantt du ${new Date(snap.ts).toLocaleString('fr-CA')} ?`)) return;
+    for (const ph of snap.phases) {
+      await projectsApi.updatePhase(id, ph.id, {
+        start_date: ph.start_date, end_date: ph.end_date,
+        start_time: ph.start_time, duration_hours: ph.duration_hours, display_order: ph.display_order,
+      }).catch(() => {});
+    }
+    const { data: updated } = await projectsApi.get(id);
+    setProject(updated);
+    setAiNotice('Gantt restauré à la version précédente.');
+  };
+
   // "Ajuster avec Flo" — réorganise les phases existantes sans les supprimer
   const adjustPhasesWithAI = async () => {
     const currentPhases = project.phases || [];
     if (!currentPhases.length) { generatePhasesFromAI(); return; }
+    saveGanttSnapshot(currentPhases); // snapshot avant modification
     setGeneratingPhases(true);
     setAiNotice('');
     setAiRecommendations([]);
@@ -5148,6 +5179,19 @@ Règles :
       await tsApi.approve(tsId);
       setTimesheets(prev => prev.map(t => t.id === tsId ? { ...t, approved_at: new Date().toISOString() } : t));
     } catch {}
+  };
+
+  // Entrée manuelle de temps (stockée dans field_assessment pour ne pas nécessiter de route supplémentaire)
+  const addManualPunch = async (e) => {
+    e.preventDefault();
+    const entry = { ...manualPunchForm, id: crypto.randomUUID(), created_at: new Date().toISOString() };
+    const fa = project.field_assessment || {};
+    const existing = fa.manual_timesheets || [];
+    const next = [entry, ...existing];
+    await projectsApi.update(id, { field_assessment: { ...fa, manual_timesheets: next } });
+    setProject(p => ({ ...p, field_assessment: { ...(p.field_assessment || {}), manual_timesheets: next } }));
+    setManualPunchForm({ worker_name: '', work_date: new Date().toISOString().slice(0,10), hours: '', notes: '', trade: '' });
+    setShowManualPunch(false);
   };
 
   const createOrder = async (e) => {
@@ -6193,6 +6237,29 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   {kvChips.map((chip, ci) => (
                     <KvTooltipChip key={ci} chip={chip} />
                   ))}
+
+                  {/* ── Chips de risque Flo (délai / monétaire / réputation) ── */}
+                  {allOperationalAlerts.length > 0 && (() => {
+                    const RISK_MAP = {
+                      delay:            { label: 'Retard calendrier', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A', icon: '⏰' },
+                      team:             { label: 'Ressource manquante', color: '#EA580C', bg: '#FFF7ED', border: '#FED7AA', icon: '👷' },
+                      material:         { label: 'Risque monétaire', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: '📦' },
+                      nonconform:       { label: 'Risque réputation', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', icon: '⚠️' },
+                      material_request: { label: 'Commande manquante', color: '#0284C7', bg: '#F0F9FF', border: '#BAE6FD', icon: '🛒' },
+                    };
+                    // Déduplique par impact (on n'affiche qu'un chip par type)
+                    const seen = new Set();
+                    return allOperationalAlerts.filter(a => { if (seen.has(a.type)) return false; seen.add(a.type); return true; }).map(a => {
+                      const r = RISK_MAP[a.type] || { label: a.title, color: '#6B7280', bg: '#F9FAFB', border: '#E5E7EB', icon: '🔔' };
+                      return (
+                        <div key={a.id} title={a.text} style={{ display: 'flex', alignItems: 'center', gap: 5, background: r.bg, border: `1px solid ${r.border}`, borderRadius: 9, padding: '5px 11px', fontSize: 11.5, fontWeight: 700, color: r.color, cursor: 'default', flexShrink: 0 }}>
+                          <span>{r.icon}</span>
+                          <span>{r.label}</span>
+                        </div>
+                      );
+                    });
+                  })()}
+
                   {/* Colonne droite : QR + portails */}
                   {(qrData || project.portal_token) && (
                     <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', flexShrink: 0 }}>
