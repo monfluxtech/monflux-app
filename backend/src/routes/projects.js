@@ -372,16 +372,30 @@ function normalizeAddress(addr) {
 
 // Geocode an address via OpenStreetMap Nominatim (free, no API key). Best-effort.
 async function geocodeAddress(parts) {
-  const raw = parts.filter(Boolean).join(', ');
+  const cleanParts = parts.map(p => String(p || '').trim()).filter(Boolean);
+  const [address = '', city = '', province = '', country = ''] = cleanParts;
+  const raw = cleanParts.join(', ');
   if (!raw.trim()) return null;
 
-  const normalized = normalizeAddress(raw);
-  const queries = [normalized];
-  // Also try without house number as fallback
-  const withoutNumber = normalized.replace(/^\d+\s*,?\s*/, '');
-  if (withoutNumber !== normalized) queries.push(withoutNumber);
-  // Try raw address as last resort
-  if (raw !== normalized) queries.push(raw);
+  const normalizedAddress = normalizeAddress(address);
+  const pushQuery = (list, value) => {
+    const v = String(value || '').replace(/\s+/g, ' ').trim();
+    if (v && !list.includes(v)) list.push(v);
+  };
+
+  const queries = [];
+  pushQuery(queries, [normalizedAddress, city, province, country].filter(Boolean).join(', '));
+  pushQuery(queries, [address, city, province, country].filter(Boolean).join(', '));
+  pushQuery(queries, [normalizedAddress, province, country].filter(Boolean).join(', '));
+  pushQuery(queries, [address, province, country].filter(Boolean).join(', '));
+  pushQuery(queries, normalizedAddress);
+  pushQuery(queries, address);
+
+  const withoutNumber = normalizedAddress.replace(/^\d+\s*,?\s*/, '');
+  if (withoutNumber !== normalizedAddress) {
+    pushQuery(queries, [withoutNumber, city, province, country].filter(Boolean).join(', '));
+    pushQuery(queries, [withoutNumber, province, country].filter(Boolean).join(', '));
+  }
 
   for (const q of queries) {
     try {

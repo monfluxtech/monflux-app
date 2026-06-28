@@ -83,6 +83,18 @@ const money = (v) => num(v).toLocaleString('fr-CA', { maximumFractionDigits: 0 }
 // Marge théorique = commande − (budgets + coûts métiers estimés). Réelle = facturé − (punch + dépenses).
 const theoMargin = (p) => num(p.contract_value) - (num(p.budget_materials) + num(p.budget_labor) + num(p.trades_estimated_cost));
 const realMargin = (p) => num(p.invoiced_real) - (num(p.labor_cost_real) + num(p.expenses_real));
+const fmtProjectDate = (d) => {
+  if (!d) return null;
+  const parsed = new Date(String(d).slice(0, 10) + 'T00:00');
+  return isNaN(parsed) ? null : parsed.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+};
+const getProjectTitle = (p) => p?.field_assessment?.work_type || p?.type || p?.name || 'Projet';
+const getProjectDateRange = (p) => {
+  const start = fmtProjectDate(p?.start_date);
+  const end = fmtProjectDate(p?.end_date);
+  return start && end ? `${start} – ${end}` : start || end || '';
+};
+const getProjectMeta = (p) => [p?.address, getProjectDateRange(p)].filter(Boolean).join(' · ');
 
 // Load Leaflet from CDN once (no npm dependency, no API key needed)
 let leafletPromise = null;
@@ -139,8 +151,9 @@ function MapView({ projects, onGeocodeAll, geocoding, stageMap }) {
         iconSize: [18, 18], iconAnchor: [9, 9],
       });
       const m = L.marker([lat, lng], { icon });
-      const label = p.field_assessment?.work_type || p.type || p.name || '—';
-      m.bindTooltip(`<b>${label}</b>${p.address ? '<br>' + p.address : ''}${p.contract_value ? '<br>' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`, { direction: 'top', offset: [0, -8] });
+      const label = getProjectTitle(p);
+      const meta = getProjectMeta(p);
+      m.bindTooltip(`<b>${label}</b>${meta ? '<br>' + meta : ''}${p.contract_value ? '<br>' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`, { direction: 'top', offset: [0, -8] });
       m.on('click', () => navigate(`/projets/${p.id}`));
       m.addTo(layerRef.current);
       bounds.push([lat, lng]);
@@ -265,22 +278,22 @@ function GanttPortfolio({ projects, stageMap }) {
                 >
                   {/* Project label */}
                   <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, borderRight: '1px solid #E8EAED' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>{stageMap[p.status]?.label || p.status}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectTitle(p)}</span>
+                    <span style={{ fontSize: 10, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProjectMeta(p) || stageMap[p.status]?.label || p.status}</span>
                   </div>
 
                   {/* Gantt track */}
                   <div style={{ flex: 1, position: 'relative', height: '100%', padding: '10px 0' }}>
                     <div
                       style={{ position: 'absolute', top: 10, bottom: 10, left: `${pLeft}%`, width: `${pW}%`, minWidth: 6, borderRadius: 6, background: color + '18', border: `2px solid ${color}`, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
-                      title={`${p.name} · du ${new Date(start).toLocaleDateString('fr-CA')} au ${new Date(end).toLocaleDateString('fr-CA')}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`}
+                      title={`${getProjectTitle(p)} · du ${new Date(start).toLocaleDateString('fr-CA')} au ${new Date(end).toLocaleDateString('fr-CA')}${p.contract_value ? ' · ' + Number(p.contract_value).toLocaleString('fr-CA') + ' $' : ''}`}
                     >
                       {/* Progress fill */}
                       {prog > 0 && <div style={{ position: 'absolute', inset: 0, width: `${prog}%`, background: color + '45', borderRadius: 4 }} />}
                       {/* Label inside bar */}
                       {pW > 8 && (
                         <span style={{ position: 'relative', fontSize: 10, fontWeight: 700, color, paddingLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
-                          {p.client_name || p.name}
+                          {getProjectTitle(p)}
                           {prog > 0 && <span style={{ opacity: 0.7 }}> · {prog}%</span>}
                         </span>
                       )}
@@ -336,7 +349,8 @@ function CalendarView({ projects, stageMap }) {
 
   const ProjectChip = ({ p, size = 'sm' }) => {
     const color = stageMap[p.status]?.color || '#94a3b8';
-    const label = p.field_assessment?.work_type || p.name || '—';
+    const label = getProjectTitle(p);
+    const meta = getProjectMeta(p);
     return (
       <button onClick={() => navigate(`/projets/${p.id}`)}
         style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left',
@@ -344,11 +358,11 @@ function CalendarView({ projects, stageMap }) {
           background: color + '18', border: `1px solid ${color}33`,
           borderRadius: 5, padding: size === 'lg' ? '6px 10px' : '2px 5px',
           overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'pointer' }}
-        title={`${label}${p.address ? ' · ' + p.address : ''}`}
+        title={`${label}${meta ? ' · ' + meta : ''}`}
       >
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }}/>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-        {size === 'lg' && p.address && <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11 }}>· {p.address}</span>}
+        {size === 'lg' && meta && <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11 }}>· {meta}</span>}
       </button>
     );
   };
@@ -447,7 +461,7 @@ function CalendarView({ projects, stageMap }) {
               {weekDays.map((d, i) => {
                 const isTod = d.toDateString() === today.toDateString();
                 return (
-                  <div key={i} style={{ padding: '8px 4px', textAlign: 'center', background: isTod ? '#FFF7F0' : '#FAFAFA', borderLeft: '1px solid #F0F2F4' }}
+                  <div key={i}
                     onClick={() => { setCursor({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }); setCalMode('day'); }}
                     style={{ cursor: 'pointer', padding: '8px 4px', textAlign: 'center', background: isTod ? '#FFF7F0' : '#FAFAFA', borderLeft: '1px solid #F0F2F4' }}>
                     <p style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{DAYS_SHORT[i]}</p>
@@ -542,7 +556,7 @@ function CalendarView({ projects, stageMap }) {
         <div style={{ padding: '8px 16px', borderTop: '1px solid #F0F2F4', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {projects.slice(0, 6).map(p => {
             const color = stageMap[p.status]?.color || '#94a3b8';
-            const label = p.field_assessment?.work_type || p.name || '—';
+            const label = getProjectTitle(p);
             return (
               <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 5 }}
@@ -609,10 +623,10 @@ function KanbanView({ projects, pipeline, stageMap, onChangeStage, onNew }) {
                   }`}
                   onClick={() => navigate(`/projets/${p.id}`)}
                 >
-                  <p className="text-sm font-semibold text-gray-900 mb-1 truncate">{p.name}</p>
-                  {p.address && (
+                  <p className="text-sm font-semibold text-gray-900 mb-1 truncate">{getProjectTitle(p)}</p>
+                  {getProjectMeta(p) && (
                     <p className="text-[11px] text-gray-400 truncate mb-1.5 flex items-center gap-1">
-                      <MapPin size={9}/>{p.address}
+                      <MapPin size={9}/>{getProjectMeta(p)}
                     </p>
                   )}
                   <div className="flex items-center justify-between gap-2">
@@ -1093,7 +1107,7 @@ export default function Projets() {
         const { data } = await projectsApi.geocode(p.id);
         setItems(i => i.map(pr => pr.id === p.id ? { ...pr, latitude: data.latitude, longitude: data.longitude } : pr));
       } catch (err) {
-        console.warn(`Géocodage échoué pour "${p.name}":`, err?.response?.data?.error || err.message);
+        console.warn(`Géocodage échoué pour "${p.address || p.name}":`, err?.response?.data?.error || err.message);
       }
       await new Promise(r => setTimeout(r, 1100)); // respect Nominatim 1 req/s
     }
@@ -1119,15 +1133,7 @@ export default function Projets() {
 
     // Titre composé : type travaux · adresse · dates
     const workType = p.field_assessment?.work_type || p.type || null;
-    const fmtDate = (d) => {
-      if (!d) return null;
-      // slice to YYYY-MM-DD to avoid double T00:00 on DB timestamps
-      const parsed = new Date(String(d).slice(0, 10) + 'T00:00');
-      return isNaN(parsed) ? null : parsed.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
-    };
-    const dateStr = p.start_date && p.end_date
-      ? `${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}`
-      : fmtDate(p.start_date) || fmtDate(p.end_date);
+    const dateStr = getProjectDateRange(p);
     const titleParts = [workType, p.address, dateStr].filter(Boolean);
     const displayTitle = titleParts.length > 0 ? titleParts.join('  ·  ') : p.name;
     const isAutoTitle = titleParts.length > 0;
