@@ -17,6 +17,7 @@ import PunchPublic   from './pages/PunchPublic';
 import QuotePublic      from './pages/QuotePublic';
 import InvoicePublic    from './pages/InvoicePublic';
 import QuittancePublic  from './pages/QuittancePublic';
+import ContractPublic   from './pages/ContractPublic';
 import ProjectPortal      from './pages/ProjectPortal';
 import SupplierPortal    from './pages/SupplierPortal';
 import ChangeOrderPublic  from './pages/ChangeOrderPublic';
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/soumission/:token"  element={<QuotePublic />} />
         <Route path="/facture/:token"      element={<InvoicePublic />} />
         <Route path="/quittance/:token"   element={<QuittancePublic />} />
+        <Route path="/contrat/:token"     element={<ContractPublic />} />
         <Route path="/portal/:token"          element={<ProjectPortal />} />
         <Route path="/supplier-portal/:token" element={<SupplierPortal />} />
         <Route path="/modification/:token"    element={<ChangeOrderPublic />} />

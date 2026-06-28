@@ -109,6 +109,15 @@ const getProjectDateRange = (p) => {
   return start && end ? `${start} – ${end}` : start || end || '';
 };
 const getProjectMeta = (p) => [p?.address, getProjectDateRange(p)].filter(Boolean).join(' · ');
+const getPlanVsActual = (p) => {
+  const planned = num(p?.planned_hours);
+  const actual = num(p?.total_hours_logged);
+  return {
+    planned,
+    actual,
+    delta: actual - planned,
+  };
+};
 
 // Load Leaflet from CDN once (no npm dependency, no API key needed)
 let leafletPromise = null;
@@ -373,25 +382,28 @@ function CalendarView({ projects, stageMap }) {
     const meta = getProjectMeta(p);
     const address = getProjectAddress(p);
     const dateRange = getProjectDateRange(p);
+    const titleSize = size === 'lg' ? 12 : size === 'md' ? 10 : 9;
+    const addressSize = size === 'lg' ? 11 : size === 'md' ? 9 : 0;
+    const dateSize = size === 'lg' ? 10 : size === 'md' ? 8 : 0;
     return (
       <button onClick={() => navigate(`/projets/${p.id}`)}
-        style={{ display: 'flex', alignItems: size === 'lg' ? 'flex-start' : 'center', gap: 5, width: '100%', textAlign: 'left',
-          fontSize: size === 'lg' ? 12 : 9, fontWeight: 700, color,
+        style={{ display: 'flex', alignItems: size !== 'sm' ? 'flex-start' : 'center', gap: 5, width: '100%', textAlign: 'left',
+          fontSize: titleSize, fontWeight: 700, color,
           background: color + '18', border: `1px solid ${color}33`,
-          borderRadius: 5, padding: size === 'lg' ? '6px 10px' : '2px 5px',
+          borderRadius: 5, padding: size === 'lg' ? '6px 10px' : size === 'md' ? '4px 6px' : '2px 5px',
           overflow: 'hidden', cursor: 'pointer' }}
         title={`${label}${meta ? ' · ' + meta : ''}`}
       >
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }}/>
-        <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: size === 'lg' ? 1 : 0, overflow: 'hidden' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-          {size === 'lg' && address && (
-            <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: size !== 'sm' ? 1 : 0, overflow: 'hidden' }}>
+          <span style={{ fontSize: titleSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+          {size !== 'sm' && address && (
+            <span style={{ fontWeight: 400, color: '#9CA3AF', fontSize: addressSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {address}
             </span>
           )}
-          {size === 'lg' && dateRange && (
-            <span style={{ fontWeight: 400, color: '#B0B3BA', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {size !== 'sm' && dateRange && (
+            <span style={{ fontWeight: 400, color: '#B0B3BA', fontSize: dateSize, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {dateRange}
             </span>
           )}
@@ -569,15 +581,15 @@ function CalendarView({ projects, stageMap }) {
           return (
             <div key={i}
               onClick={() => day && (setCursor({ year, month, day }), setCalMode('day'))}
-              style={{ minHeight: 76, borderRight: '1px solid #F5F7F9', borderBottom: '1px solid #F5F7F9', padding: '5px 4px', background: day ? '#fff' : '#FAFAFA', cursor: day ? 'pointer' : 'default', position: 'relative' }}>
+              style={{ minHeight: 104, borderRight: '1px solid #F5F7F9', borderBottom: '1px solid #F5F7F9', padding: '5px 4px', background: day ? '#fff' : '#FAFAFA', cursor: day ? 'pointer' : 'default', position: 'relative' }}>
               {day && (
                 <>
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: '50%', fontSize: 11, fontWeight: isToday ? 800 : 500, color: isToday ? '#fff' : '#374151', background: isToday ? '#E8794E' : 'transparent', marginBottom: 3 }}>
                     {day}
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {events.slice(0, 3).map(p => <ProjectChip key={p.id} p={p}/>)}
-                    {events.length > 3 && <span style={{ fontSize: 9, color: '#9CA3AF', paddingLeft: 4 }}>+{events.length - 3}</span>}
+                    {events.slice(0, 2).map(p => <ProjectChip key={p.id} p={p} size="md"/>)}
+                    {events.length > 2 && <span style={{ fontSize: 9, color: '#9CA3AF', paddingLeft: 4 }}>+{events.length - 2}</span>}
                   </div>
                 </>
               )}
@@ -586,17 +598,21 @@ function CalendarView({ projects, stageMap }) {
         })}
       </div>
       {projects.length > 0 && (
-        <div style={{ padding: '8px 16px', borderTop: '1px solid #F0F2F4', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ padding: '10px 16px', borderTop: '1px solid #F0F2F4', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {projects.slice(0, 6).map(p => {
             const color = stageMap[p.status]?.color || '#94a3b8';
-            const label = getProjectTitle(p);
             return (
               <button key={p.id} onClick={() => navigate(`/projets/${p.id}`)}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 5 }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 10, fontWeight: 600, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 5, textAlign: 'left' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}/>{label}
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 4 }}/>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#374151' }}>{getProjectTitle(p)}</span>
+                  {getProjectAddress(p) && <span style={{ fontSize: 9, color: '#9CA3AF' }}>{getProjectAddress(p)}</span>}
+                  {getProjectDateRange(p) && <span style={{ fontSize: 8.5, color: '#B0B3BA' }}>{getProjectDateRange(p)}</span>}
+                </span>
               </button>
             );
           })}
@@ -1055,7 +1071,6 @@ export default function Projets() {
   const [workTypeFilter, setWorkTypeFilter] = useState('');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
-  const [progressMinFilter, setProgressMinFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [pipeOpen, setPipeOpen] = useState(false);
   const [showKpiPanel, setShowKpiPanel] = useState(false);
@@ -1067,12 +1082,14 @@ export default function Projets() {
     { key: 'invoiced',  label: 'Facturé',         group: 'finances' },
     { key: 'margin',    label: 'Marge',            group: 'finances' },
     { key: 'dates',     label: 'Dates',            group: 'planning' },
-    { key: 'progress',  label: 'Avancement %',     group: 'planning' },
+    { key: 'plan_actual',  label: 'Réel vs planifié', group: 'planning' },
     { key: 'manager',   label: 'Responsable',      group: 'equipe' },
   ];
   const [activeKpis, setActiveKpis] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('mf_proj_kpis') || '["contract","margin","dates"]'); }
-    catch { return ['contract', 'margin', 'dates']; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('mf_proj_kpis') || '["contract","margin","dates","plan_actual"]');
+      return saved.map(k => k === 'progress' ? 'plan_actual' : k);
+    } catch { return ['contract', 'margin', 'dates', 'plan_actual']; }
   });
   const toggleKpi = (key) => {
     setActiveKpis(prev => {
@@ -1139,20 +1156,13 @@ export default function Projets() {
     const matchWorkType = !workTypeFilter || (p.field_assessment?.work_type || p.type || '').toLowerCase().includes(workTypeFilter.toLowerCase());
     const matchDateFrom = !dateFromFilter || (p.start_date && String(p.start_date).slice(0, 10) >= dateFromFilter);
     const matchDateTo = !dateToFilter || (p.end_date && String(p.end_date).slice(0, 10) <= dateToFilter);
-    const matchProgressMin = !progressMinFilter || Number(p.progress_pct || 0) >= Number(progressMinFilter);
-    return matchSearch && matchStatus && matchCity && matchManager && matchValueMin && matchValueMax && matchWorkType && matchDateFrom && matchDateTo && matchProgressMin;
+    return matchSearch && matchStatus && matchCity && matchManager && matchValueMin && matchValueMax && matchWorkType && matchDateFrom && matchDateTo;
   });
   const active = filtered.filter(p => !isTerminal(p));
   const others = filtered.filter(p => isTerminal(p));
 
-  const [sliderProject, setSliderProject] = useState(null);
   const [view, setView] = useState('list');
   const [geocoding, setGeocoding] = useState(false);
-
-  const saveProgress = useCallback(async (id, pct) => {
-    setItems(i => i.map(p => p.id === id ? { ...p, progress_pct: pct } : p));
-    try { await projectsApi.update(id, { progress_pct: pct }); } catch {}
-  }, []);
 
   // Geocode all projects that have an address but no coordinates
   const looksLikeRealAddress = (addr) => addr && addr.trim().length >= 8 && /\d/.test(addr);
@@ -1180,17 +1190,15 @@ export default function Projets() {
   }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ProjectCard = ({ p }) => {
-    const pct = p.progress_pct || 0;
     const st = stageMap[p.status] || {};
     const color = st.color || '#94a3b8';
-    const isEditing = sliderProject === p.id;
 
     const daysLeft = p.end_date && !st.terminal
       ? Math.ceil((new Date(p.end_date) - Date.now()) / 86400000)
       : null;
 
     return (
-      <div className="card hover:shadow-md transition-shadow" onClick={() => { if (!isEditing) navigate(`/projets/${p.id}`); }}>
+      <div className="card hover:shadow-md transition-shadow" onClick={() => navigate(`/projets/${p.id}`)}>
         <div className="flex items-center gap-4 cursor-pointer">
           <div className="w-2 h-10 rounded-full flex-shrink-0" style={{ background: color }}/>
           <div className="flex-1 min-w-0">
@@ -1209,33 +1217,30 @@ export default function Projets() {
             </div>
             <div className="flex gap-3 text-xs text-gray-400 flex-wrap mb-1.5">
               {activeKpis.includes('manager') && p.project_manager && <span className="flex items-center gap-1">👤 {p.project_manager}</span>}
-              {activeKpis.includes('contract') && p.contract_value && <span className="flex items-center gap-1"><DollarSign size={11}/>{Number(p.contract_value).toLocaleString('fr-CA')}$</span>}
-              {activeKpis.includes('invoiced') && num(p.invoiced_real) > 0 && <span className="flex items-center gap-1 text-blue-500">Fact. {money(num(p.invoiced_real))}</span>}
+              {activeKpis.includes('contract') && <span className="flex items-center gap-1"><DollarSign size={11}/>Contrat {p.contract_value ? Number(p.contract_value).toLocaleString('fr-CA') + '$' : '—'}</span>}
+              {activeKpis.includes('invoiced') && <span className="flex items-center gap-1 text-blue-500">Fact. {num(p.invoiced_real) > 0 ? money(num(p.invoiced_real)) : '—'}</span>}
               {activeKpis.includes('margin') && (() => {
                 const hasReal = num(p.invoiced_real) > 0;
                 const m = hasReal ? realMargin(p) : theoMargin(p);
                 const rev = hasReal ? num(p.invoiced_real) : num(p.contract_value);
-                if (!rev && !m) return null;
                 const pos = m >= 0;
                 return (
                   <span className={`flex items-center gap-1 font-medium ${pos ? 'text-green-600' : 'text-red-500'}`} title={hasReal ? 'Marge réelle' : 'Marge théorique'}>
-                    <TrendingUp size={11}/>{money(m)}{rev > 0 ? ` · ${Math.round((m / rev) * 100)}%` : ''}
+                    <TrendingUp size={11}/>{rev > 0 || m !== 0 ? `${money(m)}${rev > 0 ? ` · ${Math.round((m / rev) * 100)}%` : ''}` : 'Marge —'}
                     <span className="text-gray-300 font-normal">{hasReal ? 'réel' : 'prév.'}</span>
                   </span>
                 );
               })()}
+              {activeKpis.includes('plan_actual') && (() => {
+                const { planned, actual, delta } = getPlanVsActual(p);
+                const tone = delta > 0 ? 'text-orange-500' : delta < 0 ? 'text-green-600' : 'text-gray-400';
+                return (
+                  <span className={`flex items-center gap-1 ${tone}`}>
+                    <Clock size={11}/>Réel {actual > 0 ? `${actual}h` : '—'} / Prévu {planned > 0 ? `${planned}h` : '—'}
+                  </span>
+                );
+              })()}
             </div>
-            {!st.terminal && activeKpis.includes('progress') && (
-              <div
-                className="flex items-center gap-2 group"
-                onClick={e => { e.stopPropagation(); setSliderProject(isEditing ? null : p.id); }}
-              >
-                <div className="relative flex-1 h-2 bg-gray-100 rounded-full cursor-pointer group-hover:h-3 transition-all">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }}/>
-                </div>
-                <span className="text-xs font-medium w-8 text-right flex-shrink-0 group-hover:underline" style={{ color }}>{pct}%</span>
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
             <select
@@ -1252,32 +1257,6 @@ export default function Projets() {
             <ChevronRight size={14} className="text-gray-300 ml-1"/>
           </div>
         </div>
-
-        {/* Inline progress editor */}
-        {isEditing && (
-          <div className="mt-3 pt-3 border-t border-gray-100" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500 flex-shrink-0">Avancement</span>
-              <input
-                type="range" min="0" max="100" step="5"
-                defaultValue={pct}
-                className="flex-1 accent-brand"
-                onChange={e => setItems(i => i.map(pr => pr.id === p.id ? { ...pr, progress_pct: Number(e.target.value) } : pr))}
-                onMouseUp={e => { saveProgress(p.id, Number(e.target.value)); setSliderProject(null); }}
-                onTouchEnd={e => { saveProgress(p.id, Number(e.target.value)); setSliderProject(null); }}
-              />
-              <span className="text-sm font-bold w-10 text-right flex-shrink-0" style={{ color }}>{pct}%</span>
-            </div>
-            <div className="flex gap-1.5 mt-2">
-              {[0, 25, 50, 75, 100].map(v => (
-                <button key={v} className={`flex-1 text-xs py-1 rounded-lg border transition-colors ${pct === v ? 'border-brand text-brand bg-orange-50 font-semibold' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}
-                  onClick={() => { saveProgress(p.id, v); setSliderProject(null); }}>
-                  {v}%
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -1356,7 +1335,7 @@ export default function Projets() {
             {pipeline.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <button className={`btn-secondary text-xs px-3 ${showFilters ? 'bg-orange-50 border-brand text-brand' : ''}`} onClick={()=>setShowFilters(o=>!o)}>
-            {t('filters')} {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].filter(Boolean).length > 0 ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].filter(Boolean).length}</span> : null}
+            {t('filters')} {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter].filter(Boolean).length > 0 ? <span className="ml-1 w-4 h-4 bg-brand text-white rounded-full text-[10px] flex items-center justify-center inline-flex">{[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter].filter(Boolean).length}</span> : null}
           </button>
         </div>
         {showFilters && (
@@ -1389,13 +1368,9 @@ export default function Projets() {
               <label htmlFor="f-val-max" className="label text-[11px]">{t('filter_value_max')}</label>
               <input id="f-val-max" name="filter_value_max" className="input text-xs" type="number" placeholder="∞" value={valueMax} onChange={e=>setValueMax(e.target.value)}/>
             </div>
-            <div className="flex-1 min-w-28">
-              <label htmlFor="f-progress" className="label text-[11px]">Avancement min (%)</label>
-              <input id="f-progress" name="filter_progress_min" className="input text-xs" type="number" min="0" max="100" placeholder="0" value={progressMinFilter} onChange={e=>setProgressMinFilter(e.target.value)}/>
-            </div>
-            {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter,progressMinFilter].some(Boolean) && (
+            {[cityFilter,managerFilter,valueMin,valueMax,workTypeFilter,dateFromFilter,dateToFilter].some(Boolean) && (
               <div className="flex items-end">
-                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');setWorkTypeFilter('');setDateFromFilter('');setDateToFilter('');setProgressMinFilter('');}}>
+                <button className="btn-ghost text-xs text-red-400" onClick={()=>{setCityFilter('');setManagerFilter('');setValueMin('');setValueMax('');setWorkTypeFilter('');setDateFromFilter('');setDateToFilter('');}}>
                   {t('clear_filters')}
                 </button>
               </div>

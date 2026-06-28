@@ -513,6 +513,12 @@ async function applyMigrations() {
   // ── company_config : ui_preferences pour remplacer localStorage ──────────
   await run('company_config: ui_preferences',
     `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS ui_preferences JSONB DEFAULT '{}'::jsonb`);
+  await run('company_config: contract_templates',
+    `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS contract_templates JSONB DEFAULT '{}'::jsonb`);
+  await run('contracts: template_key',
+    `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS template_key TEXT`);
+  await run('contracts: meta',
+    `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS meta JSONB DEFAULT '{}'::jsonb`);
 }
 
 export async function initializeDatabase() {

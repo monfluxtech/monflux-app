@@ -6,7 +6,7 @@ import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
 import { isSectionAvailable, unavailableReason } from '../config/projectSections';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi, activityLog as activityLogApi } from '../api';
-import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin } from 'lucide-react';
+import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin, Save } from 'lucide-react';
 
 const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 
@@ -39,6 +39,61 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Notes et photos' },
 ];
+
+const DEFAULT_CONTRACT_TEMPLATE_CONFIG = {
+  default_key: 'general',
+  templates: [
+    { key: 'general', label: 'Contrat général', project_types: ['default', 'general', 'renovation'] },
+    { key: 'interior', label: 'Contrat intérieur', project_types: ['cuisine', 'salle_de_bain', 'interior'] },
+    { key: 'exterior', label: 'Contrat extérieur', project_types: ['toiture', 'revetement', 'terrasse', 'exterieur'] },
+    { key: 'service', label: 'Entente de service', project_types: ['service', 'entretien', 'maintenance'] },
+  ],
+};
+
+const getContractTemplateConfig = (value) => {
+  const incoming = value && Array.isArray(value.templates) ? value : DEFAULT_CONTRACT_TEMPLATE_CONFIG;
+  const known = new Map(DEFAULT_CONTRACT_TEMPLATE_CONFIG.templates.map((template) => [template.key, template]));
+  incoming.templates.forEach((template) => {
+    if (!template?.key) return;
+    known.set(template.key, { ...known.get(template.key), ...template });
+  });
+  return {
+    default_key: known.has(incoming.default_key) ? incoming.default_key : DEFAULT_CONTRACT_TEMPLATE_CONFIG.default_key,
+    templates: [...known.values()],
+  };
+};
+
+const normalizeContractKey = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '');
+
+const guessProjectContractTemplateKey = (project, config) => {
+  const templateConfig = getContractTemplateConfig(config);
+  const haystack = [
+    project?.field_assessment?.work_type,
+    project?.type,
+    project?.name,
+    project?.description,
+  ].map(normalizeContractKey).filter(Boolean).join(' ');
+  const match = templateConfig.templates.find((template) => (
+    (template.project_types || []).some((type) => haystack.includes(normalizeContractKey(type)))
+  ));
+  return match?.key || templateConfig.default_key;
+};
+
+const normalizeContractHtml = (content) => {
+  const raw = String(content || '').trim();
+  if (!raw) return '<p></p>';
+  if (raw.includes('<')) return raw;
+  return raw
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+    .join('');
+};
 
 // Stub affiché dans le corps quand une section est désactivée (par état ou par module).
 // SectionStub kept for DOM presence (section is hidden via CSS, not removed)
@@ -3117,6 +3172,11 @@ export default function ProjectDetail() {
   const [generatingContract, setGeneratingContract] = useState(false);
   const [contractSendingId, setContractSendingId] = useState(null);
   const [showContractContent, setShowContractContent] = useState(null);
+  const [companyConfig, setCompanyConfig] = useState({});
+  const [selectedContractTemplateKey, setSelectedContractTemplateKey] = useState('general');
+  const [contractDrafts, setContractDrafts] = useState({});
+  const [contractSavingId, setContractSavingId] = useState(null);
+  const [contractEnrichingId, setContractEnrichingId] = useState(null);
   const quoteTimer = useRef(null);
   // B6 — Chantier
   const [materialOrders, setMaterialOrders] = useState([]);
@@ -3237,7 +3297,7 @@ export default function ProjectDetail() {
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }, { data: companyData }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
@@ -3252,6 +3312,7 @@ export default function ProjectDetail() {
         contractsApi.list({ project_id: id }).catch(() => ({ data: [] })),
         materialOrdersApi.byProject(id).catch(() => ({ data: [] })),
         siteMediaApi.byProject(id).catch(() => ({ data: [] })),
+        companiesApi.get().catch(() => ({ data: { config: {} } })),
       ]);
       setProject(proj);
       setTimesheets(ts);
@@ -3271,6 +3332,8 @@ export default function ProjectDetail() {
       setQuoteBuilderItems(normalizeQuoteItems(firstQuote?.items));
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
+      setCompanyConfig(companyData?.config || {});
+      setSelectedContractTemplateKey(guessProjectContractTemplateKey(proj, companyData?.config?.contract_templates));
       setMaterialOrders(orderList || []);
       setMedia(mediaList || []);
       if (proj.flo_recommendations?.length) setAiRecommendations(proj.flo_recommendations);
@@ -3351,6 +3414,21 @@ export default function ProjectDetail() {
       try { await contactsApi.update(project.client_id, { [field]: value || null }); } catch {}
     }
   };
+
+  useEffect(() => {
+    setContractDrafts((current) => {
+      const next = { ...current };
+      (projectContracts || []).forEach((contract) => {
+        if (!next[contract.id]) {
+          next[contract.id] = {
+            title: contract.title || '',
+            content: normalizeContractHtml(contract.content),
+          };
+        }
+      });
+      return next;
+    });
+  }, [projectContracts]);
 
   useEffect(() => { load(); }, [id]);
 
@@ -3477,10 +3555,45 @@ export default function ProjectDetail() {
     saveAssessmentField('trade_certifs', val);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveTradeResources = useCallback((val) => {
+    const previous = tradeResourcesMap || {};
     setTradeResourcesMap(val);
     localStorage.setItem(`monflux-trade-resources-${id}`, JSON.stringify(val));
     saveAssessmentField('trade_resources', val);
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const phases = project?.phases || [];
+    if (!phases.length) return;
+    const removedPhaseIds = [];
+    const tradeNames = new Set([...Object.keys(previous), ...Object.keys(val || {})]);
+    tradeNames.forEach((tradeName) => {
+      const prevNames = new Set([
+        ...parseTradePersons(previous?.[tradeName]?.internal).map((person) => normalizePersonName(person.name)),
+        ...parseTradePersons(previous?.[tradeName]?.external).map((person) => normalizePersonName(person.name)),
+      ].filter(Boolean));
+      const nextNames = new Set([
+        ...parseTradePersons(val?.[tradeName]?.internal).map((person) => normalizePersonName(person.name)),
+        ...parseTradePersons(val?.[tradeName]?.external).map((person) => normalizePersonName(person.name)),
+      ].filter(Boolean));
+      const removedNames = [...prevNames].filter((name) => !nextNames.has(name));
+      if (!removedNames.length) return;
+      phases.forEach((phase) => {
+        if (toTradeLabel(phase.trade_name).toLowerCase() !== String(tradeName || '').toLowerCase()) return;
+        if (!removedNames.includes(normalizePersonName(phase.assigned_to_name))) return;
+        removedPhaseIds.push(phase.id);
+      });
+    });
+    if (removedPhaseIds.length) {
+      setProject((current) => ({
+        ...current,
+        phases: (current.phases || []).map((phase) => (
+          removedPhaseIds.includes(phase.id)
+            ? { ...phase, assigned_to_name: null }
+            : phase
+        )),
+      }));
+      removedPhaseIds.forEach((phaseId) => {
+        projectsApi.updatePhase(id, phaseId, { assigned_to_name: null }).catch((err) => console.error('sync remove assigned_to_name', err));
+      });
+    }
+  }, [id, project?.phases, saveAssessmentField, tradeResourcesMap]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveTradeConformite = useCallback((val) => {
     setTradeConformite(val);
     localStorage.setItem(`monflux-trade-conformite-${id}`, JSON.stringify(val));
@@ -3747,6 +3860,9 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
     if (data?.trade_name) {
       void ensureProjectTradesExist([data.trade_name]);
     }
+    if (data?.id && data?.assigned_to_name && data?.trade_name) {
+      void syncAssignedPhaseWithTeam(data.id, data.assigned_to_name, data.trade_name);
+    }
     setShowPhase(false); setEditPhase(null);
   };
 
@@ -3798,6 +3914,15 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
   const handleUpdatePhase = async (phaseId, fields) => {
     setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id===phaseId ? {...ph,...fields} : ph) }));
     await projectsApi.updatePhase(id, phaseId, fields).catch(err => console.error('updatePhase', err));
+    if (fields?.assigned_to_name) {
+      const tradeName = fields.trade_name || project?.phases?.find((phase) => phase.id === phaseId)?.trade_name;
+      await syncAssignedPhaseWithTeam(phaseId, fields.assigned_to_name, tradeName);
+    } else if (fields?.trade_name) {
+      const existingAssigned = project?.phases?.find((phase) => phase.id === phaseId)?.assigned_to_name;
+      if (existingAssigned) {
+        await syncAssignedPhaseWithTeam(phaseId, existingAssigned, fields.trade_name);
+      }
+    }
   };
 
   const handleSelfAssign = async (phaseId, userName) => {
@@ -3976,6 +4101,14 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
   };
 
   const normalizeTradeName = (value) => String(value || '').trim();
+  const normalizePersonName = (value) => String(value || '').trim().toLowerCase();
+  const parseTradePersons = (arr = []) => (
+    (arr || []).map((person) =>
+      typeof person === 'string'
+        ? { name: person, status: 'a_contacter', phone: '', email: '', location: '', notes: '' }
+        : { phone: '', email: '', location: '', notes: '', ...person }
+    )
+  );
 
   const toTradeLabel = (value) => {
     const normalized = normalizeTradeName(value);
@@ -4040,6 +4173,79 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       setProject((p) => ({ ...p, trades: [...(p.trades || []), ...added] }));
     }
   };
+
+  const syncAssignedPhaseWithTeam = useCallback(async (phaseId, assignedName, tradeNameOverride = null) => {
+    const normalizedAssigned = String(assignedName || '').trim();
+    if (!normalizedAssigned) return;
+
+    const currentPhase = (project?.phases || []).find((phase) => phase.id === phaseId);
+    const tradeName = toTradeLabel(tradeNameOverride || currentPhase?.trade_name || currentPhase?.trade);
+    if (!tradeName) return;
+
+    await ensureProjectTradesExist([tradeName]);
+
+    const rawTradeResources = tradeResourcesMap?.[tradeName] || { internal: [], external: [] };
+    const internalPeople = parseTradePersons(rawTradeResources.internal);
+    const externalPeople = parseTradePersons(rawTradeResources.external);
+    const normalizedTarget = normalizePersonName(normalizedAssigned);
+
+    const internalIndex = internalPeople.findIndex((person) => normalizePersonName(person.name) === normalizedTarget);
+    const externalIndex = externalPeople.findIndex((person) => normalizePersonName(person.name) === normalizedTarget);
+
+    let personType = internalIndex >= 0 ? 'internal' : externalIndex >= 0 ? 'external' : null;
+
+    if (!personType) {
+      const tradeRow = (project?.trades || []).find((trade) => (
+        toTradeLabel(trade?.trade).toLowerCase() === tradeName.toLowerCase()
+      ));
+      const subcontractorCandidates = [
+        tradeRow?.subcontractor_name,
+        tradeRow?.chosen_subcontractor_name,
+        tradeRow?.company_name,
+        tradeRow?.contact_name,
+      ]
+        .map((value) => normalizePersonName(value))
+        .filter(Boolean);
+      personType = subcontractorCandidates.includes(normalizedTarget) ? 'external' : 'internal';
+    }
+
+    let personIndex = personType === 'internal' ? internalIndex : externalIndex;
+
+    if (personIndex < 0) {
+      const nextList = [
+        ...(personType === 'internal' ? internalPeople : externalPeople),
+        {
+          name: normalizedAssigned,
+          status: personType === 'internal' ? 'confirme' : 'accepte',
+          phone: '',
+          email: '',
+          location: '',
+          notes: '',
+        },
+      ];
+      personIndex = nextList.length - 1;
+      const nextResources = {
+        ...tradeResourcesMap,
+        [tradeName]: {
+          internal: personType === 'internal' ? nextList : internalPeople,
+          external: personType === 'external' ? nextList : externalPeople,
+        },
+      };
+      saveTradeResources(nextResources);
+    }
+
+    const personKey = `${tradeName}||${personType}||${personIndex}`;
+    if (!tradeConformite?.[personKey]) {
+      saveTradeConformite({
+        ...tradeConformite,
+        [personKey]: {
+          rbq: { ok: undefined },
+          ccq: { ok: undefined },
+          insurance: { ok: undefined },
+        },
+      });
+    }
+  }, [ensureProjectTradesExist, project?.phases, project?.trades, saveTradeConformite, saveTradeResources, toTradeLabel, tradeConformite, tradeResourcesMap]);
 
   const normalizeGeneratedPhases = (phases = []) => (
     (Array.isArray(phases) ? phases : [])
@@ -5010,9 +5216,71 @@ JSON seulement, pas de texte autour.`;
     if (!quoteBuilderQuote) return;
     setGeneratingContract(true);
     try {
-      const { data } = await quotesApi.generateContract(quoteBuilderQuote.id);
-      setProjectContracts((c) => [data, ...c]);
-    } catch {} finally { setGeneratingContract(false); }
+      const { data } = await quotesApi.generateContract(quoteBuilderQuote.id, { template_key: selectedContractTemplateKey });
+      const normalized = { ...data, content: normalizeContractHtml(data.content) };
+      setProjectContracts((c) => [normalized, ...c]);
+      setContractDrafts((drafts) => ({
+        ...drafts,
+        [normalized.id]: { title: normalized.title || '', content: normalized.content || '<p></p>' },
+      }));
+      setShowContractContent(normalized.id);
+    } catch (err) {
+      console.error('generateContract', err);
+      alert(err.response?.data?.error || 'Erreur lors de la génération du contrat.');
+    } finally { setGeneratingContract(false); }
+  };
+
+  const updateContractDraft = (contractId, patch) => {
+    setContractDrafts((drafts) => ({
+      ...drafts,
+      [contractId]: {
+        ...(drafts[contractId] || { title: '', content: '<p></p>' }),
+        ...patch,
+      },
+    }));
+  };
+
+  const saveContractDraft = async (contractId) => {
+    const draft = contractDrafts[contractId];
+    if (!draft) return;
+    setContractSavingId(contractId);
+    try {
+      const { data } = await contractsApi.update(contractId, {
+        title: draft.title,
+        content: draft.content,
+      });
+      setProjectContracts((contracts) => contracts.map((contract) => (
+        contract.id === contractId
+          ? { ...contract, ...data, content: normalizeContractHtml(data.content) }
+          : contract
+      )));
+    } catch (err) {
+      console.error('saveContractDraft', err);
+      alert(err.response?.data?.error || 'Erreur lors de la sauvegarde du contrat.');
+    } finally {
+      setContractSavingId(null);
+    }
+  };
+
+  const enrichContractWithFlo = async (contractId) => {
+    setContractEnrichingId(contractId);
+    try {
+      const { data } = await contractsApi.enrich(contractId, {
+        goal: `Adapter ce contrat au contexte du projet ${project?.name || ''} et préciser les clauses utiles pour ${project?.field_assessment?.work_type || project?.type || 'ce type de travaux'}.`,
+      });
+      const normalized = { ...data, content: normalizeContractHtml(data.content) };
+      setProjectContracts((contracts) => contracts.map((contract) => contract.id === contractId ? normalized : contract));
+      setContractDrafts((drafts) => ({
+        ...drafts,
+        [contractId]: { title: normalized.title || '', content: normalized.content || '<p></p>' },
+      }));
+      setShowContractContent(contractId);
+    } catch (err) {
+      console.error('enrichContractWithFlo', err);
+      alert(err.response?.data?.error || 'Erreur lors de l’enrichissement avec Flo.');
+    } finally {
+      setContractEnrichingId(null);
+    }
   };
 
   const sendContract = async (contractId) => {
@@ -5323,6 +5591,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
   };
 
   const SEV = { low: { c: 'badge-green', l: 'Faible' }, medium: { c: 'badge-yellow', l: 'Moyen' }, high: { c: 'badge-red', l: 'Élevé' } };
+  const contractTemplateConfig = getContractTemplateConfig(companyConfig?.contract_templates);
+  const selectedContractTemplate = contractTemplateConfig.templates.find((template) => template.key === selectedContractTemplateKey)
+    || contractTemplateConfig.templates.find((template) => template.key === contractTemplateConfig.default_key)
+    || contractTemplateConfig.templates[0];
 
   if (loading) return <Layout><div className="flex items-center gap-2 text-gray-400 p-8"><Loader2 size={16} className="animate-spin"/> Chargement…</div></Layout>;
   if (!project) return (
@@ -9040,15 +9312,30 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F5F3FF', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 }}>✍️</div>
               <div style={{ flex: 1 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, color: '#15171C', margin: 0, letterSpacing: '-.01em' }}>Contrat</h3>
-                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Généré automatiquement à partir du devis détaillé</p>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Document éditable généré après fusion du devis, du projet et du modèle choisi</p>
               </div>
-              {quoteBuilderQuote && projectContracts.length === 0 && (
-                <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract}>
-                  {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                  Générer le contrat
-                </button>
-              )}
               {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr auto', gap: 12, marginBottom: 20, alignItems: 'end' }}>
+              <div>
+                <label className="label">Type de contrat</label>
+                <select className="input" value={selectedContractTemplateKey} onChange={(e) => setSelectedContractTemplateKey(e.target.value)}>
+                  {contractTemplateConfig.templates.map((template) => (
+                    <option key={template.key} value={template.key}>{template.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 10, padding: '10px 12px' }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: '0 0 2px' }}>{selectedContractTemplate?.label || 'Modèle sélectionné'}</p>
+                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
+                  {selectedContractTemplate?.description || 'Le bon modèle est proposé selon le type de projet et reste ajustable ici.'}
+                </p>
+              </div>
+              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract || !quoteBuilderQuote}>
+                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
+                {projectContracts.length > 0 ? 'Nouveau brouillon' : 'Générer le contrat'}
+              </button>
             </div>
 
             {projectContracts.length === 0 ? (
@@ -9058,7 +9345,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   {quoteBuilderQuote ? 'Contrat non généré' : 'Crée d\'abord un devis'}
                 </p>
                 <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
-                  {quoteBuilderQuote ? 'Clique sur "Générer le contrat" pour créer le document à partir du devis.' : 'Le contrat sera disponible une fois le devis détaillé complété.'}
+                  {quoteBuilderQuote ? 'Le contrat sera créé dans un format document, à partir du modèle sélectionné et des données du projet.' : 'Le contrat sera disponible une fois le devis détaillé complété.'}
                 </p>
               </div>
             ) : (
@@ -9066,6 +9353,9 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 {projectContracts.map(c => {
                   const isSending = contractSendingId === c.id;
                   const isOpen = showContractContent === c.id;
+                  const isSaving = contractSavingId === c.id;
+                  const isEnriching = contractEnrichingId === c.id;
+                  const draft = contractDrafts[c.id] || { title: c.title || '', content: normalizeContractHtml(c.content) };
                   const statusColor = { draft: '#6B7280', sent: '#2563EB', signed: '#16A34A', cancelled: '#9CA3AF' };
                   const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé ✓', cancelled: 'Annulé' };
                   return (
@@ -9074,15 +9364,23 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#FAFAFA', borderBottom: isOpen ? '1px solid #E5E7EB' : 'none' }}>
                         <div style={{ flex: 1 }}>
                           <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>{c.title}</p>
-                          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>{new Date(c.created_at).toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
+                            {new Date(c.created_at).toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                            {c.meta?.template_label ? ` · ${c.meta.template_label}` : ''}
+                          </p>
                         </div>
                         <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[c.status] || '#6B7280', background: `${statusColor[c.status]}15`, padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
                           {statusLabel[c.status] || c.status}
                         </span>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(isOpen ? null : c.id)}>
-                            <Eye size={11}/> {isOpen ? 'Masquer' : 'Voir le contrat'}
+                            <Eye size={11}/> {isOpen ? 'Masquer' : 'Ouvrir'}
                           </button>
+                          {c.status === 'draft' && (
+                            <button className="btn-secondary text-xs py-1" onClick={() => enrichContractWithFlo(c.id)} disabled={isEnriching}>
+                              {isEnriching ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>} Flo
+                            </button>
+                          )}
                           {c.status === 'draft' && (
                             <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
                               {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer
@@ -9102,16 +9400,45 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                       )}
                       {/* Contenu du contrat — affiché inline */}
                       {isOpen && (
-                        <div style={{ padding: '20px 24px' }}>
-                          <pre style={{ fontSize: 12, color: '#374151', fontFamily: "'Georgia', serif", lineHeight: 1.8, whiteSpace: 'pre-wrap', margin: 0, wordBreak: 'break-word' }}>
-                            {c.content}
-                          </pre>
+                        <div style={{ padding: '20px 24px', background: '#FCFCFD' }}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+                            <input
+                              className="input"
+                              value={draft.title}
+                              onChange={(e) => updateContractDraft(c.id, { title: e.target.value })}
+                              placeholder="Titre du contrat"
+                              style={{ flex: 1, fontWeight: 700 }}
+                            />
+                            {c.status === 'draft' && (
+                              <button className="btn-primary text-xs" onClick={() => saveContractDraft(c.id)} disabled={isSaving}>
+                                {isSaving ? <Loader2 size={12} className="animate-spin"/> : <Save size={12} />} Enregistrer
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '28px 34px', boxShadow: '0 8px 24px rgba(15,23,42,.04)' }}>
+                            <div
+                              contentEditable={c.status === 'draft'}
+                              suppressContentEditableWarning
+                              onInput={(e) => updateContractDraft(c.id, { content: e.currentTarget.innerHTML })}
+                              dangerouslySetInnerHTML={{ __html: draft.content }}
+                              style={{
+                                minHeight: 320,
+                                outline: 'none',
+                                fontSize: 13,
+                                color: '#374151',
+                                lineHeight: 1.8,
+                                fontFamily: "'Georgia', serif",
+                              }}
+                            />
+                          </div>
                         </div>
                       )}
                       {c.status === 'draft' && (
                         <div style={{ padding: '10px 16px', background: '#FFFBEB', borderTop: '1px solid #FEF3C7', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                           <AlertCircle size={12} style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }}/>
-                          <p style={{ fontSize: 11, color: '#92400E', margin: 0, lineHeight: 1.5 }}>Signature électronique désactivée — configurez une clé dans Paramètres › Intégrations pour activer DocuSign.</p>
+                          <p style={{ fontSize: 11, color: '#92400E', margin: 0, lineHeight: 1.5 }}>
+                            Brouillon modifiable en mode document. Flo peut enrichir le contexte avant l’envoi au client.
+                          </p>
                         </div>
                       )}
                     </div>

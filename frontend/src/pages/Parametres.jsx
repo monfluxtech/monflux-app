@@ -5,7 +5,7 @@ import { auth as authApi, companies, members as membersApi } from '../api';
 import { useAuthStore, useDevStore, useConfigStore } from '../store';
 import { useUiPrefs } from '../hooks/useUiPrefs';
 import { SECONDARY_MODULES } from '../config/modules';
-import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot } from 'lucide-react';
+import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot, FileSignature, Plus } from 'lucide-react';
 
 const Row = ({ label, value, mono }) => (
   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -25,6 +25,56 @@ const LEAD_SOURCES = [
 ];
 
 const FREQ_OPTIONS = [6, 12, 24, 48, 72];
+
+const DEFAULT_CONTRACT_TEMPLATES = {
+  version: 1,
+  default_key: 'general',
+  templates: [
+    {
+      key: 'general',
+      label: 'Contrat général',
+      description: 'Rénovation générale et projets standards',
+      project_types: ['default', 'general', 'renovation'],
+      content: '<h1>{{contract_title}}</h1><p>Projet : <strong>{{project_title}}</strong></p><p>Client : <strong>{{client_name}}</strong></p><p>Adresse : {{project_address}}</p><h2>Portée</h2><p>{{scope_summary}}</p>{{quote_items_html}}<h2>Prix</h2><p>Montant : <strong>{{quote_total}}</strong></p><p>{{payment_terms_sentence}}</p><h2>Échéancier</h2><p>Début : {{start_date}} · Fin : {{end_date}}</p>',
+    },
+    {
+      key: 'interior',
+      label: 'Contrat intérieur',
+      description: 'Cuisine, salle de bain, sous-sol, finition',
+      project_types: ['cuisine', 'salle_de_bain', 'interior'],
+      content: '<h1>{{contract_title}}</h1><p>Travaux intérieurs au {{project_address}}.</p><p>{{scope_summary}}</p>{{quote_items_html}}<p>Montant : <strong>{{quote_total}}</strong></p><p>{{payment_terms_sentence}}</p>',
+    },
+    {
+      key: 'exterior',
+      label: 'Contrat extérieur',
+      description: 'Toiture, revêtement, terrasse, façade',
+      project_types: ['toiture', 'revetement', 'terrasse', 'exterieur'],
+      content: '<h1>{{contract_title}}</h1><p>Travaux extérieurs au {{project_address}}.</p><p>{{scope_summary}}</p>{{quote_items_html}}<p>Montant : <strong>{{quote_total}}</strong></p><p>{{payment_terms_sentence}}</p>',
+    },
+    {
+      key: 'service',
+      label: 'Entente de service',
+      description: 'Petits travaux, entretien, interventions ponctuelles',
+      project_types: ['service', 'entretien', 'maintenance'],
+      content: '<h1>{{contract_title}}</h1><p>Intervention prévue au {{project_address}}.</p><p>{{scope_summary}}</p><p>Montant : <strong>{{quote_total}}</strong></p>',
+    },
+  ],
+};
+
+const getContractTemplatesConfig = (value) => {
+  const base = { ...DEFAULT_CONTRACT_TEMPLATES };
+  const incoming = value && Array.isArray(value.templates) ? value : DEFAULT_CONTRACT_TEMPLATES;
+  const known = new Map(base.templates.map((template) => [template.key, template]));
+  incoming.templates.forEach((template) => {
+    if (!template?.key) return;
+    known.set(template.key, { ...known.get(template.key), ...template });
+  });
+  return {
+    version: 1,
+    default_key: known.has(incoming.default_key) ? incoming.default_key : base.default_key,
+    templates: [...known.values()],
+  };
+};
 
 function ProfileTab() {
   const { user, company, plan, token, setAuth } = useAuthStore();
@@ -273,6 +323,130 @@ function LeadSourcesTab() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ContractTemplatesTab() {
+  const [config, setConfig] = useState(DEFAULT_CONTRACT_TEMPLATES);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    companies.get()
+      .then(({ data }) => setConfig(getContractTemplatesConfig(data.config?.contract_templates)))
+      .catch(() => {});
+  }, []);
+
+  const updateTemplate = (key, field, value) => {
+    setConfig((current) => ({
+      ...current,
+      templates: current.templates.map((template) => (
+        template.key === key
+          ? {
+              ...template,
+              [field]: field === 'project_types'
+                ? String(value || '').split(',').map((part) => part.trim()).filter(Boolean)
+                : value,
+            }
+          : template
+      )),
+    }));
+  };
+
+  const addTemplate = () => {
+    const nextIndex = config.templates.length + 1;
+    const key = `custom_${nextIndex}`;
+    setConfig((current) => ({
+      ...current,
+      templates: [
+        ...current.templates,
+        {
+          key,
+          label: `Modèle ${nextIndex}`,
+          description: 'Nouveau modèle personnalisé',
+          project_types: [],
+          content: '<h1>{{contract_title}}</h1><p>{{scope_summary}}</p><p>{{quote_total}}</p>',
+        },
+      ],
+    }));
+  };
+
+  const removeTemplate = (key) => {
+    setConfig((current) => {
+      const nextTemplates = current.templates.filter((template) => template.key !== key);
+      const nextDefault = current.default_key === key ? (nextTemplates[0]?.key || 'general') : current.default_key;
+      return { ...current, default_key: nextDefault, templates: nextTemplates };
+    });
+  };
+
+  const saveTemplates = async () => {
+    setSaving(true);
+    try {
+      await companies.updateConfig({ contract_templates: config });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 12, padding: 16 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: '0 0 6px' }}>Variables de fusion disponibles</p>
+        <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
+          Utilisez par exemple `{{contract_title}}`, `{{project_title}}`, `{{client_name}}`, `{{project_address}}`, `{{quote_total}}`, `{{payment_terms_sentence}}`, `{{start_date}}`, `{{end_date}}`, `{{scope_summary}}`, `{{quote_items_html}}`.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <label className="label">Modèle par défaut</label>
+          <select className="input" value={config.default_key} onChange={(e) => setConfig((current) => ({ ...current, default_key: e.target.value }))}>
+            {config.templates.map((template) => <option key={template.key} value={template.key}>{template.label}</option>)}
+          </select>
+        </div>
+        <button type="button" className="btn-secondary mt-6" onClick={addTemplate}>
+          <Plus size={14} /> Ajouter un modèle
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {config.templates.map((template) => (
+          <div key={template.key} style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <input className="input mb-2" value={template.label} onChange={(e) => updateTemplate(template.key, 'label', e.target.value)} />
+                <input className="input mb-2" value={template.description || ''} onChange={(e) => updateTemplate(template.key, 'description', e.target.value)} placeholder="Description du modèle" />
+                <input
+                  className="input"
+                  value={(template.project_types || []).join(', ')}
+                  onChange={(e) => updateTemplate(template.key, 'project_types', e.target.value)}
+                  placeholder="Types de projets associés, séparés par des virgules"
+                />
+              </div>
+              {config.templates.length > 1 && (
+                <button type="button" className="btn-ghost text-red-500" onClick={() => removeTemplate(template.key)}>
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+            <textarea
+              className="input"
+              rows={12}
+              value={template.content || ''}
+              onChange={(e) => updateTemplate(template.key, 'content', e.target.value)}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6 }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <button type="button" className="btn-primary" onClick={saveTemplates} disabled={saving}>
+        {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
+        {saved ? 'Enregistré!' : 'Enregistrer les modèles'}
+      </button>
     </div>
   );
 }
@@ -1093,6 +1267,7 @@ const TABS = [
   { id: 'company',      label: 'Entreprise',            icon: Building2 },
   { id: 'team',         label: 'Équipe',                icon: Users },
   { id: 'roles',        label: 'Rôles & permissions',  icon: Lock },
+  { id: 'contrats',     label: 'Modèles de contrats',  icon: FileSignature },
   { id: 'flo',          label: 'Flo',                   icon: Bot },
   { id: 'flow',         label: 'Flow & modules',        icon: Layers },
   { id: 'sources',      label: 'Sources leads',         icon: Settings },
@@ -1160,6 +1335,7 @@ export default function Parametres() {
             {activeTab === 'company'      && <CompanyTab />}
             {activeTab === 'team'         && <TeamTab />}
             {activeTab === 'roles'        && <RolesTab />}
+            {activeTab === 'contrats'     && <ContractTemplatesTab />}
             {activeTab === 'flo'          && <FloTab />}
             {activeTab === 'flow'         && <FlowTab />}
             {activeTab === 'sources'      && <LeadSourcesTab />}

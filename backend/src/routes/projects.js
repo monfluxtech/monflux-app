@@ -26,6 +26,7 @@ router.get('/', async (req, res) => {
               c.name AS client_name, c.email AS client_email, c.phone AS client_phone,
               (SELECT COUNT(*) FROM project_phases pp WHERE pp.project_id = p.id) AS phase_count,
               (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
+              (SELECT COALESCE(SUM(pp.duration_hours),0) FROM project_phases pp WHERE pp.project_id = p.id) AS planned_hours,
               (SELECT COALESCE(SUM(ts.hours_total),0) FROM timesheets ts WHERE ts.project_id = p.id) AS total_hours_logged,
               (SELECT COALESCE(SUM(i.total),0) FROM invoices i
                  WHERE i.project_id = p.id AND i.status <> 'draft') AS invoiced_real,

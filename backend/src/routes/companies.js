@@ -38,8 +38,14 @@ router.patch('/', async (req, res) => {
 router.patch('/config', async (req, res) => {
   const allowed = ['preferred_suppliers','ai_auto_read_email','ai_auto_detect_leads',
     'ai_auto_followup','ai_followup_delay_days','landing_preference','custom_fields','automations',
-    'lead_sources','ui_preferences'];
-  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+    'lead_sources','ui_preferences','contract_templates'];
+  const JSONB_FIELDS = ['preferred_suppliers','custom_fields','automations','lead_sources','ui_preferences','contract_templates'];
+  const updates = Object.fromEntries(
+    Object.entries(req.body)
+      .filter(([k]) => allowed.includes(k))
+      .map(([k, v]) => [k, JSONB_FIELDS.includes(k) && v != null ? JSON.stringify(v) : v])
+  );
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   const setClause = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
   const values = [...Object.values(updates), req.company_id];
   const { rows: [cfg] } = await query(

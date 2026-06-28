@@ -104,6 +104,7 @@ export const contracts = {
   update:  (id, data)   => http.patch(`/contracts/${id}`, data),
   delete:  (id)         => http.delete(`/contracts/${id}`),
   send:    (id)         => http.post(`/contracts/${id}/send`),
+  enrich:  (id, data)   => http.post(`/contracts/${id}/enrich`, data || {}),
 };
 
 export const invoices = {

@@ -1,6 +1,7 @@
 import express from 'express';
 import { query, getClient } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
+import { buildContractMergeFields, detectContractTemplateKey, normalizeContractTemplates, renderContractTemplate } from '../lib/contracts.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
@@ -163,9 +164,13 @@ router.post('/:id/send', async (req, res) => {
 // POST /api/quotes/:id/generate-contract — generate a contract from the quote
 router.post('/:id/generate-contract', async (req, res) => {
   try {
+    const { template_key: requestedTemplateKey } = req.body || {};
     const { rows: [q] } = await query(
       `SELECT q.*, p.name AS project_name, p.address AS project_address, p.city AS project_city,
-              p.payment_terms, c.name AS client_name, c.email AS client_email
+              p.payment_terms, p.start_date AS project_start_date, p.end_date AS project_end_date,
+              p.description AS project_description, p.type AS project_type, p.field_assessment,
+              p.client_name AS project_client_name, p.client_email AS project_client_email,
+              c.id AS client_id, c.name AS client_name, c.email AS client_email
        FROM quotes q
        LEFT JOIN projects p ON p.id = q.project_id
        LEFT JOIN contacts c ON c.id = p.client_id
@@ -174,14 +179,54 @@ router.post('/:id/generate-contract', async (req, res) => {
     );
     if (!q) return res.status(404).json({ error: 'Soumission non trouvée' });
 
-    const content = buildContractTemplate(q);
+    const [{ rows: items }, { rows: [company] }, { rows: [config] }] = await Promise.all([
+      query(`SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`, [q.id]),
+      query(`SELECT * FROM companies WHERE id = $1`, [req.company_id]),
+      query(`SELECT * FROM company_config WHERE company_id = $1`, [req.company_id]),
+    ]);
+
+    const project = {
+      id: q.project_id,
+      name: q.project_name,
+      address: q.project_address,
+      city: q.project_city,
+      payment_terms: q.payment_terms,
+      start_date: q.project_start_date,
+      end_date: q.project_end_date,
+      description: q.project_description,
+      type: q.project_type,
+      field_assessment: q.field_assessment || {},
+      client_name: q.project_client_name,
+      client_email: q.project_client_email,
+    };
+    const client = {
+      id: q.client_id,
+      name: q.client_name || q.project_client_name,
+      email: q.client_email || q.project_client_email,
+    };
+    const quote = { ...q, items };
+
+    const templateConfig = normalizeContractTemplates(config?.contract_templates);
+    const detectedTemplateKey = requestedTemplateKey || detectContractTemplateKey(project, templateConfig);
+    const template = templateConfig.templates.find((item) => item.key === detectedTemplateKey)
+      || templateConfig.templates.find((item) => item.key === templateConfig.default_key)
+      || templateConfig.templates[0];
+
+    const mergeFields = buildContractMergeFields({ company, project, quote, client });
+    const content = renderContractTemplate(template?.content, mergeFields);
     const { rows: [contract] } = await query(
-      `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by, template_key, meta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
         req.company_id, q.project_id || null, q.id,
-        `Contrat — ${q.project_name || q.title || 'Projet'}`,
+        mergeFields.contract_title,
         content, req.user.userId,
+        template?.key || null,
+        JSON.stringify({
+          template_label: template?.label || 'Contrat',
+          detected_template_key: detectedTemplateKey,
+          merge_fields: mergeFields,
+        }),
       ]
     );
     res.status(201).json(contract);
@@ -190,70 +235,6 @@ router.post('/:id/generate-contract', async (req, res) => {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
-
-function buildContractTemplate(q) {
-  const date = new Date().toLocaleDateString('fr-CA');
-  const address = [q.project_address, q.project_city].filter(Boolean).join(', ') || 'À définir';
-  const total = Number(q.total || 0).toLocaleString('fr-CA', { minimumFractionDigits: 2 });
-  const quoteRef = q.id.slice(0, 8).toUpperCase();
-  const quoteDate = new Date(q.created_at || new Date()).toLocaleDateString('fr-CA');
-  const payTerms = q.payment_terms || 'Selon entente entre les parties';
-
-  return `CONTRAT DE SERVICES DE CONSTRUCTION
-
-Date : ${date}
-Projet : ${q.project_name || q.title || 'Projet'}
-Client : ${q.client_name || 'À définir'}
-Adresse des travaux : ${address}
-
-─────────────────────────────────────────────────────────────
-
-1. PARTIES
-
-L'entrepreneur (ci-après « l'Entrepreneur ») et le client nommé ci-dessus
-(ci-après « le Client ») conviennent des conditions énoncées dans le présent contrat.
-
-2. DESCRIPTION DES TRAVAUX
-
-Les travaux comprennent l'ensemble des éléments décrits dans la soumission
-# ${quoteRef} datée du ${quoteDate}, laquelle est réputée faire partie intégrante
-du présent contrat.
-
-Montant total convenu : ${total} $ (taxes incluses)
-
-3. MODALITÉS DE PAIEMENT
-
-${payTerms}
-
-4. DÉLAIS D'EXÉCUTION
-
-Les travaux débuteront et se termineront selon le calendrier convenu entre les parties.
-Tout retard causé par des conditions hors du contrôle de l'Entrepreneur (météo,
-retard de livraison, changements demandés par le Client) donnera lieu à une
-prolongation équivalente du délai.
-
-5. GARANTIE
-
-Les travaux sont garantis pour une période d'un (1) an suivant la réception des
-travaux, conformément au Code civil du Québec.
-
-6. MODIFICATIONS
-
-Toute modification au présent contrat doit faire l'objet d'un avenant écrit signé
-par les deux parties.
-
-7. LOI APPLICABLE
-
-Le présent contrat est régi par les lois de la province de Québec.
-
-─────────────────────────────────────────────────────────────
-
-SIGNATURES
-
-Entrepreneur :  _____________________________  Date : ___________
-
-Client :        _____________________________  Date : ___________`;
-}
 
 router.post('/:id/convert', async (req, res) => {
   const client = await (await import('../db.js')).getClient();
