@@ -29,7 +29,7 @@ router.get('/public/:token', async (req, res) => {
       [req.params.token]
     );
     if (!c) return res.status(404).json({ error: 'Contrat non trouvé' });
-    res.json(c);
+    res.json({ ...c, content: c.content || c.terms || '' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
        ORDER BY c.created_at DESC`,
       params
     );
-    res.json(rows);
+    res.json(rows.map((row) => ({ ...row, content: row.content || row.terms || '' })));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -92,12 +92,22 @@ router.post('/', async (req, res) => {
         [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId, template_key || null, meta ? JSON.stringify(meta) : JSON.stringify({})]
       ));
     } catch (err) {
-      if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
-      ({ rows: [c] } = await query(
-        `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId]
-      ));
+      if (!/template_key|meta|content|created_by/i.test(String(err?.message || ''))) throw err;
+      try {
+        ({ rows: [c] } = await query(
+          `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId]
+        ));
+      } catch (legacyErr) {
+        if (!/content|created_by/i.test(String(legacyErr?.message || ''))) throw legacyErr;
+        ({ rows: [c] } = await query(
+          `INSERT INTO contracts (company_id, project_id, quote_id, title, terms)
+           VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+          [req.company_id, project_id || null, quote_id || null, title, content || null]
+        ));
+        if (c && !c.content) c.content = c.terms || content || '';
+      }
     }
     res.status(201).json(c);
   } catch (err) {
@@ -113,7 +123,7 @@ router.get('/:id', async (req, res) => {
       [req.params.id, req.company_id]
     );
     if (!c) return res.status(404).json({ error: 'Contrat non trouvé' });
-    res.json(c);
+    res.json({ ...c, content: c.content || c.terms || '' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -138,17 +148,38 @@ router.patch('/:id', async (req, res) => {
         vals
       ));
     } catch (err) {
-      if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
+      if (!/template_key|meta|content/i.test(String(err?.message || ''))) throw err;
       delete effectiveUpdates.template_key;
       delete effectiveUpdates.meta;
-      const set = Object.keys(effectiveUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
-      const vals = [...Object.values(effectiveUpdates), req.params.id, req.company_id];
-      ({ rows: [c] } = await query(
-        `UPDATE contracts SET ${set}, updated_at = NOW()
-         WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
-         RETURNING *`,
-        vals
-      ));
+      if (!Object.keys(effectiveUpdates).length) {
+        const { rows: [existing] } = await query(
+          `SELECT * FROM contracts WHERE id = $1 AND company_id = $2`,
+          [req.params.id, req.company_id]
+        );
+        c = existing ? { ...existing, content: existing.content || existing.terms || '' } : null;
+      } else try {
+        const set = Object.keys(effectiveUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+        const vals = [...Object.values(effectiveUpdates), req.params.id, req.company_id];
+        ({ rows: [c] } = await query(
+          `UPDATE contracts SET ${set}, updated_at = NOW()
+           WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
+           RETURNING *`,
+          vals
+        ));
+      } catch (legacyErr) {
+        if (!/content/i.test(String(legacyErr?.message || '')) || !('content' in effectiveUpdates)) throw legacyErr;
+        const legacyUpdates = { ...effectiveUpdates, terms: effectiveUpdates.content };
+        delete legacyUpdates.content;
+        const set = Object.keys(legacyUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+        const vals = [...Object.values(legacyUpdates), req.params.id, req.company_id];
+        ({ rows: [c] } = await query(
+          `UPDATE contracts SET ${set}, updated_at = NOW()
+           WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
+           RETURNING *`,
+          vals
+        ));
+        if (c && !c.content) c.content = c.terms || updates.content || '';
+      }
     }
     if (!c) return res.status(404).json({ error: 'Contrat non trouvé' });
     res.json(c);

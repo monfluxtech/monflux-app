@@ -515,6 +515,12 @@ async function applyMigrations() {
     `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS ui_preferences JSONB DEFAULT '{}'::jsonb`);
   await run('company_config: contract_templates',
     `ALTER TABLE company_config ADD COLUMN IF NOT EXISTS contract_templates JSONB DEFAULT '{}'::jsonb`);
+  await run('contracts: content',
+    `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS content TEXT`);
+  await run('contracts: backfill content from terms',
+    `UPDATE contracts SET content = terms WHERE content IS NULL AND terms IS NOT NULL`);
+  await run('contracts: created_by',
+    `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL`);
   await run('contracts: template_key',
     `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS template_key TEXT`);
   await run('contracts: meta',

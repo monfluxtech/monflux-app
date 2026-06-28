@@ -230,14 +230,26 @@ router.post('/:id/generate-contract', async (req, res) => {
           [mergeFields.contract_title, content, template?.key || null, JSON.stringify(meta), replaceContractId, req.company_id]
         ));
       } catch (err) {
-        if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
-        ({ rows: [contract] } = await query(
-          `UPDATE contracts
-           SET title = $1, content = $2, updated_at = NOW()
-           WHERE id = $3 AND company_id = $4
-           RETURNING *`,
-          [mergeFields.contract_title, content, replaceContractId, req.company_id]
-        ));
+        if (!/template_key|meta|content/i.test(String(err?.message || ''))) throw err;
+        try {
+          ({ rows: [contract] } = await query(
+            `UPDATE contracts
+             SET title = $1, content = $2, updated_at = NOW()
+             WHERE id = $3 AND company_id = $4
+             RETURNING *`,
+            [mergeFields.contract_title, content, replaceContractId, req.company_id]
+          ));
+        } catch (legacyErr) {
+          if (!/content/i.test(String(legacyErr?.message || ''))) throw legacyErr;
+          ({ rows: [contract] } = await query(
+            `UPDATE contracts
+             SET title = $1, terms = $2, updated_at = NOW()
+             WHERE id = $3 AND company_id = $4
+             RETURNING *`,
+            [mergeFields.contract_title, content, replaceContractId, req.company_id]
+          ));
+          if (contract && !contract.content) contract.content = contract.terms || content;
+        }
       }
     }
     if (!contract) {
@@ -254,19 +266,33 @@ router.post('/:id/generate-contract', async (req, res) => {
           ]
         ));
       } catch (err) {
-        if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
-        ({ rows: [contract] } = await query(
-          `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [
-            req.company_id, q.project_id || null, q.id,
-            mergeFields.contract_title,
-            content, req.user.userId,
-          ]
-        ));
+        if (!/template_key|meta|content|created_by/i.test(String(err?.message || ''))) throw err;
+        try {
+          ({ rows: [contract] } = await query(
+            `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [
+              req.company_id, q.project_id || null, q.id,
+              mergeFields.contract_title,
+              content, req.user.userId,
+            ]
+          ));
+        } catch (legacyErr) {
+          if (!/content|created_by/i.test(String(legacyErr?.message || ''))) throw legacyErr;
+          ({ rows: [contract] } = await query(
+            `INSERT INTO contracts (company_id, project_id, quote_id, title, terms)
+             VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+            [
+              req.company_id, q.project_id || null, q.id,
+              mergeFields.contract_title,
+              content,
+            ]
+          ));
+          if (contract && !contract.content) contract.content = contract.terms || content;
+        }
       }
     }
-    res.status(201).json(contract);
+    res.status(201).json({ ...contract, content: contract?.content || contract?.terms || content });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
