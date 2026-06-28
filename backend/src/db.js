@@ -481,6 +481,20 @@ async function applyMigrations() {
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS display_order INT NOT NULL DEFAULT 0`);
   await run('project_phases: status text fallback',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'not_started'`);
+  await run('phase_status enum: on_hold',
+    `DO $$ BEGIN
+       ALTER TYPE phase_status ADD VALUE IF NOT EXISTS 'on_hold';
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_object THEN NULL;
+     END $$;`);
+  await run('phase_status enum: waiting_supplier',
+    `DO $$ BEGIN
+       ALTER TYPE phase_status ADD VALUE IF NOT EXISTS 'waiting_supplier';
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_object THEN NULL;
+     END $$;`);
   await run('project_phases: color',
     `ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS color TEXT DEFAULT '#F26522'`);
   await run('project_phases: progress_pct',

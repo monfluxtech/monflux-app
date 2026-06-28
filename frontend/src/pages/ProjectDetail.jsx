@@ -799,10 +799,10 @@ function AssigneeChip({ trade, assignedToName, onSelfAssign, onUnassign }) {
   );
 }
 
-const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#FCD34D', waiting_supplier:'#A78BFA' };
-const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, done:'#22C55E', delayed:'#EF4444', on_hold:'#F59E0B', waiting_supplier:'#8B5CF6' };
+const STATUS_BORDER  = { not_started:'#E5E7EB', in_progress:BRAND, completed:'#22C55E', delayed:'#EF4444', on_hold:'#FCD34D', waiting_supplier:'#A78BFA', cancelled:'#9CA3AF' };
+const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, completed:'#22C55E', delayed:'#EF4444', on_hold:'#F59E0B', waiting_supplier:'#8B5CF6', cancelled:'#9CA3AF' };
 const PUNCH_COLOR    = '#60A5FA'; // bleu — distingue le réel (punch) du prévu (statut)
-const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', done:'Terminé', delayed:'En retard', on_hold:'En attente client', waiting_supplier:'En attente fournisseur' };
+const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', completed:'Terminé', delayed:'En retard', on_hold:'En attente client', waiting_supplier:'En attente fournisseur', cancelled:'Annulé' };
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
 
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
@@ -3650,6 +3650,13 @@ export default function ProjectDetail() {
         projectsApi.updatePhase(id, phaseId, { assigned_to_name: null }).catch((err) => console.error('sync remove assigned_to_name', err));
       });
     }
+    const changedTrades = new Set([
+      ...Object.keys(previous || {}),
+      ...Object.keys(val || {}),
+    ]);
+    changedTrades.forEach((tradeName) => {
+      void syncTradeAssignmentToPhases(tradeName, val);
+    });
   }, [id, project?.phases, saveAssessmentField, tradeResourcesMap]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveTradeConformite = useCallback((val) => {
     setTradeConformite(val);
@@ -3969,13 +3976,22 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
   };
 
   const handleUpdatePhase = async (phaseId, fields) => {
+    const currentPhase = project?.phases?.find((phase) => phase.id === phaseId);
+    const previousAssignedName = currentPhase?.assigned_to_name || null;
+    const nextAssignedName = Object.prototype.hasOwnProperty.call(fields || {}, 'assigned_to_name')
+      ? String(fields.assigned_to_name || '').trim()
+      : undefined;
     setProject(p => ({ ...p, phases: (p.phases||[]).map(ph => ph.id===phaseId ? {...ph,...fields} : ph) }));
     await projectsApi.updatePhase(id, phaseId, fields).catch(err => console.error('updatePhase', err));
-    if (fields?.assigned_to_name) {
-      const tradeName = fields.trade_name || project?.phases?.find((phase) => phase.id === phaseId)?.trade_name;
-      await syncAssignedPhaseWithTeam(phaseId, fields.assigned_to_name, tradeName);
+    if (nextAssignedName !== undefined) {
+      const tradeName = fields.trade_name || currentPhase?.trade_name;
+      if (nextAssignedName) {
+        await syncAssignedPhaseWithTeam(phaseId, nextAssignedName, tradeName);
+      } else if (previousAssignedName) {
+        await unsyncPhaseAssignmentFromTeam(phaseId, previousAssignedName, tradeName);
+      }
     } else if (fields?.trade_name) {
-      const existingAssigned = project?.phases?.find((phase) => phase.id === phaseId)?.assigned_to_name;
+      const existingAssigned = currentPhase?.assigned_to_name;
       if (existingAssigned) {
         await syncAssignedPhaseWithTeam(phaseId, existingAssigned, fields.trade_name);
       }
@@ -4230,6 +4246,87 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       setProject((p) => ({ ...p, trades: [...(p.trades || []), ...added] }));
     }
   };
+
+  const getTradePrimaryAssignee = useCallback((tradeName, resourcesSource = tradeResourcesMap) => {
+    const normalizedTrade = toTradeLabel(tradeName);
+    if (!normalizedTrade) return null;
+    const rawTradeResources = resourcesSource?.[normalizedTrade] || { internal: [], external: [] };
+    const internalPeople = parseTradePersons(rawTradeResources.internal).map((person) => ({ ...person, _type: 'internal' }));
+    const externalPeople = parseTradePersons(rawTradeResources.external).map((person) => ({ ...person, _type: 'external' }));
+    const allPeople = [...internalPeople, ...externalPeople].filter((person) => String(person.name || '').trim());
+    const confirmed = allPeople.filter((person) => (
+      (person._type === 'internal' && person.status === 'confirme')
+      || (person._type === 'external' && person.status === 'accepte')
+    ));
+    if (confirmed.length === 1) return confirmed[0].name.trim();
+    if (confirmed.length > 1) return null;
+    if (allPeople.length === 1) return allPeople[0].name.trim();
+    return null;
+  }, [toTradeLabel, tradeResourcesMap]);
+
+  const syncTradeAssignmentToPhases = useCallback(async (tradeName, resourcesSource = tradeResourcesMap) => {
+    const normalizedTrade = toTradeLabel(tradeName);
+    if (!normalizedTrade) return;
+    const matchingPhases = (project?.phases || []).filter((phase) => (
+      toTradeLabel(phase.trade_name || phase.trade).toLowerCase() === normalizedTrade.toLowerCase()
+    ));
+    if (!matchingPhases.length) return;
+
+    const nextAssignee = getTradePrimaryAssignee(normalizedTrade, resourcesSource);
+    const changedPhaseIds = matchingPhases
+      .filter((phase) => (phase.assigned_to_name || null) !== (nextAssignee || null))
+      .map((phase) => phase.id);
+    if (!changedPhaseIds.length) return;
+
+    setProject((current) => ({
+      ...current,
+      phases: (current.phases || []).map((phase) => (
+        changedPhaseIds.includes(phase.id)
+          ? { ...phase, assigned_to_name: nextAssignee || null }
+          : phase
+      )),
+    }));
+
+    await Promise.all(changedPhaseIds.map((phaseId) => (
+      projectsApi.updatePhase(id, phaseId, { assigned_to_name: nextAssignee || null })
+        .catch((err) => console.error('sync trade assignment to phase', err))
+    )));
+  }, [getTradePrimaryAssignee, id, project?.phases, toTradeLabel, tradeResourcesMap]);
+
+  const unsyncPhaseAssignmentFromTeam = useCallback(async (phaseId, removedAssignedName, tradeNameOverride = null) => {
+    const normalizedAssigned = String(removedAssignedName || '').trim();
+    if (!normalizedAssigned) return;
+
+    const currentPhase = (project?.phases || []).find((phase) => phase.id === phaseId);
+    const tradeName = toTradeLabel(tradeNameOverride || currentPhase?.trade_name || currentPhase?.trade);
+    if (!tradeName) return;
+
+    const remainingPhases = (project?.phases || []).filter((phase) => (
+      phase.id !== phaseId
+      && toTradeLabel(phase.trade_name || phase.trade).toLowerCase() === tradeName.toLowerCase()
+      && normalizePersonName(phase.assigned_to_name) === normalizePersonName(normalizedAssigned)
+    ));
+    if (remainingPhases.length) return;
+
+    const rawTradeResources = tradeResourcesMap?.[tradeName] || { internal: [], external: [] };
+    const nextInternal = parseTradePersons(rawTradeResources.internal)
+      .filter((person) => normalizePersonName(person.name) !== normalizePersonName(normalizedAssigned));
+    const nextExternal = parseTradePersons(rawTradeResources.external)
+      .filter((person) => normalizePersonName(person.name) !== normalizePersonName(normalizedAssigned));
+
+    if (
+      nextInternal.length === parseTradePersons(rawTradeResources.internal).length
+      && nextExternal.length === parseTradePersons(rawTradeResources.external).length
+    ) return;
+
+    saveTradeResources({
+      ...tradeResourcesMap,
+      [tradeName]: {
+        internal: nextInternal,
+        external: nextExternal,
+      },
+    });
+  }, [project?.phases, saveTradeResources, toTradeLabel, tradeResourcesMap]);
 
   const syncAssignedPhaseWithTeam = useCallback(async (phaseId, assignedName, tradeNameOverride = null) => {
     const normalizedAssigned = String(assignedName || '').trim();
