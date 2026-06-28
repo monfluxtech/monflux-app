@@ -84,11 +84,21 @@ router.post('/', async (req, res) => {
   const { title, project_id, quote_id, content, template_key, meta } = req.body;
   if (!title) return res.status(400).json({ error: 'Le titre est requis' });
   try {
-    const { rows: [c] } = await query(
-      `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by, template_key, meta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId, template_key || null, meta ? JSON.stringify(meta) : JSON.stringify({})]
-    );
+    let c;
+    try {
+      ({ rows: [c] } = await query(
+        `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by, template_key, meta)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId, template_key || null, meta ? JSON.stringify(meta) : JSON.stringify({})]
+      ));
+    } catch (err) {
+      if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
+      ({ rows: [c] } = await query(
+        `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.company_id, project_id || null, quote_id || null, title, content || null, req.user.userId]
+      ));
+    }
     res.status(201).json(c);
   } catch (err) {
     console.error(err);
@@ -115,15 +125,31 @@ router.patch('/:id', async (req, res) => {
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
   if (updates.meta && typeof updates.meta !== 'string') updates.meta = JSON.stringify(updates.meta);
-  const set = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
-  const vals = [...Object.values(updates), req.params.id, req.company_id];
   try {
-    const { rows: [c] } = await query(
-      `UPDATE contracts SET ${set}, updated_at = NOW()
-       WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
-       RETURNING *`,
-      vals
-    );
+    let effectiveUpdates = { ...updates };
+    let c;
+    try {
+      const set = Object.keys(effectiveUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+      const vals = [...Object.values(effectiveUpdates), req.params.id, req.company_id];
+      ({ rows: [c] } = await query(
+        `UPDATE contracts SET ${set}, updated_at = NOW()
+         WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
+         RETURNING *`,
+        vals
+      ));
+    } catch (err) {
+      if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
+      delete effectiveUpdates.template_key;
+      delete effectiveUpdates.meta;
+      const set = Object.keys(effectiveUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+      const vals = [...Object.values(effectiveUpdates), req.params.id, req.company_id];
+      ({ rows: [c] } = await query(
+        `UPDATE contracts SET ${set}, updated_at = NOW()
+         WHERE id = $${vals.length - 1} AND company_id = $${vals.length}
+         RETURNING *`,
+        vals
+      ));
+    }
     if (!c) return res.status(404).json({ error: 'Contrat non trouvé' });
     res.json(c);
   } catch (err) {
@@ -253,19 +279,26 @@ Contraintes:
       content = buildFallbackFloContractHtml(content, mergeFields);
     }
 
-    const nextMeta = {
-      ...(contract.meta || {}),
-      flo_enriched_at: new Date().toISOString(),
-      flo_enriched_by: enrichedBy,
-    };
-
-    const { rows: [updated] } = await query(
-      `UPDATE contracts
-       SET content = $1, meta = $2, updated_at = NOW()
-       WHERE id = $3 AND company_id = $4
-       RETURNING *`,
-      [content, JSON.stringify(nextMeta), req.params.id, req.company_id]
-    );
+    const nextMeta = { ...(contract.meta || {}), flo_enriched_at: new Date().toISOString(), flo_enriched_by: enrichedBy };
+    let updated;
+    try {
+      ({ rows: [updated] } = await query(
+        `UPDATE contracts
+         SET content = $1, meta = $2, updated_at = NOW()
+         WHERE id = $3 AND company_id = $4
+         RETURNING *`,
+        [content, JSON.stringify(nextMeta), req.params.id, req.company_id]
+      ));
+    } catch (err) {
+      if (!/meta/i.test(String(err?.message || ''))) throw err;
+      ({ rows: [updated] } = await query(
+        `UPDATE contracts
+         SET content = $1, updated_at = NOW()
+         WHERE id = $2 AND company_id = $3
+         RETURNING *`,
+        [content, req.params.id, req.company_id]
+      ));
+    }
     res.json(updated);
   } catch (err) {
     console.error(err);

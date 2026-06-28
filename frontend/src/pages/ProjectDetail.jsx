@@ -30,11 +30,11 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-pipeline', icon: '🏗️', label: 'Phases du projet' },
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
   { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
-  { id: 's-soumission', icon: '📄', label: 'Devis & Contrat' },
+  { id: 's-soumission', icon: '📄', label: 'Devis & contrat' },
   { id: 's-punch', icon: '⏱️', label: 'Punch et dépenses' },
   { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
   { id: 's-invoices', icon: '🧾', label: 'Factures client' },
-  { id: 's-extras', icon: '⚡', label: 'Extras & avenants' },
+  { id: 's-extras', icon: '⚡', label: 'Demandes de modification' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Notes et photos' },
@@ -3173,7 +3173,6 @@ export default function ProjectDetail() {
   const [contractSendingId, setContractSendingId] = useState(null);
   const [showContractContent, setShowContractContent] = useState(null);
   const [companyConfig, setCompanyConfig] = useState({});
-  const [selectedContractTemplateKey, setSelectedContractTemplateKey] = useState('general');
   const [contractDrafts, setContractDrafts] = useState({});
   const [contractSavingId, setContractSavingId] = useState(null);
   const [contractEnrichingId, setContractEnrichingId] = useState(null);
@@ -3333,11 +3332,10 @@ export default function ProjectDetail() {
       setProjectRfqs(rfqList || []);
       setProjectContracts(contractList || []);
       setCompanyConfig(companyData?.config || {});
-      setSelectedContractTemplateKey(guessProjectContractTemplateKey(proj, companyData?.config?.contract_templates));
       setMaterialOrders(orderList || []);
       setMedia(mediaList || []);
       if (proj.flo_recommendations?.length) setAiRecommendations(proj.flo_recommendations);
-      // pré-charge les impacts d'avenants déjà calculés
+      // pré-charge les impacts de demandes de modification déjà calculés
       const impacts = {};
       (cos || []).forEach(co => { if (co.ai_impact) impacts[co.id] = co.ai_impact; });
       setCoImpact(impacts);
@@ -3415,6 +3413,9 @@ export default function ProjectDetail() {
     }
   };
 
+  const salesLocked = quoteBuilderQuote?.status === 'signed' || (projectContracts || []).some((contract) => contract.status === 'signed');
+  const resolvedContractTemplateKey = guessProjectContractTemplateKey(project, companyConfig?.contract_templates);
+
   useEffect(() => {
     setContractDrafts((current) => {
       const next = { ...current };
@@ -3429,6 +3430,12 @@ export default function ProjectDetail() {
       return next;
     });
   }, [projectContracts]);
+
+  useEffect(() => {
+    if (!quoteBuilderQuote?.id) return;
+    if ((projectContracts || []).some((contract) => contract.quote_id === quoteBuilderQuote.id)) return;
+    void generateContract();
+  }, [quoteBuilderQuote?.id, projectContracts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [id]);
 
@@ -5040,6 +5047,33 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     finally { setSavingExtra(false); }
   };
 
+  const createChangeRequestFromMaterials = async (items = [], label = 'matériaux') => {
+    if (!items.length) return;
+    try {
+      const amount = items.reduce((sum, item) => sum + (Number(item.prix_unitaire || item.unit_price || 0) * Number(item.qty || 1 || 1)), 0);
+      const description = items.map((item) => {
+        const qty = Number(item.qty || 1) || 1;
+        const unit = item.unite || item.unit || 'un.';
+        const price = Number(item.prix_unitaire || item.unit_price || 0) || 0;
+        return `- ${item.nom || item.name} · ${qty} ${unit} · ${price.toLocaleString('fr-CA')} $`;
+      }).join('\n');
+      const { data } = await changeOrdersApi.create({
+        project_id: id,
+        title: `Demande de changement — ${label}`,
+        description,
+        amount,
+        notes: 'Créée depuis la recherche de matériaux après verrouillage du devis/contrat.',
+      });
+      setChangeOrdersList((list) => [data, ...list]);
+      setShowExtraForm(false);
+      return data;
+    } catch (err) {
+      console.error('createChangeRequestFromMaterials', err);
+      alert(err?.response?.data?.error || 'Erreur lors de la création de la demande de changement.');
+      return null;
+    }
+  };
+
   const saveLaborRate = async () => {
     setSavingRate(true);
     try {
@@ -5056,6 +5090,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       const { data } = await quotesApi.create({ project_id: id, title: `Soumission — ${project?.name || 'Projet'}` });
       setQuoteBuilderQuote(data);
       setQuoteBuilderItems([]);
+      setTimeout(() => { void syncDraftContractForQuote(data, { replaceIfDraftExists: false }); }, 0);
       return data;
     } catch { return null; } finally { setQuoteSaving(false); }
   };
@@ -5068,6 +5103,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       const { data } = await quotesApi.update(q.id, { items });
       setQuoteBuilderQuote(data);
       setQuoteBuilderItems(normalizeQuoteItems(data.items || items));
+      await syncDraftContractForQuote(data);
     } catch {} finally { setQuoteSaving(false); }
   };
 
@@ -5076,7 +5112,34 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     quoteTimer.current = setTimeout(() => saveQuoteItems(items), 900);
   };
 
+  const syncDraftContractForQuote = async (quote, options = {}) => {
+    if (!quote?.id) return null;
+    const { replaceIfDraftExists = true } = options;
+    const draftContract = (projectContracts || []).find((contract) => contract.quote_id === quote.id && contract.status === 'draft');
+    if (draftContract && !replaceIfDraftExists) return draftContract;
+    try {
+      const payload = { template_key: resolvedContractTemplateKey };
+      if (replaceIfDraftExists && draftContract?.id) payload.replace_contract_id = draftContract.id;
+      const { data } = await quotesApi.generateContract(quote.id, payload);
+      const normalized = { ...data, content: normalizeContractHtml(data.content) };
+      setProjectContracts((contracts) => {
+        const exists = contracts.some((contract) => contract.id === normalized.id);
+        if (exists) return contracts.map((contract) => contract.id === normalized.id ? normalized : contract);
+        return [normalized, ...contracts];
+      });
+      setContractDrafts((drafts) => ({
+        ...drafts,
+        [normalized.id]: { title: normalized.title || '', content: normalized.content || '<p></p>' },
+      }));
+      return normalized;
+    } catch (err) {
+      console.error('syncDraftContractForQuote', err);
+      return null;
+    }
+  };
+
   const addQuoteItem = async (type) => {
+    if (salesLocked) return;
     const q = await ensureQuote();
     if (!q) return;
     const unitMap = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
@@ -5086,12 +5149,14 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
   };
 
   const updateQuoteItem = (i, patch) => {
+    if (salesLocked) return;
     const next = quoteBuilderItems.map((it, idx) => idx === i ? { ...it, ...patch } : it);
     setQuoteBuilderItems(next);
     scheduleQuoteSave(next);
   };
 
   const removeQuoteItem = (i) => {
+    if (salesLocked) return;
     const next = quoteBuilderItems.filter((_, idx) => idx !== i);
     setQuoteBuilderItems(next);
     scheduleQuoteSave(next);
@@ -5100,6 +5165,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
   const normalizeQuoteItems = (items) => (items || []).map(it => ({ ...it, markup: Number(it.markup) || 0, show_on_quote: it.show_on_quote !== false }));
 
   const commitNewRow = async (type, draft) => {
+    if (salesLocked) return;
     if (!(draft.name || '').trim()) return;
     const q = await ensureQuote();
     if (!q) return;
@@ -5216,14 +5282,8 @@ JSON seulement, pas de texte autour.`;
     if (!quoteBuilderQuote) return;
     setGeneratingContract(true);
     try {
-      const { data } = await quotesApi.generateContract(quoteBuilderQuote.id, { template_key: selectedContractTemplateKey });
-      const normalized = { ...data, content: normalizeContractHtml(data.content) };
-      setProjectContracts((c) => [normalized, ...c]);
-      setContractDrafts((drafts) => ({
-        ...drafts,
-        [normalized.id]: { title: normalized.title || '', content: normalized.content || '<p></p>' },
-      }));
-      setShowContractContent(normalized.id);
+      const synced = await syncDraftContractForQuote(quoteBuilderQuote);
+      if (synced?.id) setShowContractContent(synced.id);
     } catch (err) {
       console.error('generateContract', err);
       alert(err.response?.data?.error || 'Erreur lors de la génération du contrat.');
@@ -5592,7 +5652,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
   const SEV = { low: { c: 'badge-green', l: 'Faible' }, medium: { c: 'badge-yellow', l: 'Moyen' }, high: { c: 'badge-red', l: 'Élevé' } };
   const contractTemplateConfig = getContractTemplateConfig(companyConfig?.contract_templates);
-  const selectedContractTemplate = contractTemplateConfig.templates.find((template) => template.key === selectedContractTemplateKey)
+  const selectedContractTemplate = contractTemplateConfig.templates.find((template) => template.key === resolvedContractTemplateKey)
     || contractTemplateConfig.templates.find((template) => template.key === contractTemplateConfig.default_key)
     || contractTemplateConfig.templates[0];
 
@@ -6828,7 +6888,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         </button>
       )}
 
-      {/* ── Modal : Créer un extra (demande de modification) ── */}
+      {/* ── Modal : Créer une demande de modification ── */}
       {showExtraForm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
@@ -6854,7 +6914,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
                 <button type="button" className="btn-secondary text-xs" onClick={() => setShowExtraForm(false)}>Annuler</button>
                 <button type="submit" className="btn-primary text-xs" disabled={savingExtra || !extraForm.title}>
-                  {savingExtra ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>} Créer l'extra
+                  {savingExtra ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>} Créer la demande
                 </button>
               </div>
             </form>
@@ -7270,7 +7330,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           const visiteAnswered = Object.keys(visiteAnswers).length;
 
           return (
-            <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px' }}>
+            <div id="s-estimation" style={{ background: '#E9F3EC', borderTop: '1px solid #E8EAED', padding: '36px 56px 44px', opacity: salesLocked ? 0.7 : 1, pointerEvents: salesLocked ? 'none' : 'auto' }}>
               {sectionGuard('s-estimation')}
               {/* En-tête */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
@@ -8909,6 +8969,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                         <span style={{ fontSize: 13, color: '#15803D', fontWeight: 700 }}>{matSelected.size} article{matSelected.size !== 1 ? 's' : ''} sélectionné{matSelected.size !== 1 ? 's' : ''}</span>
                         <button onClick={async () => {
                           const selItems = matSearchResults.filter(it => matSelected.has(it.id));
+                          if (salesLocked) {
+                            const created = await createChangeRequestFromMaterials(selItems, 'matériaux sélectionnés');
+                            if (created) setMatSelected(new Set());
+                            return;
+                          }
                           const q = await ensureQuote(); if (!q) return;
                           const newItems = [...quoteBuilderItems, ...selItems.map(it => ({
                             type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
@@ -8918,7 +8983,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           setMatSelected(new Set());
                         }}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          → Ajouter au devis détaillé
+                          → {salesLocked ? 'Ajouter à une demande de changement' : 'Ajouter au devis détaillé'}
                         </button>
                         <button onClick={() => setMatSelected(new Set())}
                           style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, border: '1px solid #86EFAC', background: 'transparent', color: '#16A34A', cursor: 'pointer' }}>
@@ -8932,6 +8997,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                         <span style={{ fontSize: 13, color: BRAND, fontWeight: 700 }}>{matWishlist.length} article{matWishlist.length !== 1 ? 's' : ''} dans la wishlist</span>
                         <button onClick={async () => {
                           const wishItems = matSearchResults.filter(it => matWishlist.includes(it.id));
+                          if (salesLocked) {
+                            await createChangeRequestFromMaterials(wishItems, 'wishlist matériaux');
+                            return;
+                          }
                           const q = await ensureQuote(); if (!q) return;
                           const newItems = [...quoteBuilderItems, ...wishItems.map(it => ({
                             type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
@@ -8940,9 +9009,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
                         }}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          → Importer wishlist dans le devis
+                          → {salesLocked ? 'Créer une demande de changement' : 'Importer wishlist dans le devis'}
                         </button>
-                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>Ajoutés dans la section Matériaux du devis détaillé.</span>
+                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+                          {salesLocked ? 'Le devis est verrouillé : les matériaux partent maintenant en demande de changement.' : 'Ajoutés dans la section Matériaux du devis détaillé.'}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -8962,6 +9033,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
         {/* ── Devis détaillé ── */}
         <div id="s-soumission" style={{ borderTop: '2px solid #E8EAED', padding: '36px 56px 44px', background: '#fff' }}>
+          {salesLocked && (
+            <div style={{ marginBottom: 18, padding: '10px 14px', borderRadius: 10, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', fontSize: 12.5, fontWeight: 600 }}>
+              Le devis, le contrat et l’estimation approximative sont maintenant verrouillés, car le client a signé/accepté.
+            </div>
+          )}
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #E8EAED', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>📄</div>
@@ -8974,12 +9050,13 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
                 <input type="number" min="0" max="300" step="1" value={quoteMarkup}
+                  disabled={salesLocked}
                   onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
                   style={{ width: 42, fontSize: 13, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>%</span>
               </div>
               {/* Flo button */}
-              <button onClick={() => setShowFloQuotePanel(v => !v)}
+              <button disabled={salesLocked} onClick={() => setShowFloQuotePanel(v => !v)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: showFloQuotePanel ? `${BRAND}15` : '#fff', color: BRAND, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 <Sparkles size={12}/>{floQuoteLoading ? 'Analyse…' : 'Flo complète le devis'}
               </button>
@@ -9021,6 +9098,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#EDE9FE', borderRadius: 7, padding: '3px 10px' }}>
                 <span style={{ fontSize: 11, color: BRAND }}>Markup</span>
                 <input type="number" min="0" max="300" step="1" value={quoteMassMarkup}
+                  disabled={salesLocked}
                   onChange={e => setQuoteMassMarkup(e.target.value)}
                   placeholder="0"
                   style={{ width: 38, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
@@ -9031,12 +9109,14 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   const next = quoteBuilderItems.map((it, i) => quoteSelected.has(i) ? { ...it, markup: v } : it);
                   setQuoteBuilderItems(next); scheduleQuoteSave(next); setQuoteMassMarkup('');
                 }}
-                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, border: 'none', background: BRAND, color: '#fff', fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>
+                  disabled={salesLocked}
+                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, border: 'none', background: BRAND, color: '#fff', fontWeight: 700, cursor: salesLocked ? 'not-allowed' : 'pointer', marginLeft: 4, opacity: salesLocked ? 0.5 : 1 }}>
                   Appliquer
                 </button>
               </div>
               <button onClick={() => { [...quoteSelected].sort((a, b) => b - a).forEach(i => removeQuoteItem(i)); setQuoteSelected(new Set()); }}
-                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: 'pointer' }}>
+                disabled={salesLocked}
+                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: salesLocked ? 'not-allowed' : 'pointer', opacity: salesLocked ? 0.5 : 1 }}>
                 Supprimer
               </button>
               <button onClick={() => setQuoteSelected(new Set())}
@@ -9073,13 +9153,14 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                       <tr>
                         <th style={{ ...TH, textAlign: 'center' }}>
                           <input type="checkbox"
+                            disabled={salesLocked}
                             checked={allItems.length > 0 && allItems.every(it => quoteSelected.has(it._i))}
                             onChange={e => setQuoteSelected(() => {
                               const n = new Set();
                               if (e.target.checked) allItems.forEach(it => n.add(it._i));
                               return n;
                             })}
-                            style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                            style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
                         </th>
                         <th style={{ ...TH, textAlign: 'left' }}>Description</th>
                         {/* Colonnes PDF — œil cliquable pour inclure/exclure du PDF client */}
@@ -9136,31 +9217,32 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                 <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'white', borderBottom: '1px solid #F3F4F6' }}>
                                   <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
                                     <input type="checkbox" checked={isSel}
+                                      disabled={salesLocked}
                                       onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
-                                      style={{ accentColor: BRAND, cursor: 'pointer' }}/>
+                                      style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
                                   </td>
                                   <td style={{ padding: '1px 6px', verticalAlign: 'middle' }}>
-                                    <input value={it.name} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
+                                    <input value={it.name} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
                                       placeholder="Description"
                                       style={{ ...iS, fontSize: 12, color: '#111827', fontWeight: it.name ? 500 : 400 }}/>
                                   </td>
                                   <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input type="number" value={it.qty || ''} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
+                                    <input type="number" value={it.qty || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
                                       style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
                                   </td>
                                   <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input value={it.unit || ''} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
+                                    <input value={it.unit || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
                                       placeholder={typeUnits[type]}
                                       style={{ ...iS, fontSize: 11, color: '#6B7280' }}/>
                                   </td>
                                   <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input type="number" value={it.unit_price || ''} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
+                                    <input type="number" value={it.unit_price || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
                                       placeholder="0"
                                       style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
                                   </td>
                                   <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
-                                      <input type="number" value={it.markup || ''} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
+                                      <input type="number" value={it.markup || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
                                         placeholder="0"
                                         style={{ ...iS, fontSize: 11, color: BRAND, textAlign: 'right', width: 36, fontWeight: 600 }}/>
                                       <span style={{ fontSize: 10, color: BRAND, flexShrink: 0 }}>%</span>
@@ -9175,14 +9257,14 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                       <a href={it.url} target="_blank" rel="noreferrer"
                                         style={{ fontSize: 10, color: BRAND, textDecoration: 'none', whiteSpace: 'nowrap' }}>🔗 Source</a>
                                     ) : (
-                                      <input value={it.url || ''} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
+                                      <input value={it.url || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
                                         placeholder="URL"
                                         style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
                                     )}
                                   </td>
                                   <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                    <button onClick={() => removeQuoteItem(it._i)}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px' }}>×</button>
+                                    <button onClick={() => removeQuoteItem(it._i)} disabled={salesLocked}
+                                      style={{ background: 'none', border: 'none', cursor: salesLocked ? 'not-allowed' : 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px', opacity: salesLocked ? 0.5 : 1 }}>×</button>
                                   </td>
                                 </tr>
                               );
@@ -9194,28 +9276,33 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                 <td/>
                                 <td style={{ padding: '4px 6px' }}>
                                   <input value={nd.name || ''} placeholder={`+ Ajouter ${typeLabels[type].toLowerCase()}…`}
+                                    readOnly={salesLocked}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
-                                    onKeyDown={e => { if (e.key === 'Enter') commitNewRow(type, nd); }}
-                                    onBlur={() => commitNewRow(type, nd)}
+                                    onKeyDown={e => { if (!salesLocked && e.key === 'Enter') commitNewRow(type, nd); }}
+                                    onBlur={() => { if (!salesLocked) commitNewRow(type, nd); }}
                                     style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
                                 </td>
                                 <td style={{ padding: '4px 4px' }}>
                                   <input type="number" value={nd.qty || ''} placeholder="1"
+                                    readOnly={salesLocked}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
                                     style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
                                 </td>
                                 <td style={{ padding: '4px 4px' }}>
                                   <input value={nd.unit || ''} placeholder={typeUnits[type]}
+                                    readOnly={salesLocked}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
                                     style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
                                 </td>
                                 <td style={{ padding: '4px 4px' }}>
                                   <input type="number" value={nd.unit_price || ''} placeholder="0"
+                                    readOnly={salesLocked}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
                                     style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
                                 </td>
                                 <td/><td/><td style={{ padding: '4px 4px' }}>
                                   <input value={nd.url || ''} placeholder="URL"
+                                    readOnly={salesLocked}
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
                                     style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
                                 </td>
@@ -9262,6 +9349,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                     <span style={{ fontSize: 11, color: '#6B7280', flex: 1 }}>Markup global</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${BRAND}10`, borderRadius: 6, padding: '2px 8px' }}>
                       <input type="number" min="0" max="300" step="1" value={quoteMarkup}
+                        disabled={salesLocked}
                         onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
                         style={{ width: 40, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: BRAND, fontFamily: 'inherit' }}/>
                       <span style={{ fontSize: 11, color: BRAND }}>%</span>
@@ -9312,40 +9400,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F5F3FF', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 }}>✍️</div>
               <div style={{ flex: 1 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, color: '#15171C', margin: 0, letterSpacing: '-.01em' }}>Contrat</h3>
-                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Document éditable généré après fusion du devis, du projet et du modèle choisi</p>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Document éditable lié automatiquement au type de projet et synchronisé avec le devis</p>
               </div>
               {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr auto', gap: 12, marginBottom: 20, alignItems: 'end' }}>
-              <div>
-                <label className="label">Type de contrat</label>
-                <select className="input" value={selectedContractTemplateKey} onChange={(e) => setSelectedContractTemplateKey(e.target.value)}>
-                  {contractTemplateConfig.templates.map((template) => (
-                    <option key={template.key} value={template.key}>{template.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 10, padding: '10px 12px' }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#15171C', margin: '0 0 2px' }}>{selectedContractTemplate?.label || 'Modèle sélectionné'}</p>
-                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
-                  {selectedContractTemplate?.description || 'Le bon modèle est proposé selon le type de projet et reste ajustable ici.'}
-                </p>
-              </div>
-              <button className="btn-secondary text-xs" onClick={generateContract} disabled={generatingContract || !quoteBuilderQuote}>
-                {generatingContract ? <Loader2 size={13} className="animate-spin"/> : <FileSignature size={13}/>}
-                {projectContracts.length > 0 ? 'Nouveau brouillon' : 'Générer le contrat'}
-              </button>
             </div>
 
             {projectContracts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', background: '#FAFAFA', borderRadius: 12, border: '1px dashed #E5E7EB' }}>
                 <FileSignature size={24} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
                 <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 4px', fontWeight: 600 }}>
-                  {quoteBuilderQuote ? 'Contrat non généré' : 'Crée d\'abord un devis'}
+                  {quoteBuilderQuote ? 'Préparation du contrat…' : 'Le contrat sera créé avec le devis'}
                 </p>
                 <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
-                  {quoteBuilderQuote ? 'Le contrat sera créé dans un format document, à partir du modèle sélectionné et des données du projet.' : 'Le contrat sera disponible une fois le devis détaillé complété.'}
+                  {quoteBuilderQuote ? `Modèle détecté automatiquement : ${selectedContractTemplate?.label || 'Contrat lié au projet'}.` : 'Le contrat apparaîtra automatiquement dès que le devis existe.'}
                 </p>
               </div>
             ) : (
@@ -10035,17 +10102,17 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
         </div>
 
-        {/* ── Extras & avenants ── */}
+        {/* ── Demandes de modification ── */}
         <div id="s-extras" style={{ background: '#FFF7ED', borderTop: '1px solid #FED7AA', padding: '36px 56px 44px' }}>
           {sectionGuard('s-extras')}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
             <div style={{ width: 46, height: 46, borderRadius: 13, background: '#fff', border: '1px solid #FED7AA', display: 'grid', placeItems: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>⚡</div>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Extras & avenants</h2>
-              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Travaux hors contrat · demandes de modification · {changeOrdersList.length} avenant(s)</div>
+              <h2 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-.02em', color: '#15171C', margin: 0 }}>Demandes de modification</h2>
+              <div style={{ fontSize: 13, color: '#7C8089', marginTop: 4 }}>Travaux hors contrat · ajustements client · {changeOrdersList.length} demande(s)</div>
             </div>
             <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}>
-              <Plus size={13}/> Nouvel extra
+              <Plus size={13}/> Nouvelle demande
             </button>
           </div>
 
@@ -10096,8 +10163,8 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           ) : (
             <div style={{ textAlign: 'center', padding: '28px 0' }}>
               <GitBranch size={28} style={{ color: '#FED7AA', margin: '0 auto 10px' }} />
-              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 14 }}>Aucun extra ou avenant pour ce projet.</p>
-              <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}><Plus size={13}/> Créer le premier extra</button>
+              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 14 }}>Aucune demande de modification pour ce projet.</p>
+              <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}><Plus size={13}/> Créer la première demande</button>
             </div>
           )}
 
@@ -10398,7 +10465,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             const stats = [
               { icon: '⏱', label: 'Heures punchées', value: totalHours > 0 ? `${totalHours}h` : '—', color: BRAND, bg: '#FFF1EB' },
               { icon: '📷', label: 'Médias chantier', value: media.length || '—', color: '#4f46e5', bg: '#EEF1FD' },
-              { icon: '📝', label: 'Avenants', value: changeOrdersList.length || '—', color: '#2563EB', bg: '#EFF6FF' },
+              { icon: '📝', label: 'Demandes modif.', value: changeOrdersList.length || '—', color: '#2563EB', bg: '#EFF6FF' },
               { icon: '⚠️', label: 'En attente', value: pendingCOs || '—', color: pendingCOs ? '#D97706' : '#9CA3AF', bg: pendingCOs ? '#FFFBEB' : '#F9FAFB' },
             ];
             return (
@@ -10496,7 +10563,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   aiTag: m.ai_flag,
                 }))),
                 ...(changeOrdersList.filter(co => co.status !== 'draft').map(co => ({
-                  type: 'avenant', icon: '📝', color: '#2563EB', bg: '#EFF6FF',
+                  type: 'demande_modification', icon: '📝', color: '#2563EB', bg: '#EFF6FF',
                   title: `Avenant : ${co.title}`,
                   sub: co.amount ? `+${Number(co.amount).toLocaleString('fr-CA')} $` : '',
                   date: co.created_at,
@@ -10531,7 +10598,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 <div style={{ textAlign: 'center', padding: '40px 0', color: '#9CA3AF' }}>
                   <span style={{ fontSize: 32 }}>📭</span>
                   <p style={{ fontSize: 14, marginTop: 12 }}>Aucune activité enregistrée pour ce projet.</p>
-                  <p style={{ fontSize: 12 }}>Les punchs, photos, notes et avenants apparaîtront ici.</p>
+                  <p style={{ fontSize: 12 }}>Les punchs, photos, notes et demandes de modification apparaîtront ici.</p>
                 </div>
               );
 

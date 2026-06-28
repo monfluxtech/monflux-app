@@ -164,7 +164,7 @@ router.post('/:id/send', async (req, res) => {
 // POST /api/quotes/:id/generate-contract — generate a contract from the quote
 router.post('/:id/generate-contract', async (req, res) => {
   try {
-    const { template_key: requestedTemplateKey } = req.body || {};
+    const { template_key: requestedTemplateKey, replace_contract_id: replaceContractId } = req.body || {};
     const { rows: [q] } = await query(
       `SELECT q.*, p.name AS project_name, p.address AS project_address, p.city AS project_city,
               p.payment_terms, p.start_date AS project_start_date, p.end_date AS project_end_date,
@@ -214,21 +214,58 @@ router.post('/:id/generate-contract', async (req, res) => {
 
     const mergeFields = buildContractMergeFields({ company, project, quote, client });
     const content = renderContractTemplate(template?.content, mergeFields);
-    const { rows: [contract] } = await query(
-      `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by, template_key, meta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [
-        req.company_id, q.project_id || null, q.id,
-        mergeFields.contract_title,
-        content, req.user.userId,
-        template?.key || null,
-        JSON.stringify({
-          template_label: template?.label || 'Contrat',
-          detected_template_key: detectedTemplateKey,
-          merge_fields: mergeFields,
-        }),
-      ]
-    );
+    const meta = {
+      template_label: template?.label || 'Contrat',
+      detected_template_key: detectedTemplateKey,
+      merge_fields: mergeFields,
+    };
+    let contract;
+    if (replaceContractId) {
+      try {
+        ({ rows: [contract] } = await query(
+          `UPDATE contracts
+           SET title = $1, content = $2, template_key = $3, meta = $4, updated_at = NOW()
+           WHERE id = $5 AND company_id = $6
+           RETURNING *`,
+          [mergeFields.contract_title, content, template?.key || null, JSON.stringify(meta), replaceContractId, req.company_id]
+        ));
+      } catch (err) {
+        if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
+        ({ rows: [contract] } = await query(
+          `UPDATE contracts
+           SET title = $1, content = $2, updated_at = NOW()
+           WHERE id = $3 AND company_id = $4
+           RETURNING *`,
+          [mergeFields.contract_title, content, replaceContractId, req.company_id]
+        ));
+      }
+    }
+    if (!contract) {
+      try {
+        ({ rows: [contract] } = await query(
+          `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by, template_key, meta)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [
+            req.company_id, q.project_id || null, q.id,
+            mergeFields.contract_title,
+            content, req.user.userId,
+            template?.key || null,
+            JSON.stringify(meta),
+          ]
+        ));
+      } catch (err) {
+        if (!/template_key|meta/i.test(String(err?.message || ''))) throw err;
+        ({ rows: [contract] } = await query(
+          `INSERT INTO contracts (company_id, project_id, quote_id, title, content, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [
+            req.company_id, q.project_id || null, q.id,
+            mergeFields.contract_title,
+            content, req.user.userId,
+          ]
+        ));
+      }
+    }
     res.status(201).json(contract);
   } catch (err) {
     console.error(err);
