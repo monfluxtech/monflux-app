@@ -10798,21 +10798,14 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                     </div>
                                   </div>
 
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 180px 160px', gap: 10 }}>
-                                    <div><label className="label">Nom client</label><input className="input" value={draft.client_name} onChange={e => updateInvoiceDraftField(inv.id, 'client_name', e.target.value)} /></div>
-                                    <div><label className="label">Courriel client</label><input className="input" value={draft.client_email} onChange={e => updateInvoiceDraftField(inv.id, 'client_email', e.target.value)} /></div>
-                                    <div><label className="label">Échéance</label><input className="input" type="date" value={draft.due_date} onChange={e => updateInvoiceDraftField(inv.id, 'due_date', e.target.value)} /></div>
-                                    <div><label className="label">Statut</label>
-                                      <select className="input" value={draft.status} onChange={e => updateInvoiceDraftField(inv.id, 'status', e.target.value)}>
-                                        {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                                      </select>
-                                    </div>
-                                  </div>
-
                                   <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
                                     <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                                         <colgroup>
+                                          <col style={{ width: 180 }}/>
+                                          <col style={{ minWidth: 220 }}/>
+                                          <col style={{ width: 170 }}/>
+                                          <col style={{ width: 140 }}/>
                                           <col style={{ minWidth: 280 }}/>
                                           <col style={{ width: 90 }}/>
                                           <col style={{ width: 130 }}/>
@@ -10821,16 +10814,39 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                         </colgroup>
                                         <thead>
                                           <tr style={{ background: '#F9FAFB' }}>
-                                            {['Description', 'Qté', 'Prix unit.', 'Total', ''].map((label, index) => (
-                                              <th key={label} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', textAlign: index >= 1 && index <= 3 ? 'right' : 'left' }}>{label}</th>
+                                            {['Client', 'Courriel', 'Échéance', 'Statut', 'Description', 'Qté', 'Prix unit.', 'Total', ''].map((label, index) => (
+                                              <th key={label} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', textAlign: index >= 5 && index <= 7 ? 'right' : 'left' }}>{label}</th>
                                             ))}
                                           </tr>
                                         </thead>
                                         <tbody>
+                                          <tr style={{ background: '#FCFFFC', borderBottom: '2px solid #E5E7EB' }}>
+                                            <td style={{ padding: '6px 8px' }}>
+                                              <input className="input" value={draft.client_name} onChange={e => updateInvoiceDraftField(inv.id, 'client_name', e.target.value)} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px' }}>
+                                              <input className="input" value={draft.client_email} onChange={e => updateInvoiceDraftField(inv.id, 'client_email', e.target.value)} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px' }}>
+                                              <input className="input" type="date" value={draft.due_date} onChange={e => updateInvoiceDraftField(inv.id, 'due_date', e.target.value)} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px' }}>
+                                              <select className="input" value={draft.status} onChange={e => updateInvoiceDraftField(inv.id, 'status', e.target.value)}>
+                                                {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                                              </select>
+                                            </td>
+                                            <td colSpan={5} style={{ padding: '8px 10px', fontSize: 12, color: '#6B7280' }}>
+                                              En-tête de facture
+                                            </td>
+                                          </tr>
                                           {draftItems.map((item, index) => {
                                             const lineTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
                                             return (
                                               <tr key={`${inv.id}-${index}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
+                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
+                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
+                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
                                                 <td style={{ padding: '6px 8px' }}>
                                                   <input className="input" value={item.description} onChange={e => updateInvoiceDraftItem(inv.id, index, 'description', e.target.value)} placeholder="Travaux, matériaux…" />
                                                 </td>
@@ -10848,7 +10864,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                                             );
                                           })}
                                           <tr style={{ background: '#FAFAFA' }}>
-                                            <td colSpan={5} style={{ padding: '8px 10px' }}>
+                                            <td colSpan={9} style={{ padding: '8px 10px' }}>
                                               <button type="button" className="btn-ghost text-xs" onClick={() => addInvoiceDraftItem(inv.id)}><Plus size={12}/> Ajouter une ligne</button>
                                             </td>
                                           </tr>
