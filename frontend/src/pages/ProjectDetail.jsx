@@ -3311,12 +3311,10 @@ export default function ProjectDetail() {
   const [proactiveTip, setProactiveTip] = useState(null);
   const [proactiveDismissedSections, setProactiveDismissedSections] = useState(new Set());
   const [allOperationalAlerts, setAllOperationalAlerts] = useState([]); // toutes les alertes calculées
-  const [showManualPunch, setShowManualPunch] = useState(false);
   const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', phase_name: '', work_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '', duration_hours: '', notes: '' });
-  const [quickPunch, setQuickPunch] = useState({ worker_name: '', phase_name: '', notes: '' });
-  const [startingPunch, setStartingPunch] = useState(false);
   const [stoppingPunchId, setStoppingPunchId] = useState(null);
   const [timesheetDrafts, setTimesheetDrafts] = useState({});
+  const manualPunchWorkerRef = React.useRef(null);
   const [savingTimesheetId, setSavingTimesheetId] = useState(null);
   const [ganttSnapshots, setGanttSnapshots] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`mf-gantt-snaps-${id}`) || '[]'); } catch { return []; }
@@ -3349,11 +3347,6 @@ export default function ProjectDetail() {
   useEffect(() => {
     const defaultWorker = currentUser?.name || currentUser?.email || '';
     const defaultPhase = (project?.phases || []).find((phase) => (phase?.name || '').trim())?.name || '';
-    setQuickPunch((prev) => ({
-      worker_name: prev.worker_name || defaultWorker,
-      phase_name: prev.phase_name || defaultPhase,
-      notes: prev.notes || '',
-    }));
     setManualPunchForm((prev) => ({
       worker_name: prev.worker_name || defaultWorker,
       phase_name: prev.phase_name || defaultPhase,
@@ -6001,29 +5994,11 @@ Règles :
     finally { setSavingTimesheetId(null); }
   };
 
-  const startProjectPunch = async () => {
-    const worker_name = quickPunch.worker_name.trim() || currentUser?.name || currentUser?.email || '';
-    const phase_name = quickPunch.phase_name.trim();
-    if (!worker_name || !phase_name) return;
-    setStartingPunch(true);
-    try {
-      const { data } = await tsApi.start({
-        project_id: id,
-        worker_name,
-        phase_name,
-        notes: quickPunch.notes.trim(),
-      });
-      setTimesheets(prev => [data, ...prev]);
-      setQuickPunch(prev => ({ ...prev, worker_name, notes: '' }));
-    } catch {}
-    finally { setStartingPunch(false); }
-  };
-
   const stopProjectPunch = async (timesheet) => {
     setStoppingPunchId(timesheet.id);
     try {
       const { data } = await tsApi.stop(timesheet.id, {
-        phase_name: timesheet.phase_name || quickPunch.phase_name || null,
+        phase_name: timesheet.phase_name || null,
         notes: timesheet.notes || null,
       });
       setTimesheets(prev => prev.map(t => t.id === timesheet.id ? { ...t, ...data } : t));
@@ -6063,7 +6038,6 @@ Règles :
         duration_hours: '',
         notes: '',
       });
-      setShowManualPunch(false);
     } catch {}
   };
 
@@ -6239,7 +6213,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       try { localStorage.setItem(sectionPrefKey, JSON.stringify(next)); } catch {}
       return next;
     });
-    setTimeout(() => scrollToSection('s-punch'), 40);
+    setTimeout(() => {
+      scrollToSection('s-punch');
+      manualPunchWorkerRef.current?.focus?.();
+    }, 40);
   };
   const totalPointedHours = completedTs.reduce((sum, ts) => {
     if (Number.isFinite(Number(ts.hours_total))) return sum + Number(ts.hours_total);
@@ -7277,11 +7254,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                             stopProjectPunch(myActiveTimesheet);
                             return;
                           }
-                          if (!quickPunch.worker_name.trim() || !quickPunch.phase_name.trim()) {
-                            openPunchSection();
-                            return;
-                          }
-                          startProjectPunch();
+                          openPunchSection();
                         }}
                         title={myActiveTimesheet ? 'Arrêter mon punch en cours' : 'Démarrer mon punch'}
                         style={{
@@ -7301,9 +7274,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                       >
                         {myActiveTimesheet
                           ? <Square size={16} className="text-green-700" fill="currentColor" />
-                          : startingPunch
-                            ? <Loader2 size={16} className="animate-spin text-brand" />
-                            : <Clock size={16} className="text-brand" />}
+                          : <Clock size={16} className="text-brand" />}
                         <span style={{ fontSize: 9.5, fontWeight: 800, color: myActiveTimesheet ? '#15803D' : BRAND_DARK }}>
                           {myActiveTimesheet ? 'Arrêter' : 'Punch'}
                         </span>
@@ -10650,64 +10621,18 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           background="#E9F3EC"
         >
           {sectionGuard('s-punch')}
-          <div className="bg-white rounded-2xl border border-green-100 p-3 sm:p-4 mb-4">
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <div>
-                <p className="text-sm font-bold text-gray-900">Pointer directement dans le projet</p>
-                <p className="text-xs text-gray-400">Démarrer et arrêter un punch ici, avec le moins de clic possible.</p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="px-3 py-2 rounded-xl bg-green-50 min-w-[96px] text-center">
-                  <p className="text-lg font-bold text-green-700">{activeTs.length}</p>
-                  <p className="text-[11px] text-green-700/80">En cours</p>
-                </div>
-                <div className="px-3 py-2 rounded-xl bg-gray-50 min-w-[96px] text-center">
-                  <p className="text-lg font-bold text-gray-900">{totalPointedHours.toFixed(1)}h</p>
-                  <p className="text-[11px] text-gray-500">Total pointé</p>
-                </div>
-                <div className="px-3 py-2 rounded-xl bg-amber-50 min-w-[96px] text-center">
-                  <p className="text-lg font-bold text-amber-700">{pendingApprovalTs.length}</p>
-                  <p className="text-[11px] text-amber-700/80">À approuver</p>
-                </div>
-              </div>
+          <div className="flex items-center gap-2 flex-wrap mb-4">
+            <div className="px-3 py-2 rounded-xl bg-green-50 min-w-[96px] text-center">
+              <p className="text-lg font-bold text-green-700">{activeTs.length}</p>
+              <p className="text-[11px] text-green-700/80">En cours</p>
             </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1.6fr_auto] gap-2">
-              <input
-                className="input"
-                placeholder="Travailleur"
-                value={quickPunch.worker_name}
-                onChange={(e) => setQuickPunch((prev) => ({ ...prev, worker_name: e.target.value }))}
-              />
-              <select
-                className="input"
-                value={quickPunch.phase_name}
-                onChange={(e) => setQuickPunch((prev) => ({ ...prev, phase_name: e.target.value }))}
-              >
-                <option value="">Choisir une phase…</option>
-                {(project.phases || []).map((phase) => (
-                  <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
-                ))}
-              </select>
-              <input
-                className="input"
-                placeholder="Note rapide optionnelle"
-                value={quickPunch.notes}
-                onChange={(e) => setQuickPunch((prev) => ({ ...prev, notes: e.target.value }))}
-              />
-              <button
-                className="btn-primary justify-center min-w-[140px]"
-                onClick={startProjectPunch}
-                disabled={startingPunch || !quickPunch.worker_name.trim() || !quickPunch.phase_name.trim()}
-              >
-                {startingPunch ? <Loader2 size={15} className="animate-spin" /> : <Clock size={15} />}
-                Démarrer
-              </button>
+            <div className="px-3 py-2 rounded-xl bg-gray-50 min-w-[96px] text-center">
+              <p className="text-lg font-bold text-gray-900">{totalPointedHours.toFixed(1)}h</p>
+              <p className="text-[11px] text-gray-500">Total pointé</p>
             </div>
-            <div className="flex justify-end mt-2">
-              <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => setShowManualPunch((prev) => !prev)}>
-                {showManualPunch ? 'Masquer la ligne manuelle' : 'Ajouter un timelog oublié'}
-              </button>
+            <div className="px-3 py-2 rounded-xl bg-amber-50 min-w-[96px] text-center">
+              <p className="text-lg font-bold text-amber-700">{pendingApprovalTs.length}</p>
+              <p className="text-[11px] text-amber-700/80">À approuver</p>
             </div>
           </div>
           <div style={{ border: '1px solid #DCEFE2', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
@@ -10747,48 +10672,58 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   </tr>
                 </thead>
                 <tbody>
-                  {showManualPunch && (
-                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #DCEFE2' }}>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={manualPunchForm.worker_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, worker_name: e.target.value }))} placeholder="Travailleur" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <select className="input" value={manualPunchForm.phase_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, phase_name: e.target.value }))}>
-                          <option value="">Choisir une phase…</option>
-                          {(project.phases || []).map((phase) => (
-                            <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={manualPunchForm.notes} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Note rapide" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" type="date" value={manualPunchForm.work_date} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, work_date: e.target.value }))} />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" type="time" value={manualPunchForm.start_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, start_time: e.target.value }))} />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <div className="flex items-center gap-2">
-                          <input className="input" type="time" value={manualPunchForm.end_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, end_time: e.target.value }))} />
-                          <span className="text-[10px] text-gray-400">ou</span>
-                          <input className="input text-right" type="number" min="0" step="0.25" value={manualPunchForm.duration_hours} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, duration_hours: e.target.value }))} placeholder="h" />
-                        </div>
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                        {manualPunchForm.duration_hours ? `${manualPunchForm.duration_hours}h` : '—'}
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                        <div className="flex items-center justify-center gap-2">
-                          <button className="btn-secondary text-xs" onClick={() => setShowManualPunch(false)}>Annuler</button>
-                          <button className="btn-primary text-xs" onClick={addManualPunch} disabled={!manualPunchForm.worker_name.trim() || !manualPunchForm.phase_name.trim() || !manualPunchForm.work_date || !manualPunchForm.start_time || (!manualPunchForm.end_time && !manualPunchForm.duration_hours)}>
-                            Ajouter
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #DCEFE2' }}>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input ref={manualPunchWorkerRef} className="input" value={manualPunchForm.worker_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, worker_name: e.target.value }))} placeholder="Travailleur" />
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <select className="input" value={manualPunchForm.phase_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, phase_name: e.target.value }))}>
+                        <option value="">Choisir une phase…</option>
+                        {(project.phases || []).map((phase) => (
+                          <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" value={manualPunchForm.notes} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Note rapide" />
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" type="date" value={manualPunchForm.work_date} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, work_date: e.target.value }))} />
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" type="time" value={manualPunchForm.start_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, start_time: e.target.value }))} />
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <div className="flex items-center gap-2">
+                        <input className="input" type="time" value={manualPunchForm.end_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, end_time: e.target.value }))} />
+                        <span className="text-[10px] text-gray-400">ou</span>
+                        <input className="input text-right" type="number" min="0" step="0.25" value={manualPunchForm.duration_hours} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, duration_hours: e.target.value }))} placeholder="h" />
+                      </div>
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                      {manualPunchForm.duration_hours ? `${manualPunchForm.duration_hours}h` : '—'}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          className="btn-secondary text-xs"
+                          onClick={() => setManualPunchForm((prev) => ({
+                            ...prev,
+                            work_date: new Date().toISOString().slice(0, 10),
+                            start_time: '08:00',
+                            end_time: '',
+                            duration_hours: '',
+                            notes: '',
+                          }))}
+                        >
+                          Vider
+                        </button>
+                        <button className="btn-primary text-xs" onClick={addManualPunch} disabled={!manualPunchForm.worker_name.trim() || !manualPunchForm.phase_name.trim() || !manualPunchForm.work_date || !manualPunchForm.start_time || (!manualPunchForm.end_time && !manualPunchForm.duration_hours)}>
+                          Ajouter
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                   {(timesheets || []).map((ts) => {
                     const draft = timesheetDrafts[ts.id] || {
                       worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
