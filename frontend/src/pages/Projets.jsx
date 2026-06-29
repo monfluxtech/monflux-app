@@ -525,10 +525,10 @@ function CalendarView({ projects, stageMap }) {
                 {weekDays.map((d, i) => {
                   const evts = projectsOnDay(d);
                   return (
-                    <div key={i} style={{ minHeight: 64, borderLeft: '1px solid #F0F2F4', padding: '4px 3px', background: period.bg }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {evts.slice(0, 2).map(p => <ProjectChip key={p.id} p={p}/>)}
-                        {evts.length > 2 && <span style={{ fontSize: 8, color: '#9CA3AF', paddingLeft: 2 }}>+{evts.length - 2}</span>}
+                    <div key={i} style={{ minHeight: 108, borderLeft: '1px solid #F0F2F4', padding: '6px 4px', background: period.bg }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {evts.slice(0, 1).map(p => <ProjectChip key={p.id} p={p} size="md"/>)}
+                        {evts.length > 1 && <span style={{ fontSize: 8, color: '#9CA3AF', paddingLeft: 2 }}>+{evts.length - 1}</span>}
                       </div>
                     </div>
                   );

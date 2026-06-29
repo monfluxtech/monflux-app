@@ -843,6 +843,9 @@ const STATUS_FILL    = { not_started:'#D1D5DB', in_progress:BRAND, completed:'#2
 const PUNCH_COLOR    = '#60A5FA'; // bleu — distingue le réel (punch) du prévu (statut)
 const STATUS_LABELS  = { not_started:'Non démarré', in_progress:'En cours', completed:'Terminé', delayed:'En retard', on_hold:'En attente client', waiting_supplier:'En attente fournisseur', cancelled:'Annulé' };
 const SCALE_COL_W    = { month:120, week:72, day:36, halfday:56, hour:32 };
+const CLOSED_PHASE_STATUSES = new Set(['completed', 'cancelled']);
+const isClosedPhase = (phase) => CLOSED_PHASE_STATUSES.has(phase?.status) || Number(phase?.progress_pct) >= 100;
+const getActiveProjectPhases = (project) => (project?.phases || []).filter((phase) => !isClosedPhase(phase));
 
 function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, onEditPhase, onReorderPhases, onRenamePhase, onDatesChange, onAddPhase, onUpdatePhase, currentUserName, onSelfAssign }) {
   const [scale, setScale]         = useState('day');
@@ -3612,6 +3615,7 @@ export default function ProjectDetail() {
     const todayMs = Date.now();
     const alerts = [];
     const phases = project.phases || [];
+    const activePhases = phases.filter((ph) => !isClosedPhase(ph));
 
     // 1. Retard calendrier : Gantt dépasse date annoncée
     const phaseEndMs = phases.map(ph => ph.end_date ? new Date(ph.end_date.slice(0,10)+'T00:00').getTime() : null).filter(Boolean);
@@ -3630,7 +3634,7 @@ export default function ProjectDetail() {
     }
 
     // 2. Ressources manquantes dans les 30 prochains jours
-    const phasesNoResource = phases.filter(ph => {
+    const phasesNoResource = activePhases.filter(ph => {
       if (!ph.start_date) return false;
       const startMs = new Date(ph.start_date.slice(0,10)+'T00:00').getTime();
       if (startMs < todayMs || startMs > todayMs + 30 * 86400000) return false;
@@ -3790,7 +3794,7 @@ export default function ProjectDetail() {
       const { url: planUrl } = await upRes.json();
       // Analyse via Flo
       const fa = project.field_assessment || {};
-      const tradesCtx = (project.phases || []).map(p => p.trade_name || p.name).filter(Boolean).join(', ');
+      const tradesCtx = getActiveProjectPhases(project).map(p => p.trade_name || p.name).filter(Boolean).join(', ');
       const prompt = `Tu es Florence, IA MONFLUX experte en lecture de plans de construction au Québec.
 Projet : ${project.description || project.name}
 Adresse : ${project.address || 'N/A'}
@@ -3899,6 +3903,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       // Par défaut : Home Depot + Rona
       const suppliers = supplierKeys.length ? supplierKeys : ['homedepot', 'rona'];
 
+      const activePhases = getActiveProjectPhases(project);
       const res = await fetch(`${BASE}/scrape/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -3908,7 +3913,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
           project_context: {
             description: project.description || project.name,
             field_assessment: fa,
-            phases: project.phases || [],
+            phases: activePhases,
           },
           max_per_supplier: 8,
         }),
@@ -4706,12 +4711,13 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
   const fetchTradeRecos = async (mergeMode) => {
     const pParsePers = (arr) => (arr || []).map(p => typeof p === 'string' ? { name: p } : p);
     // Corps de métier explicites (trade_name) + fallback sur noms de phases + entrées manuelles
+    const activePhases = getActiveProjectPhases(project);
     const explicitTrades = [...new Set([
-      ...(project.phases || []).map(p => p.trade_name).filter(Boolean),
+      ...activePhases.map(p => p.trade_name).filter(Boolean),
       ...(project.trades || []).map(t => t.trade).filter(Boolean),
       ...Object.keys(tradeResourcesMap),
     ])].filter(Boolean);
-    const phaseNames = (project.phases || []).map(p => p.name).filter(Boolean);
+    const phaseNames = activePhases.map(p => p.name).filter(Boolean);
     // Si aucun trade_name mais des phases existent → Flo inférera les corps de métier
     if (!explicitTrades.length && !phaseNames.length) {
       setTradeRecos({});
@@ -7052,6 +7058,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
         // ── Calendrier réel depuis le Gantt ──
         const allPhases = project.phases || [];
+        const activePhases = allPhases.filter((ph) => !isClosedPhase(ph));
         const phaseStartDates = allPhases.map(ph => ph.start_date ? new Date(ph.start_date.slice(0,10)+'T00:00') : null).filter(Boolean);
         const phaseEndDates = allPhases.map(ph => ph.end_date ? new Date(ph.end_date.slice(0,10)+'T00:00') : null).filter(Boolean);
         const ganttStart = phaseStartDates.length > 0 ? new Date(Math.min(...phaseStartDates.map(d => d.getTime()))) : null;
@@ -7064,7 +7071,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         // ── Alertes Flo héro ──
         const today = new Date(); today.setHours(0,0,0,0);
         const in14days = new Date(today.getTime() + 14 * 86400000);
-        const upcomingInternalPhases = allPhases.filter(ph => {
+        const upcomingInternalPhases = activePhases.filter(ph => {
           if (!ph.start_date) return false;
           const d = new Date(ph.start_date.slice(0,10)+'T00:00');
           if (d < today || d > in14days) return false;
