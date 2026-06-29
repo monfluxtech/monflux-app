@@ -7,6 +7,9 @@ import Layout from '../components/Layout';
 import ProjectSection from '../components/project/ProjectSection';
 import ProjectChangeOrdersSection from '../components/project/project-detail/sections/ProjectChangeOrdersSection';
 import ProjectDenonciationsSection from '../components/project/project-detail/sections/ProjectDenonciationsSection';
+import ProjectEstimationSection from '../components/project/project-detail/sections/ProjectEstimationSection';
+import ProjectTeamSection from '../components/project/project-detail/sections/ProjectTeamSection';
+import ProjectQuoteSection from '../components/project/project-detail/sections/ProjectQuoteSection';
 import ProjectDescriptionSection from '../components/project/project-detail/sections/ProjectDescriptionSection';
 import ProjectExpensesSection from '../components/project/project-detail/sections/ProjectExpensesSection';
 import ProjectInvoicesSection from '../components/project/project-detail/sections/ProjectInvoicesSection';
@@ -7760,7 +7763,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         />
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
-        {/* ── Estimation approximative ── */}
         {(() => {
           const fa = project.field_assessment || {};
           const visiteAnswers = fa.visite_answers || {};
@@ -7798,599 +7800,60 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           const totalVente = approxLines.reduce((s, l) => s + (Number(l.prix_vente) || 0), 0);
           const totalMarkup = totalCout > 0 ? Math.round((totalVente - totalCout) / totalCout * 100) : 0;
 
-          /* Questions pertinentes = universelles + celles du type de travaux */
           const typeQs = VISITE_QUESTIONS_BY_TYPE[workTypeVal] || [];
           const allVisiteQs = [...VISITE_QUESTIONS_UNIVERSAL, ...typeQs];
-
           const visiteAnswered = Object.keys(visiteAnswers).length;
 
           return (
-            <ProjectSection
-              sectionId="s-estimation"
-              icon="📊"
-              title="Estimation approximative"
-              summary={sectionSummaries['s-estimation']?.summary}
-              stats={sectionSummaries['s-estimation']?.stats}
-              expanded={!!sectionExpanded['s-estimation']}
-              onToggle={() => toggleProjectSection('s-estimation')}
-              background="#E9F3EC"
-              bodyStyle={{ opacity: salesLocked ? 0.7 : 1, pointerEvents: salesLocked ? 'none' : 'auto' }}
-            >
-              {sectionGuard('s-estimation')}
-
-              {/* Bannière profil métier */}
-              <div style={{ padding: '10px 16px', background: 'rgba(232,121,78,.08)', border: '1px solid rgba(232,121,78,.2)', borderRadius: 10, marginBottom: 20, fontSize: 13, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Sparkles size={14} color={BRAND}/>
-                <span>Adapté à ton profil :</span>
-                <b style={{ color: BRAND }}>Entrepreneur général</b>
-              </div>
-
-              {/* Onglets — 2 niveaux */}
-              <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {/* Rangée haute : Message client + Visite sur place */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
-                  {[
-                    { k: 'voieB', label: '💬 Message client' },
-                    { k: 'voieC', label: '🏗 Visite sur place' },
-                  ].map(({ k, label }) => (
-                    <button key={k} type="button" onClick={() => setEstimTab(k)}
-                      style={{ border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
-                        background: estimTab === k ? '#fff' : 'transparent',
-                        color: estimTab === k ? BRAND_DARK : '#7C8089',
-                        boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
-                      }}>{label}</button>
-                  ))}
-                </div>
-                {/* Rangée basse : Recherche IA Florence */}
-                <div style={{ background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, border: '1px solid rgba(0,0,0,.06)' }}>
-                  <button type="button" onClick={() => setEstimTab('voieA')}
-                    style={{ width: '100%', border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                      background: estimTab === 'voieA' ? '#fff' : 'transparent',
-                      color: estimTab === 'voieA' ? BRAND_DARK : '#7C8089',
-                      boxShadow: estimTab === 'voieA' ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
-                    }}>
-                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Estimation approximative
-                  </button>
-                </div>
-              </div>
-
-              {/* ── Voie A — Tableau d'estimation + IA ── */}
-              {estimTab === 'voieA' && (
-                <div>
-                  <div style={{ background: 'rgba(255,255,255,.9)', borderRadius: 12, border: '1px solid #E8EAED', overflow: 'auto' }}>
-                    {/* Entêtes tableau */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, background: '#F8FAFB', borderBottom: '1px solid #E8EAED', padding: '8px 14px', minWidth: 700 }}>
-                      {['POSTE','SOURCE','INCLUS','NON INCLUS','DURÉE','COÛT','PRIX VENTE','MARKUP',''].map((h, i) => (
-                        <span key={i} style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#9CA3AF', textTransform: 'uppercase' }}>{h}</span>
-                      ))}
-                    </div>
-
-                    {approxLines.length === 0 && (
-                      <div style={{ padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, background: 'rgba(248,250,251,.6)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#fff', borderRadius: 11, border: `1px solid rgba(232,121,78,.25)`, width: '100%', maxWidth: 520, boxSizing: 'border-box' }}>
-                          <Sparkles size={16} color={BRAND}/>
-                          <div style={{ flex: 1 }}>
-                            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Laisser Florence remplir automatiquement</p>
-                            <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>Florence analyse les projets similaires et les prix Rona, Canac, Home Dépôt, BMR.</p>
-                          </div>
-                          <button className="btn-primary text-xs" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={searchMaterialPrices} disabled={searchingPrices}>
-                            {searchingPrices ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                            {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
-                          </button>
-                        </div>
-                        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>— ou —</p>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={addLine} style={{ background: '#fff', border: '1px solid #E0E4E8', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: BRAND, fontWeight: 700, padding: '7px 14px' }}>+ Ajouter une ligne vide</button>
-                          {hasSuggested && (
-                            <button onClick={addSuggestedLines} style={{ background: BRAND, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#fff', fontWeight: 700, padding: '7px 14px' }}>
-                              ✦ Lignes types — {workTypeVal || 'projet'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {approxLines.map(line => {
-                      const markup = (Number(line.cout) > 0 && Number(line.prix_vente) > 0)
-                        ? Math.round((Number(line.prix_vente) - Number(line.cout)) / Number(line.cout) * 100) : null;
-                      return (
-                        <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, borderBottom: '1px solid #F4F5F6', padding: '5px 14px', alignItems: 'center', minWidth: 700 }}>
-                          {[
-                            { field:'poste', ph:'Démolition…' },
-                            { field:'source', ph:'Historique / fournisseur' },
-                            { field:'inclus', ph:'Ce qui est inclus' },
-                            { field:'non_inclus', ph:'Non inclus' },
-                            { field:'duree', ph:'3 j' },
-                            { field:'cout', ph:'0', t:'number' },
-                            { field:'prix_vente', ph:'0', t:'number' },
-                          ].map(({ field, ph, t }) => (
-                            <input key={field} type={t||'text'} value={line[field]||''} onChange={e=>updateLine(line.id,field,e.target.value)} placeholder={ph}
-                              style={{ border:'none', background:'transparent', fontSize:12.5, color:'#15171C', padding:'3px 4px 3px 0', outline:'none', width:'100%', minWidth:0, fontFamily:'inherit' }}/>
-                          ))}
-                          <span style={{ fontSize:11.5, fontWeight:700, color: markup > 0 ? '#16a34a' : '#9CA3AF' }}>{markup !== null ? `+${markup}%` : '—'}</span>
-                          <button onClick={() => removeLine(line.id)} style={{ border:'none', background:'none', cursor:'pointer', color:'#C8CACD', padding:0, display:'flex', alignItems:'center' }}><X size={13}/></button>
-                        </div>
-                      );
-                    })}
-
-                    {/* Ligne total */}
-                    {approxLines.length > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, padding: '10px 14px', background: '#F8FAFB', borderTop: '2px solid #E0E4E8', alignItems: 'center', minWidth: 700 }}>
-                        <span style={{ fontSize:12, fontWeight:800, color:'#15171C', gridColumn:'1/6' }}>TOTAL · Fourchette : {money(Math.round(totalVente * 0.87))} – {money(Math.round(totalVente * 1.13))}</span>
-                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalCout)}</span>
-                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalVente)}</span>
-                        <span style={{ fontSize:12, fontWeight:800, color: totalMarkup > 0 ? '#16a34a' : '#9CA3AF' }}>+{totalMarkup}%</span>
-                        <span/>
-                      </div>
-                    )}
-
-                    {/* Footer tableau */}
-                    {approxLines.length > 0 && (
-                      <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
-                          + Ajouter une ligne
-                        </button>
-                        {hasSuggested && (
-                          <button onClick={addSuggestedLines} style={{ background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
-                            ✦ Lignes types {workTypeVal ? `— ${workTypeVal}` : ''}
-                          </button>
-                        )}
-                        <button onClick={searchMaterialPrices} disabled={searchingPrices} style={{ marginLeft:'auto', background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
-                          {searchingPrices ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                          {searchingPrices ? 'Florence analyse…' : 'Demander à Florence'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {searchingPrices && (
-                    <div style={{ marginTop:10, padding:'12px 16px', background:'rgba(232,121,78,.06)', borderRadius:10, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:10, fontSize:12.5, color:BRAND }}>
-                      <Loader2 size={14} className="animate-spin"/>
-                      Florence recherche les prix du marché québécois…
-                    </div>
-                  )}
-                  {aiPriceResult && (
-                    <div style={{ marginTop:12, background:'#fff', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden', fontSize:12.5 }}>
-
-                      {/* Note de Florence */}
-                      {aiPriceResult.comments && (
-                        <div style={{ padding:'12px 18px', color:'#3A3D44', lineHeight:1.65, borderBottom:'1px solid #F0F2F4' }}>
-                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:5 }}>Note de Florence</span>
-                          {aiPriceResult.comments}
-                        </div>
-                      )}
-
-                      {/* Tableau 3 scénarios */}
-                      {aiPriceResult.scenarios?.length > 0 && (
-                        <div style={{ borderBottom:'1px solid #F0F2F4' }}>
-                          <div style={{ padding:'10px 18px 6px', display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF' }}>3 scénarios de prix</span>
-                          </div>
-                          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                            <thead>
-                              <tr style={{ background:'#F8FAFB', borderBottom:'1px solid #E8EAED' }}>
-                                {['Scénario','Description','Coût de revient','Prix de vente','Marge'].map(h => (
-                                  <th key={h} style={{ padding:'7px 14px', fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {aiPriceResult.scenarios.map((s, i) => {
-                                const marge = s.cout > 0 ? Math.round((s.prix_vente - s.cout) / s.cout * 100) : 0;
-                                const rowBg = i === 1 ? 'rgba(232,121,78,.04)' : '#fff';
-                                const nomColor = i === 0 ? '#6B7280' : i === 1 ? BRAND : '#7C3AED';
-                                return (
-                                  <tr key={s.nom} style={{ background: rowBg, borderBottom:'1px solid #F4F5F6' }}>
-                                    <td style={{ padding:'9px 14px', fontWeight:800, color: nomColor, whiteSpace:'nowrap' }}>{s.nom}</td>
-                                    <td style={{ padding:'9px 14px', color:'#4B5563', lineHeight:1.4 }}>{s.description}</td>
-                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.cout)}</td>
-                                    <td style={{ padding:'9px 14px', fontWeight:800, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.prix_vente)}</td>
-                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#16a34a', whiteSpace:'nowrap' }}>+{marge}%</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-
-                      {/* Sources cliquables (URLs construites côté client) */}
-                      {aiPriceResult.sources?.length > 0 && (
-                        <div style={{ padding:'10px 18px 12px' }}>
-                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:7 }}>Références de prix</span>
-                          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                            {aiPriceResult.sources.map((s, i) => (
-                              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                                style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'4px 11px', background:'rgba(232,121,78,.07)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.22)`, display:'inline-flex', alignItems:'center', gap:5, transition:'background .15s' }}
-                                onMouseEnter={e => e.currentTarget.style.background='rgba(232,121,78,.15)'}
-                                onMouseLeave={e => e.currentTarget.style.background='rgba(232,121,78,.07)'}>
-                                🔗 {s.label} <span style={{ fontWeight:400, color:'#9CA3AF', fontSize:10.5 }}>· {s.fournisseur}</span>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Étape 1 — Message client + calculateur au pi²/m² ── */}
-              {estimTab === 'voieB' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-                  {/* Message prérempli */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
-                    <textarea ref={clientMsgRef}
-                      key={project.client_name + '|' + project.portal_token}
-                      style={{ width:'100%', minHeight:240, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
-                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
-                    />
-                    <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
-                      <button className="btn-secondary text-xs"
-                        onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(clientMsgRef.current?.value || ''); }}>
-                        {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
-                      </button>
-                      <button className="btn-secondary text-xs"
-                        onClick={() => { const body = encodeURIComponent(clientMsgRef.current?.value || ''); window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent('Demande d\'informations — ' + project.name)}&body=${body}`,'_blank'); }}
-                        disabled={!project.client_email}>
-                        ✉️ Envoyer par courriel
-                      </button>
-                      <button className="btn-secondary text-xs"
-                        onClick={() => window.open(`sms:${project.client_phone?.replace(/\D/g,'')}?body=${encodeURIComponent(clientMsgRef.current?.value||'')}`, '_blank')}
-                        disabled={!project.client_phone}>
-                        📱 Par SMS
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Checklist photos */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                    <p style={{ fontSize:12.5, fontWeight:800, color:'#15171C', margin:'0 0 12px', display:'flex', alignItems:'center', gap:8 }}>📷 CHECKLIST PHOTOS DEMANDÉES</p>
-                    {['Ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, WC)', 'Panneau électrique ouvert', 'Sous-sol ou vide sanitaire', 'Toiture / gouttières (de l\'extérieur)'].map((item, i) => (
-                      <label key={i} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#3A3D44', marginBottom:8, cursor:'pointer' }}>
-                        <input type="checkbox" style={{ accentColor:BRAND, width:15, height:15 }}/> {item}
-                      </label>
-                    ))}
-                  </div>
-
-                  {/* Calculateur au pi²/m² */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
-                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
-                      📐 Calculateur de prix approximatif
-                    </p>
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
-                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
-                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
-                            <button key={u} onClick={() => setSqUnit(u)}
-                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
-                                background: sqUnit===u ? '#fff' : 'transparent', color: sqUnit===u ? '#15171C' : '#9CA3AF',
-                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
-                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
-                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
-                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
-                        </div>
-                      </div>
-                      <div>
-                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
-                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
-                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
-                      </div>
-                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
-                        const base = Number(sqRate) * Number(sqArea);
-                        return (
-                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
-                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
-                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{money(Math.round(base))}</p>
-                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {money(Math.round(base*.85))} – {money(Math.round(base*1.15))}</p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Étape 3 — Visite sur place ── */}
-              {estimTab === 'voieC' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-
-                  {/* Question 1 — Corps de métier (multi-select) */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>1</span>
-                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Quels corps de métier sont impliqués ?</p>
-                    </div>
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
-                      {ALL_TRADES.map(t => {
-                        const isSelected = selectedTrades.includes(t.key);
-                        return (
-                          <button key={t.key} type="button"
-                            onClick={() => saveTrades(isSelected ? selectedTrades.filter(k=>k!==t.key) : [...selectedTrades, t.key])}
-                            style={{ padding:'6px 13px', borderRadius:20, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
-                              background: isSelected ? BRAND : '#fff',
-                              borderColor: isSelected ? BRAND : '#E0E4E8',
-                              color: isSelected ? '#fff' : '#3A3D44' }}>
-                            {t.emoji} {t.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Questions universelles + spécifiques au type de travaux */}
-                  {allVisiteQs.map((q, qi) => {
-                    const curVal = visiteAnswers[q.id] || null;
-                    const isAutre = curVal && !q.opts.includes(curVal);
-                    return (
-                      <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                          <span style={{ width:24, height:24, borderRadius:8, background: curVal ? '#DCFCE7' : `${BRAND}22`, color: curVal ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
-                            {curVal ? '✓' : qi + 2}
-                          </span>
-                          <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
-                        </div>
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
-                          {q.opts.map(opt => (
-                            <button key={opt} type="button"
-                              onClick={() => saveVisite({ [q.id]: curVal === opt ? null : opt })}
-                              style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
-                                background: curVal === opt ? BRAND : '#fff',
-                                borderColor: curVal === opt ? BRAND : '#E0E4E8',
-                                color: curVal === opt ? '#fff' : '#3A3D44' }}>
-                              {opt}
-                            </button>
-                          ))}
-                          {/* Option Autre */}
-                          <button type="button"
-                            onClick={() => {
-                              if (isAutre) { saveVisite({ [q.id]: null }); setAutreTexts(t => ({ ...t, [q.id]: '' })); }
-                              else { setAutreTexts(t => ({ ...t, [q.id]: '' })); saveVisite({ [q.id]: 'Autre' }); }
-                            }}
-                            style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
-                              background: isAutre ? BRAND : '#fff',
-                              borderColor: isAutre ? BRAND : '#E0E4E8',
-                              color: isAutre ? '#fff' : '#3A3D44' }}>
-                            Autre
-                          </button>
-                        </div>
-                        {/* Texte libre si Autre sélectionné */}
-                        {(isAutre || curVal === 'Autre') && (
-                          <div style={{ marginTop:8, display:'flex', gap:6 }}>
-                            <input
-                              autoFocus
-                              value={isAutre && curVal !== 'Autre' ? curVal : (autreTexts[q.id] || '')}
-                              onChange={e => setAutreTexts(t => ({ ...t, [q.id]: e.target.value }))}
-                              onBlur={e => { if (e.target.value.trim()) saveVisite({ [q.id]: e.target.value.trim() }); }}
-                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { saveVisite({ [q.id]: e.target.value.trim() }); e.target.blur(); } }}
-                              placeholder="Précisez…"
-                              style={{ flex:1, padding:'6px 10px', border:'1px solid #E0E4E8', borderRadius:8, fontSize:12.5, fontFamily:'inherit', outline:'none' }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Superficie + observations */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>{allVisiteQs.length + 2}</span>
-                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Superficie totale à rénover</p>
-                    </div>
-                    <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:12 }}>
-                      <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth:130 }}
-                        value={visiteAnswers.area || ''} onChange={e => saveVisite({ area: e.target.value })}/>
-                      <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2 }}>
-                        {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
-                          <button key={u} onClick={() => saveVisite({ area_unit: u })}
-                            style={{ border:'none', borderRadius:6, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
-                              background: (visiteAnswers.area_unit||'sqft')===u ? '#fff' : 'transparent',
-                              color: (visiteAnswers.area_unit||'sqft')===u ? '#15171C' : '#9CA3AF',
-                              boxShadow: (visiteAnswers.area_unit||'sqft')===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
-                            {lbl}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:'0 0 6px' }}>Observations sur place</p>
-                    <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
-                      value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
-                  </div>
-
-                  {/* Photos & documents sur place — scroll horizontal */}
-                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                      <span style={{ width:24, height:24, borderRadius:8, background: media.length ? '#DCFCE7' : `${BRAND}22`, color: media.length ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
-                        {media.length ? '✓' : <Camera size={13}/>}
-                      </span>
-                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Photos & documents sur place</p>
-                      <button onClick={() => setShowCapture(true)}
-                        style={{ marginLeft:'auto', fontSize:11.5, fontWeight:700, color:BRAND, background:'rgba(232,121,78,.08)', border:`1px solid rgba(232,121,78,.25)`, borderRadius:20, padding:'3px 11px', cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
-                        <Camera size={11}/> Ajouter
-                      </button>
-                    </div>
-                    <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
-                      {media.map(m => (
-                        <div key={m.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
-                          onClick={() => setLightboxItem(m)}>
-                          {m.type==='photo' && m.url
-                            ? <img src={m.url} alt={m.caption||''} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-                            : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:28 }}>{m.type==='video'?'▶':'📌'}</div>}
-                          {m.caption && <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,.55)', color:'#fff', fontSize:9.5, padding:'3px 6px', textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap' }}>{m.caption}</div>}
-                        </div>
-                      ))}
-                      {(project.documents || []).map(d => (
-                        <div key={d.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F8FAFB', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', padding:8, boxSizing:'border-box' }}
-                          onClick={() => setLightboxItem({ ...d, type:'doc' })}>
-                          <span style={{ fontSize:28 }}>📄</span>
-                          <span style={{ fontSize:9.5, color:'#4B5563', textAlign:'center', lineHeight:1.3, overflow:'hidden', maxWidth:'100%', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name||d.filename||'Document'}</span>
-                        </div>
-                      ))}
-                      <div style={{ flexShrink:0, width:90, height:90, borderRadius:10, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
-                        onClick={() => setShowCapture(true)}>
-                        <span style={{ fontSize:22 }}>+</span>
-                        <span style={{ fontSize:10, fontWeight:700 }}>Ajouter</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Barre de progression + action */}
-                  {visiteAnswered > 0 && (
-                    <div style={{ padding:'12px 16px', background:'#E9F8EE', borderRadius:10, display:'flex', alignItems:'center', gap:12 }}>
-                      <span style={{ fontSize:20 }}>✅</span>
-                      <div style={{ flex:1 }}>
-                        <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>{visiteAnswered} élément{visiteAnswered>1?'s':''} renseigné{visiteAnswered>1?'s':''}</p>
-                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à l'Étape 2 pour générer l'estimation avec ces données.</p>
-                      </div>
-                      <button className="btn-primary text-xs" onClick={() => setEstimTab('voieA')}>
-                        <Sparkles size={13}/> Générer l'estimation
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Envoyer l'estimation au client ── */}
-              <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                    <Send size={16} color={BRAND}/>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
-                    <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Message personnalisé — se met à jour automatiquement avec les données du projet.</p>
-                  </div>
-                  <button onClick={() => { userEditedEstimMsg.current = false; setEstimMsg(buildEstimMsg(project, aiPriceResult)); }}
-                    style={{ fontSize: 11.5, fontWeight: 700, color: '#7C8089', background: '#F4F5F6', border: 'none', borderRadius: 8, padding: '5px 11px', cursor: 'pointer', flexShrink: 0 }}>
-                    ↺ Regénérer
-                  </button>
-                </div>
-
-                {/* Zone de message éditable */}
-                <textarea ref={estimMsgRef} value={estimMsg}
-                  onChange={e => { userEditedEstimMsg.current = true; setEstimMsg(e.target.value); }}
-                  placeholder="Le message se génère automatiquement dès que des informations sont disponibles sur le projet…"
-                  style={{ width: '100%', minHeight: 200, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.75, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
-
-                {/* Photos de projets similaires */}
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    {estimInspoPhotos.map((url, i) => (
-                      <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
-                        onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
-                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                        <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
-                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                          <X size={10} color="#fff"/>
-                        </button>
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
-                        placeholder="URL d'une photo…"
-                        style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
-                      <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
-                        style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                        + Ajouter
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3 boutons d'envoi */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-                  <button onClick={() => {
-                    navigator.clipboard.writeText(estimMsg).then(() => { setEstimMsgCopied(true); setTimeout(() => setEstimMsgCopied(false), 2000); });
-                  }}
-                    style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${estimMsgCopied ? '#16a34a' : '#E0E4E8'}`, background: estimMsgCopied ? '#DCFCE7' : '#fff', fontSize: 12.5, fontWeight: 700, color: estimMsgCopied ? '#16a34a' : '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {estimMsgCopied ? '✓ Copié !' : '⎘ Copier le message'}
-                  </button>
-                  <button
-                    onClick={() => window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(estimMsg)}`,'_blank')}
-                    disabled={!project.client_email}
-                    title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
-                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    ✉️ Envoyer par courriel
-                  </button>
-                  <button
-                    onClick={() => window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(estimMsg)}`,'_blank')}
-                    disabled={!project.client_phone}
-                    title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
-                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    📱 Par SMS
-                  </button>
-                </div>
-
-                {/* Relances automatiques */}
-                <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: 0 }}>Relances automatiques</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-                    <div>
-                      <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Nombre de relances</p>
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {[0,1,2,3,4,5,6,7].map(n => (
-                          <button key={n} onClick={() => { setRelanceCount(n); saveAssessmentField('relances_count', n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
-                            style={{ width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {relanceCount > 0 && (
-                      <div>
-                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Fréquence</p>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          {[[2,'2 j'],[3,'3 j'],[5,'5 j'],[7,'1 sem.'],[14,'2 sem.'],[30,'1 mois']].map(([v,l]) => (
-                            <button key={v} onClick={() => { setRelanceFrequency(v); saveAssessmentField('relances_freq', v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
-                              style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${relanceFrequency === v ? BRAND : '#E0E4E8'}`, background: relanceFrequency === v ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceFrequency === v ? BRAND : '#7C8089', cursor: 'pointer' }}>
-                              {l}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {relanceCount > 0 && (
-                      <div>
-                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Méthode(s)</p>
-                        <div style={{ display: 'flex', gap: 5 }}>
-                          {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
-                            <button key={k} onClick={() => {
-                              const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
-                              setRelanceMethods(next);
-                              saveAssessmentField('relances_methods', next);
-                              localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
-                            }}
-                              style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
-                              {l}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {relanceCount > 0 && relanceMethods.length > 0 && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 14px', borderRadius: 9, background: '#DCFCE7', border: '1px solid #16a34a33' }}>
-                      <CheckCircle size={13} color="#16a34a"/>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#16a34a' }}>
-                        {relanceCount} relance{relanceCount > 1 ? 's' : ''} · toutes les {relanceFrequency <= 6 ? `${relanceFrequency} jours` : relanceFrequency <= 13 ? '1 semaine' : relanceFrequency <= 27 ? '2 semaines' : '1 mois'} · {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </ProjectSection>
+            <ProjectEstimationSection
+              sectionSummaries={sectionSummaries}
+              sectionExpanded={sectionExpanded}
+              toggleProjectSection={toggleProjectSection}
+              salesLocked={salesLocked}
+              sectionGuard={sectionGuard}
+              BRAND={BRAND}
+              BRAND_DARK={BRAND_DARK}
+              estimTab={estimTab}
+              setEstimTab={setEstimTab}
+              searchMaterialPrices={searchMaterialPrices}
+              searchingPrices={searchingPrices}
+              addLine={addLine}
+              hasSuggested={hasSuggested}
+              addSuggestedLines={addSuggestedLines}
+              workTypeVal={workTypeVal}
+              approxLines={approxLines}
+              money={money}
+              updateLine={updateLine}
+              removeLine={removeLine}
+              totalCout={totalCout}
+              totalVente={totalVente}
+              totalMarkup={totalMarkup}
+              aiEstimNotice={aiEstimNotice}
+              setAiEstimNotice={setAiEstimNotice}
+              floEstimPrompt={floEstimPrompt}
+              setFloEstimPrompt={setFloEstimPrompt}
+              sendClientMessage={sendClientMessage}
+              estimatePdfPreview={estimatePdfPreview}
+              setEstimatePdfPreview={setEstimatePdfPreview}
+              estimateSendBusy={estimateSendBusy}
+              sendEstimateByEmail={sendEstimateByEmail}
+              estimateCopied={estimateCopied}
+              copyEstimateToClipboard={copyEstimateToClipboard}
+              allVisiteQs={allVisiteQs}
+              visiteAnswers={visiteAnswers}
+              saveVisite={saveVisite}
+              visiteAnswered={visiteAnswered}
+              selectedTrades={selectedTrades}
+              saveTrades={saveTrades}
+              TRADES_FOR_SITE_VISIT={TRADES_FOR_SITE_VISIT}
+              InlineField={InlineField}
+              project={project}
+              saveField={saveField}
+              formatCompactDate={formatCompactDate}
+            />
           );
         })()}
+
 
 
         <ProjectPipelineSection
@@ -8435,745 +7898,37 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         />
 
         {/* ── Équipe & conformité ── */}
-        <ProjectSection
-          sectionId="s-equipe"
-          icon="🤝"
-          title="Équipe et conformité"
-          summary={sectionSummaries['s-equipe']?.summary}
-          stats={sectionSummaries['s-equipe']?.stats}
-          expanded={!!sectionExpanded['s-equipe']}
-          onToggle={() => toggleProjectSection('s-equipe')}
-          background="#F5F0FF"
-        >
+        <ProjectTeamSection
+          sectionSummaries={sectionSummaries}
+          sectionExpanded={sectionExpanded}
+          toggleProjectSection={toggleProjectSection}
+          floMergePending={floMergePending}
+          applyFloRecos={applyFloRecos}
+          showFloPanel={showFloPanel}
+          tradeRecos={tradeRecos}
+          loadingTradeRecos={loadingTradeRecos}
+          BRAND={BRAND}
+          fetchTradeRecos={fetchTradeRecos}
+          tradeResourcesMap={tradeResourcesMap}
+          addFloRecoToTeam={addFloRecoToTeam}
+          project={project}
+          fmtDate={fmtDate}
+          setEditPhase={setEditPhase}
+          addInternalPerson={addInternalPerson}
+          addExternalPerson={addExternalPerson}
+          removePerson={removePerson}
+          updatePerson={updatePerson}
+          saveResourceRows={saveResourceRows}
+          openConformiteBadge={openConformiteBadge}
+          setOpenConformiteBadge={setOpenConformiteBadge}
+          availableEmployeeOptions={availableEmployeeOptions}
+          availableSubcontractorOptions={availableSubcontractorOptions}
+          quoteBuilderItems={quoteBuilderItems}
+          setQuoteBuilderItems={setQuoteBuilderItems}
+          scheduleQuoteSave={scheduleQuoteSave}
+          money={money}
+        />
 
-          {/* Bannière confirmation merge/reset */}
-          {floMergePending && (
-            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderRadius:11, background:'#FFFBEB', border:'1.5px solid #FDE68A', marginBottom:16 }}>
-              <Sparkles size={14} color="#D97706"/>
-              <p style={{ fontSize:12, fontWeight:700, color:'#92400E', margin:0, flex:1 }}>Des données existent déjà dans le tableau. Que faire ?</p>
-              <button onClick={() => applyFloRecos(floMergePending, 'merge')}
-                style={{ padding:'5px 13px', borderRadius:7, border:'1.5px solid #D97706', background:'#fff', color:'#D97706', fontSize:11, fontWeight:800, cursor:'pointer' }}>
-                ✓ Ajouter aux existants
-              </button>
-              <button onClick={() => applyFloRecos(floMergePending, 'reset')}
-                style={{ padding:'5px 13px', borderRadius:7, border:'none', background:'#D97706', color:'#fff', fontSize:11, fontWeight:800, cursor:'pointer' }}>
-                🔄 Repartir de zéro
-              </button>
-            </div>
-          )}
-
-          {/* Panneau résultats Flo */}
-          {showFloPanel && (() => {
-            const typeConf = {
-              internal: { label:'Employé interne',    color:'#7C3AED', bg:'#F5F3FF', border:'#DDD6FE', icon:'🏠' },
-              known:    { label:'Sous-traitant connu',color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⭐' },
-              new:      { label:'Nouveau',            color:'#2563EB', bg:'#EFF6FF', border:'#BFDBFE', icon:'🔍' },
-            };
-            const hasRecos = tradeRecos && Object.keys(tradeRecos).length > 0;
-            return (
-              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #E0D5FF', padding:'16px 20px', marginBottom:20 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: hasRecos ? 14 : 4 }}>
-                  <Sparkles size={13} color={BRAND}/>
-                  <p style={{ fontSize:12, fontWeight:700, color:'#3A3D44', margin:0, flex:1 }}>Recommandations Flo — ajoutées automatiquement au tableau</p>
-                  <button onClick={() => fetchTradeRecos(null)} disabled={loadingTradeRecos}
-                    style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 11px', borderRadius:8, border:`1.5px solid ${BRAND}`, background:`${BRAND}10`, fontSize:10.5, fontWeight:700, color:BRAND, cursor:'pointer' }}>
-                    {loadingTradeRecos ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                    {loadingTradeRecos ? 'Analyse…' : '↺ Rafraîchir'}
-                  </button>
-                </div>
-                {loadingTradeRecos && (
-                  <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', color:'#9CA3AF' }}>
-                    <Loader2 size={13} className="animate-spin"/> <span style={{ fontSize:12 }}>Flo analyse les corps de métier…</span>
-                  </div>
-                )}
-                {!loadingTradeRecos && !hasRecos && tradeRecos && (
-                  <p style={{ fontSize:11.5, color:'#9CA3AF', fontStyle:'italic', margin:0 }}>Aucune correspondance — ajoute des phases dans le Gantt pour que Flo sache quels corps de métier sont requis.</p>
-                )}
-                {hasRecos && Object.entries(tradeRecos).map(([tradeName, recos]) => (
-                  <div key={tradeName} style={{ marginBottom:12 }}>
-                    <p style={{ fontSize:10, fontWeight:800, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.07em', margin:'0 0 6px' }}>{tradeName}</p>
-                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                      {(recos||[]).map((r, i) => {
-                        const tc = typeConf[r.type] || typeConf.new;
-                        const siteHref = r.source_url || (r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null);
-                        const alreadyAdded = (tradeResourcesMap[tradeName]?.internal||[]).concat(tradeResourcesMap[tradeName]?.external||[]).some(p => (typeof p === 'string' ? p : p.name) === r.name);
-                        return (
-                          <div key={i} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', borderRadius:8, background:tc.bg, border:`1px solid ${tc.border}` }}>
-                            <span style={{ fontSize:13, flexShrink:0 }}>{tc.icon}</span>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <span style={{ fontSize:12, fontWeight:700, color:'#15171C' }}>{r.name}</span>
-                              {r.note && <span style={{ fontSize:10.5, color:'#6B7280', marginLeft:6 }}>{r.note}</span>}
-                            </div>
-                            {r.phone && <a href={`tel:${r.phone}`} style={{ fontSize:10, color:'#2563EB', fontWeight:700, textDecoration:'none', background:'#EFF6FF', borderRadius:5, padding:'2px 7px', flexShrink:0 }}>📞</a>}
-                            {r.email && <a href={`mailto:${r.email}`} style={{ fontSize:10, color:'#2563EB', fontWeight:700, textDecoration:'none', background:'#EFF6FF', borderRadius:5, padding:'2px 7px', flexShrink:0 }}>✉</a>}
-                            {siteHref && <a href={siteHref} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:tc.color, fontWeight:700, textDecoration:'none', background:'#fff', border:`1px solid ${tc.border}`, borderRadius:5, padding:'2px 7px', flexShrink:0 }}>↗</a>}
-                            {alreadyAdded
-                              ? <span style={{ fontSize:10, color:'#16A34A', fontWeight:700, padding:'2px 7px', flexShrink:0 }}>✓ Ajouté</span>
-                              : <button onClick={() => addFloRecoToTeam(tradeName, r)} style={{ fontSize:10, fontWeight:800, color:'#fff', background:tc.color, border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', flexShrink:0 }}>+</button>
-                            }
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-
-          {(() => {
-            const phases = project.phases || [];
-            const phaseTradeNames = [...new Set(phases.map((ph) => ph.trade_name).filter(Boolean))];
-            const tradesFromProject = project.trades || [];
-            const rowNames = [...new Set([
-              ...tradesFromProject.map((trade) => trade.trade).filter(Boolean),
-              ...phaseTradeNames,
-            ])];
-
-            if (!rowNames.length) return null;
-
-            // Statuts séparés : interne vs externe
-            const internalStatuses = [
-              { key: 'prequalifie_flo', label: '⭐ Pré-qualifié Flo', color: '#7C3AED', bg: '#F5F3FF' },
-              { key: 'a_contacter',     label: 'À contacter',         color: '#E8794E', bg: '#FFF1EB' },
-              { key: 'contacte',        label: 'Contacté',            color: '#F59E0B', bg: '#FFF7E8' },
-              { key: 'disponible',      label: 'Disponible',          color: '#3B82F6', bg: '#EFF6FF' },
-              { key: 'en_negociation',  label: 'En négociation',      color: '#D97706', bg: '#FFFBEB' },
-              { key: 'confirme',        label: 'Confirmé',            color: '#16A34A', bg: '#ECFDF3' },
-              { key: 'refuse',          label: 'Refusé',              color: '#DC2626', bg: '#FFF5F5' },
-              { key: 'termine',         label: 'Terminé',             color: '#6B7280', bg: '#F9FAFB' },
-            ];
-            const externalStatuses = [
-              { key: 'prequalifie_flo', label: '⭐ Pré-qualifié Flo', color: '#7C3AED', bg: '#F5F3FF' },
-              { key: 'a_contacter',     label: 'À contacter',         color: '#E8794E', bg: '#FFF1EB' },
-              { key: 'contacte',        label: 'Contacté',            color: '#F59E0B', bg: '#FFF7E8' },
-              { key: 'soumis',          label: 'Soumission reçue',    color: '#3B82F6', bg: '#EFF6FF' },
-              { key: 'en_negociation',  label: 'En négociation',      color: '#D97706', bg: '#FFFBEB' },
-              { key: 'accepte',         label: 'Accepté',             color: '#16A34A', bg: '#ECFDF3' },
-              { key: 'refuse',          label: 'Refusé',              color: '#DC2626', bg: '#FFF5F5' },
-              { key: 'termine',         label: 'Terminé',             color: '#6B7280', bg: '#F9FAFB' },
-            ];
-            // Légende unique (union) pour le filtre
-            const allStatuses = [...new Map([...internalStatuses, ...externalStatuses].map(s => [s.key, s])).values()];
-
-            const parsePersons = (arr) => (arr || []).map(p =>
-              typeof p === 'string'
-                ? { name: p, status: 'a_contacter', phone: '', email: '', location: '' }
-                : { phone: '', email: '', location: '', ...p }
-            );
-
-            const isDateExpired = (d) => d && new Date(d) < new Date();
-            // Only fail if explicitly unchecked OR if a date was entered and is expired
-            const isCertFail = (c) => {
-              if (!c || (c.ok === undefined && !c.validite && !c.lastCheck)) return false;
-              if (c.ok === false) return true;
-              if (c.ok === true && c.validite && isDateExpired(c.validite)) return true;
-              return false;
-            };
-            const isPersonNonConforme = (cert, personStatus) => {
-              if (personStatus === 'a_contacter') return false;
-              return isCertFail(cert?.rbq) || isCertFail(cert?.ccq) || isCertFail(cert?.insurance);
-            };
-            const personKey = (tn, type, pi) => `${tn}||${type}||${pi}`;
-
-            const hS = { fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#A8AEB6' };
-
-            // Badge conformité dépliable — vert/ambre/rouge — remplace les 3 checkboxes séparées
-            const renderConformiteBadge = (cert, openKey, setOpenKey, type, pi) => {
-              const certs = [
-                { key: 'rbq',       label: 'RBQ',       color: '#7C3AED' },
-                { key: 'ccq',       label: 'CCQ',       color: '#2563EB' },
-                { key: 'insurance', label: 'Assurance', color: '#059669' },
-              ];
-              const isOpen = openKey === `${type}||${pi}`;
-
-              // Compute overall status
-              const statuses = certs.map(({ key }) => {
-                const c = cert[key] || {};
-                if (isCertFail(c)) return 'red';
-                if (c.ok === true && !isDateExpired(c.validite)) return 'green';
-                return 'amber';
-              });
-              const overall = statuses.some(s => s === 'red') ? 'red'
-                : statuses.every(s => s === 'green') ? 'green'
-                : 'amber';
-              const badgeColor = overall === 'green' ? '#16A34A' : overall === 'red' ? '#DC2626' : '#D97706';
-              const badgeBg    = overall === 'green' ? '#F0FDF4' : overall === 'red' ? '#FFF5F5' : '#FFFBEB';
-              const badgeLabel = overall === 'green' ? '✓ Conforme' : overall === 'red' ? '✗ Non conforme' : '⚠ À vérifier';
-              const nOk = statuses.filter(s => s === 'green').length;
-
-              return (
-                <div>
-                  {/* Pill badge — click to toggle */}
-                  <button
-                    onClick={() => setOpenKey(isOpen ? null : `${type}||${pi}`)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, border: `1.5px solid ${badgeColor}40`, background: badgeBg, color: badgeColor, fontSize: 9.5, fontWeight: 800, cursor: 'pointer' }}
-                  >
-                    {badgeLabel}
-                    <span style={{ fontSize: 8.5, opacity: 0.7 }}>{nOk}/3</span>
-                    <span style={{ fontSize: 8 }}>{isOpen ? '▲' : '▼'}</span>
-                  </button>
-
-                  {/* Expanded detail rows */}
-                  {isOpen && (
-                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {certs.map(({ key, label, color }) => {
-                        const c = cert[key] || {};
-                        const expired = c.ok === true && isDateExpired(c.validite);
-                        const fail = isCertFail(c);
-                        const sc = c.ok && !expired ? color : fail ? '#DC2626' : '#C4C8CE';
-                        return (
-                          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 8px', background: '#FAFAFA', borderRadius: 7, border: `1px solid ${sc}20` }}>
-                            <input type="checkbox" checked={!!c.ok} onChange={e => updateCert(type, pi, key, 'ok', e.target.checked)}
-                              style={{ accentColor: sc, width: 12, height: 12, cursor: 'pointer', flexShrink: 0 }}/>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: sc, width: 52, flexShrink: 0 }}>{label}</span>
-                            {expired && <span style={{ fontSize: 8, fontWeight: 800, color: '#fff', background: '#DC2626', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>EXP</span>}
-                            <input type="date" value={c.validite || ''} onChange={e => updateCert(type, pi, key, 'validite', e.target.value)}
-                              title="Expiration" style={{ fontSize: 9, border: `1px solid ${expired ? '#DC2626' : '#E8EAED'}`, borderRadius: 5, padding: '2px 4px', color: expired ? '#DC2626' : '#6B7280', background: expired ? '#FFF5F5' : '#fff', flex: 1 }}/>
-                            <input type="date" value={c.lastCheck || ''} onChange={e => updateCert(type, pi, key, 'lastCheck', e.target.value)}
-                              title="Dernière vérif." style={{ fontSize: 9, border: '1px solid #E8EAED', borderRadius: 5, padding: '2px 4px', color: '#6B7280', background: '#fff', flex: 1 }}/>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            };
-
-            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null;
-            // Grid partagé (en-têtes + lignes détail)
-            const COLS = '215px 2fr 145px 1.4fr 1.4fr';
-
-            return (
-              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginTop: 0 }}>
-                <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid #F1F3F5' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 11, background: '#FFF4EC', display: 'grid', placeItems: 'center', fontSize: 18 }}>👷</div>
-                    <div>
-                      <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Corps de métier & équipe</p>
-                      <p style={{ fontSize: 11.5, color: '#8B919A', margin: '2px 0 0' }}>Ressources internes et externes par métier, avec suivi de conformité (RBQ / CCQ / Assurance).</p>
-                    </div>
-                  </div>
-                  {/* ── Filtres ── */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-
-                    {/* Ligne 1 : statut + À trouver */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4, width: 50, flexShrink: 0 }}>Statut</span>
-                      <button onClick={() => setTradeStatusFilter(null)}
-                        style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${!tradeStatusFilter ? '#15171C' : '#E0E4E8'}`, background: !tradeStatusFilter ? '#15171C' : '#fff', color: !tradeStatusFilter ? '#fff' : '#9CA3AF', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
-                        Tous
-                      </button>
-                      <button onClick={() => setTradeStatusFilter(tradeStatusFilter === 'a_trouver' ? null : 'a_trouver')}
-                        style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${tradeStatusFilter === 'a_trouver' ? '#DC2626' : '#FCA5A5'}`, background: tradeStatusFilter === 'a_trouver' ? '#FFF5F5' : '#fff', color: tradeStatusFilter === 'a_trouver' ? '#DC2626' : '#FCA5A5', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
-                        🔍 À trouver
-                      </button>
-                      {allStatuses.map(s => (
-                        <button key={s.key} onClick={() => setTradeStatusFilter(tradeStatusFilter === s.key ? null : s.key)}
-                          style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${tradeStatusFilter === s.key ? s.color : s.color + '50'}`, background: tradeStatusFilter === s.key ? s.bg : '#fff', color: tradeStatusFilter === s.key ? s.color : s.color + 'CC', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Ligne 2 : type d'employé (toggle) + date deadline */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      {/* Type d'employé */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em', width: 50, flexShrink: 0 }}>Type</span>
-                        {[
-                          { key: null,       label: 'Tous',           icon: '👥' },
-                          { key: 'internal', label: 'Employé',        icon: '👤', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' },
-                          { key: 'external', label: 'Sous-traitant',  icon: '🏗️', color: '#0369A1', bg: '#F0F9FF', border: '#BAE6FD' },
-                        ].map(opt => {
-                          const isActive = tradeTypeFilter === opt.key;
-                          return (
-                            <button key={String(opt.key)} onClick={() => setTradeTypeFilter(opt.key)}
-                              style={{ padding: '3px 10px', borderRadius: 999, border: `1.5px solid ${isActive ? (opt.border || '#15171C') : '#E0E4E8'}`, background: isActive ? (opt.bg || '#15171C') : '#fff', color: isActive ? (opt.color || '#fff') : '#9CA3AF', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span>{opt.icon}</span> {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Séparateur */}
-                      <div style={{ width: 1, height: 18, background: '#E8EAED', flexShrink: 0 }}/>
-
-                      {/* Filtre calendrier — deadline avant */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em', flexShrink: 0 }}>Deadline ≤</span>
-                        <input type="date" value={tradeDateFilter} onChange={e => setTradeDateFilter(e.target.value)}
-                          style={{ fontSize: 11, border: '1.5px solid #E0E4E8', borderRadius: 8, padding: '3px 8px', color: tradeDateFilter ? '#15171C' : '#9CA3AF', background: tradeDateFilter ? '#FFFBEB' : '#fff', cursor: 'pointer', outline: 'none' }}/>
-                        {tradeDateFilter && (
-                          <button onClick={() => setTradeDateFilter('')}
-                            style={{ fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>✕</button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Barre mass-actions ── */}
-                  {tradePersonSelected.size > 0 && (() => {
-                    const selArr = [...tradePersonSelected];
-                    const massUpdateStatus = (newStatus) => {
-                      const updatedMap = { ...tradeResourcesMap };
-                      selArr.forEach(pk => {
-                        const [tn, tp, piStr] = pk.split('||');
-                        const pi2 = parseInt(piStr);
-                        if (!updatedMap[tn]) return;
-                        const arr = [...(updatedMap[tn][tp] || [])];
-                        if (arr[pi2]) arr[pi2] = { ...arr[pi2], status: newStatus };
-                        updatedMap[tn] = { ...updatedMap[tn], [tp]: arr };
-                      });
-                      saveTradeResources(updatedMap);
-                      setTradePersonSelected(new Set());
-                    };
-                    const massDelete = () => {
-                      const updatedMap = { ...tradeResourcesMap };
-                      const grouped = {};
-                      selArr.forEach(pk => {
-                        const [tn, tp, piStr] = pk.split('||');
-                        if (!grouped[tn]) grouped[tn] = {};
-                        if (!grouped[tn][tp]) grouped[tn][tp] = new Set();
-                        grouped[tn][tp].add(parseInt(piStr));
-                      });
-                      Object.entries(grouped).forEach(([tn, types]) => {
-                        Object.entries(types).forEach(([tp, indices]) => {
-                          updatedMap[tn] = { ...updatedMap[tn], [tp]: (updatedMap[tn]?.[tp] || []).filter((_, i) => !indices.has(i)) };
-                        });
-                      });
-                      saveTradeResources(updatedMap);
-                      setTradePersonSelected(new Set());
-                    };
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', background: '#F5F3FF', borderTop: '1px solid #DDD6FE', borderBottom: '1px solid #DDD6FE', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: BRAND }}>
-                          {tradePersonSelected.size} sélectionné(s)
-                        </span>
-                        <span style={{ fontSize: 10, color: '#9CA3AF' }}>— Changer statut :</span>
-                        {allStatuses.map(s => (
-                          <button key={s.key} onClick={() => massUpdateStatus(s.key)}
-                            style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 999, border: `1px solid ${s.color}55`, background: s.bg, color: s.color, fontWeight: 700, cursor: 'pointer' }}>
-                            {s.label}
-                          </button>
-                        ))}
-                        <button onClick={massDelete}
-                          style={{ marginLeft: 'auto', fontSize: 10.5, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: 'pointer' }}>
-                          Supprimer
-                        </button>
-                        <button onClick={() => setTradePersonSelected(new Set())}
-                          style={{ fontSize: 10, padding: '3px 8px', borderRadius: 7, border: '1px solid #E0E4E8', background: '#fff', color: '#8B919A', cursor: 'pointer' }}>
-                          ✕ Désélectionner
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <div style={{ minWidth: 1160 }}>
-
-                    {/* ── En-têtes ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: COLS, borderBottom: '2px solid #E8EAED', background: '#FAFAFA' }}>
-                      <div style={{ padding: '7px 12px 7px 20px', borderRight: '1px solid #EAECEF' }}><span style={hS}>Personne & contact</span></div>
-                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>💬 Message</span></div>
-                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>✅ Réponse</span></div>
-                      <div style={{ padding: '7px 12px', borderRight: '1px solid #EAECEF' }}><span style={hS}>🔒 Conformité</span></div>
-                      <div style={{ padding: '7px 12px' }}><span style={hS}>📄 Bon de commande</span></div>
-                    </div>
-
-                    {/* ── Lignes par corps de métier ── */}
-                    {rowNames.filter(tradeName => {
-                      if (tradeStatusFilter !== 'a_trouver') return true;
-                      const rawR = tradeResourcesMap[tradeName] || {};
-                      const intCount = (rawR.internal || []).length;
-                      const extCount = (rawR.external || []).length;
-                      return intCount + extCount === 0;
-                    }).map((tradeName, idx) => {
-                      // Phase liée si trade_name exact OU si le nom de la phase mentionne ce corps de métier
-                      const tradeKeywords = tradeName.toLowerCase().split(/[\s,\/&+]+/).filter(w => w.length >= 4);
-                      const tradePhases = phases.filter(ph => {
-                        if (ph.trade_name?.toLowerCase() === tradeName.toLowerCase()) return true;
-                        const pn = (ph.name || '').toLowerCase();
-                        return tradeKeywords.length > 0 && tradeKeywords.some(kw => pn.includes(kw));
-                      });
-                      const tradeHours  = tradePhases.reduce((sum, ph) => sum + (Number(ph.duration_hours) || 0), 0);
-                      const sortedPh    = [...tradePhases].filter(ph => ph.start_date).sort((a, b) => a.start_date.localeCompare(b.start_date));
-                      const minDate     = sortedPh[0]?.start_date;
-                      const maxDate     = sortedPh[sortedPh.length - 1]?.end_date || sortedPh[sortedPh.length - 1]?.start_date;
-                      const rawRes      = tradeResourcesMap[tradeName] || { internal: [], external: [] };
-                      const resources   = { internal: parsePersons(rawRes.internal), external: parsePersons(rawRes.external) };
-
-                      const updateResources = (type, newList) => {
-                        const updated = { ...tradeResourcesMap, [tradeName]: { ...rawRes, [type]: newList } };
-                        saveTradeResources(updated);
-                      };
-
-                      const updatePersonField = (type, pi, field, value) => {
-                        updateResources(type, resources[type].map((p, i) => i === pi ? { ...p, [field]: value } : p));
-                      };
-
-                      const cycleStatus = (type, pi) => {
-                        const statusList = type === 'internal' ? internalStatuses : externalStatuses;
-                        const list = resources[type];
-                        const cur  = statusList.findIndex(s => s.key === (list[pi]?.status || 'a_contacter'));
-                        const next = statusList[(cur + 1) % statusList.length];
-                        updateResources(type, list.map((p, i) => i === pi ? { ...p, status: next.key } : p));
-                      };
-
-                      const updateCert = (type, pi, certKey, field, val) => {
-                        const key = personKey(tradeName, type, pi);
-                        const cur = tradeConformite[key] || { rbq: {}, ccq: {}, insurance: {} };
-                        const updated = { ...tradeConformite, [key]: { ...cur, [certKey]: { ...cur[certKey], [field]: val } } };
-                        saveTradeConformite(updated);
-                      };
-
-                      const renderPersonSection = (type) => {
-                        // Masquer toute la section si le filtre type ne correspond pas
-                        if (tradeTypeFilter && tradeTypeFilter !== type) return null;
-
-                        const list        = resources[type];
-                        const statusList  = type === 'internal' ? internalStatuses : externalStatuses;
-                        const typeColor   = type === 'internal' ? '#7C3AED' : '#2563EB';
-                        const typeIcon    = type === 'internal' ? '👤' : '🏗️';
-                        const typeLabel   = type === 'internal' ? 'Employé' : 'Sous-traitant';
-                        const inputKey    = `${tradeName}_add_${type}`;
-                        const confirmedKey = type === 'internal' ? 'confirme' : 'accepte';
-
-                        let visibleList = (tradeStatusFilter && tradeStatusFilter !== 'a_trouver')
-                          ? list.filter(p => (p.status || 'a_contacter') === tradeStatusFilter)
-                          : list;
-                        // Filtre date : ne garder que les personnes avec deadline <= date sélectionnée
-                        if (tradeDateFilter) {
-                          visibleList = visibleList.filter(p => p.responseDeadline && p.responseDeadline <= tradeDateFilter);
-                        }
-
-                        return (
-                          <div>
-                            {/* Plus de sous-header INTERNE/EXTERNE — le type est indiqué en badge inline sur chaque ligne */}
-                            {visibleList.map((person) => {
-                              const pi           = list.indexOf(person);
-                              const pKey         = personKey(tradeName, type, pi);
-                              const cert         = tradeConformite[pKey] || { rbq: {}, ccq: {}, insurance: {} };
-                              const pStatus      = person.status || 'a_contacter';
-                              const isAC         = pStatus === 'a_contacter';
-                              const isConfirmed  = pStatus === confirmedKey;
-                              const nonConf      = isPersonNonConforme(cert, pStatus);
-                              const pStat        = statusList.find(s => s.key === pStatus) || statusList[0];
-                              const msgData      = tradePersonMsgs[pKey] || {};
-                              const isLoadingMsg = !!msgData.loading;
-                              const isLoadingFlo = !!loadingFloPersonCheck[pKey];
-                              const isLoadingPO  = !!msgData.poLoading;
-                              const isExpanded   = !!tradePersonExpanded[pKey];
-
-                              const infoInput = (field, placeholder, icon) => (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <span style={{ fontSize: 10, color: '#C4C8CE', flexShrink: 0 }}>{icon}</span>
-                                  <input value={person[field] || ''} onChange={e => updatePersonField(type, pi, field, e.target.value)}
-                                    placeholder={placeholder}
-                                    style={{ fontSize: 11, border: 'none', outline: 'none', background: 'transparent', color: '#5A5E6A', width: '100%', padding: 0 }}/>
-                                </div>
-                              );
-
-                              const certOk = cert.rbq?.ok && cert.ccq?.ok && cert.insurance?.ok;
-                              const isSel = tradePersonSelected.has(pKey);
-                              const toggleSel = (e) => {
-                                e.stopPropagation();
-                                setTradePersonSelected(prev => {
-                                  const next = new Set(prev);
-                                  next.has(pKey) ? next.delete(pKey) : next.add(pKey);
-                                  return next;
-                                });
-                              };
-
-                              return (
-                                <div key={pi}>
-                                  {/* ── Ligne compacte : checkbox + nom + deadline + pipeline ── */}
-                                  <div style={{ borderTop: '1px solid #F4F5F6', background: isSel ? '#F5F3FF' : nonConf ? '#FFF5F5' : 'transparent' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px 3px 8px' }}>
-                                      {/* Checkbox */}
-                                      <input type="checkbox" checked={isSel} onChange={toggleSel} onClick={e => e.stopPropagation()}
-                                        style={{ width: 13, height: 13, accentColor: BRAND, flexShrink: 0, cursor: 'pointer' }}/>
-                                      {/* Caret */}
-                                      <span style={{ fontSize: 8, color: '#C4C8CE', flexShrink: 0, width: 8, cursor: 'pointer' }}
-                                        onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
-                                        {isExpanded ? '▼' : '▶'}
-                                      </span>
-                                      {/* Nom cliquable */}
-                                      <span style={{ fontSize: 12, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', minWidth: 55, maxWidth: 115, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer' }}
-                                        onClick={() => setTradePersonExpanded(m => ({ ...m, [pKey]: !m[pKey] }))}>
-                                        {person.name}
-                                      </span>
-                                      {/* Badge Employé / Sous-traitant */}
-                                      <span style={{ fontSize: 8.5, fontWeight: 700, color: typeColor, background: `${typeColor}12`, border: `1px solid ${typeColor}30`, borderRadius: 5, padding: '1px 5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                        {typeLabel}
-                                      </span>
-                                      {nonConf && <span style={{ fontSize: 8, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>⚠</span>}
-                                      {/* Deadline */}
-                                      {person.responseDeadline && (
-                                        <span style={{ fontSize: 9, color: '#F59E0B', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                          📅 {person.responseDeadline}
-                                        </span>
-                                      )}
-                                      {/* Pipeline stepper — s'étire */}
-                                      <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 0, overflow: 'auto', scrollbarWidth: 'none' }}>
-                                        {statusList.map((s, si) => {
-                                          const curIdx = statusList.findIndex(x => x.key === pStatus);
-                                          const isPast = si < curIdx;
-                                          const isCur  = s.key === pStatus;
-                                          return (
-                                            <React.Fragment key={s.key}>
-                                              {si > 0 && <div style={{ flex: '0 0 6px', height: 1, background: isPast ? '#D1D5DB' : '#EAECEF' }}/>}
-                                              <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, status: s.key } : p2)); }}
-                                                style={{ fontSize: 9, fontWeight: isCur ? 800 : 500, padding: '1px 6px', borderRadius: 999, border: `1px solid ${isCur ? s.color : isPast ? s.color + '44' : '#EAECEF'}`, background: isCur ? s.bg : 'transparent', color: isCur ? s.color : isPast ? s.color + 'AA' : '#C4C8CE', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                                {isPast ? '✓ ' : ''}{s.label}
-                                              </button>
-                                            </React.Fragment>
-                                          );
-                                        })}
-                                      </div>
-                                      {/* Badges compact */}
-                                      {msgData.disponible && (
-                                        <span style={{ fontSize: 9, fontWeight: 700, color: msgData.disponible === 'oui' ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
-                                          {msgData.disponible === 'oui' ? '✓' : '✗'}
-                                        </span>
-                                      )}
-                                      {pStatus !== 'a_contacter' && (
-                                        <span style={{ fontSize: 9, fontWeight: 700, color: nonConf ? '#DC2626' : certOk ? '#16A34A' : '#C4C8CE', flexShrink: 0 }} title="Conformité">
-                                          {nonConf ? '⚠' : certOk ? '✓C' : '—C'}
-                                        </span>
-                                      )}
-                                      {msgData.po && <span style={{ fontSize: 9, color: '#16A34A', flexShrink: 0 }} title="Bon de commande">📄</span>}
-                                      <button onClick={e => { e.stopPropagation(); updateResources(type, resources[type].filter((_, i) => i !== pi)); }}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 1px', flexShrink: 0 }}>×</button>
-                                    </div>
-                                  </div>
-
-                                  {/* ── Détail éditable (accordéon) ── */}
-                                  {isExpanded && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: COLS, background: '#FAFAFA', borderTop: '1px solid #F1F3F5', borderBottom: '1px solid #EAECEF' }}>
-
-                                      {/* Col 1 : Personne */}
-                                      <div style={{ padding: '10px 12px 10px 16px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <p style={{ fontSize: 13, fontWeight: 700, color: nonConf ? '#DC2626' : '#15171C', margin: 0 }}>{person.name}</p>
-                                        {infoInput('phone',    'Téléphone',   '📞')}
-                                        {infoInput('email',    'Courriel',    '✉')}
-                                        {infoInput('location', 'Localisation','📍')}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                          <span style={{ fontSize: 11 }}>📅</span>
-                                          <input type="date"
-                                            value={person.responseDeadline || ''}
-                                            onChange={e => updateResources(type, resources[type].map((p2, i2) => i2 === pi ? { ...p2, responseDeadline: e.target.value } : p2))}
-                                            title="Date limite de réponse"
-                                            style={{ fontSize: 10.5, border: 'none', outline: 'none', background: 'transparent', color: person.responseDeadline ? '#F59E0B' : '#C4C8CE', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}/>
-                                        </div>
-                                        {nonConf && <span style={{ fontSize: 9, fontWeight: 800, color: '#DC2626' }}>⚠ NON CONFORME</span>}
-                                      </div>
-
-                                      {/* Col 2 : Message */}
-                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 5, position: 'relative' }}>
-                                        <button onClick={() => generateContactMessage(tradeName, person, type, pKey)} disabled={isLoadingMsg}
-                                          style={{ position: 'absolute', top: 8, right: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: `1px solid ${BRAND}30`, background: isLoadingMsg ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9.5, fontWeight: 700, cursor: isLoadingMsg ? 'wait' : 'pointer', zIndex: 1 }}>
-                                          {isLoadingMsg ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                                          {isLoadingMsg ? 'Génère…' : '🔄 Régénérer'}
-                                        </button>
-                                        <textarea
-                                          value={msgData.msg || ''}
-                                          onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], msg: e.target.value } }))}
-                                          rows={4}
-                                          placeholder="Le message est généré automatiquement à l'ajout…"
-                                          style={{ width: '100%', fontSize: 11.5, lineHeight: 1.6, color: '#3A3D44', border: '1px solid #EAECEF', borderRadius: 8, padding: '7px 9px', paddingTop: 30, resize: 'vertical', fontFamily: 'inherit', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
-                                        />
-                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                          {msgData.msg && (
-                                            <button onClick={() => navigator.clipboard?.writeText(msgData.msg)}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 10, fontWeight: 700, color: '#5A5E6A', cursor: 'pointer' }}>
-                                              📋 Copier
-                                            </button>
-                                          )}
-                                          {person.email && msgData.msg && (
-                                            <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Projet ${project.name || ''}`)}&body=${encodeURIComponent(msgData.msg)}`}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
-                                              ✉ Envoyer
-                                            </a>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Col 3 : Réponse */}
-                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                        {[
-                                          { label: type === 'internal' ? 'Disponible ✓' : 'Intéressé ✓', val: 'oui', color: '#16A34A', bg: '#ECFDF3' },
-                                          { label: type === 'internal' ? 'Indisponible ✗' : 'Pas intéressé ✗', val: 'non', color: '#DC2626', bg: '#FFF5F5' },
-                                        ].map(opt => (
-                                          <button key={opt.val}
-                                            onClick={() => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], disponible: opt.val } }))}
-                                            style={{ width: '100%', padding: '4px 6px', borderRadius: 7, border: `1.5px solid ${msgData.disponible === opt.val ? opt.color : '#E0E4E8'}`, background: msgData.disponible === opt.val ? opt.bg : '#fff', fontSize: 10, fontWeight: 700, color: msgData.disponible === opt.val ? opt.color : '#9CA3AF', cursor: 'pointer', textAlign: 'center' }}>
-                                            {opt.label}
-                                          </button>
-                                        ))}
-                                        {type === 'external' && (
-                                          <div style={{ marginTop: 2 }}>
-                                            <span style={{ fontSize: 9, fontWeight: 700, color: '#A8AEB6', textTransform: 'uppercase', letterSpacing: '.05em' }}>Prix soumis</span>
-                                            <input value={msgData.prix || ''} onChange={e => setTradePersonMsgs(m => ({ ...m, [pKey]: { ...m[pKey], prix: e.target.value } }))}
-                                              placeholder="ex. 4 500 $"
-                                              style={{ width: '100%', marginTop: 3, fontSize: 11, border: '1.5px solid #E0E4E8', borderRadius: 7, padding: '4px 7px', outline: 'none', color: '#3A3D44', boxSizing: 'border-box' }}/>
-                                            {msgData.prix && msgData.disponible === 'oui' && (
-                                              <button onClick={() => cycleStatus(type, pi)}
-                                                style={{ width: '100%', marginTop: 5, padding: '4px 7px', borderRadius: 7, border: 'none', background: '#16A34A', color: '#fff', fontSize: 9.5, fontWeight: 800, cursor: 'pointer' }}>
-                                                ✓ Accepter → {externalStatuses.find(s => s.key === 'accepte')?.label}
-                                              </button>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* Col 4 : Conformité */}
-                                      <div style={{ padding: '10px 12px', borderRight: '1px solid #EAECEF', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        {isAC ? (
-                                          <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>Après contact</span>
-                                        ) : (
-                                          <>
-                                            {renderConformiteBadge(cert, openConformiteBadge, setOpenConformiteBadge, type, pi)}
-                                            <button onClick={() => floCheckPersonConformite(tradeName, person, type, pi)} disabled={isLoadingFlo}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, border: `1.5px solid ${BRAND}30`, background: isLoadingFlo ? '#F9F9F9' : `${BRAND}08`, color: BRAND, fontSize: 9, fontWeight: 700, cursor: isLoadingFlo ? 'wait' : 'pointer' }}>
-                                              {isLoadingFlo ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                                              {isLoadingFlo ? 'Vérif…' : 'Flo — Vérifier'}
-                                            </button>
-                                            {cert.floNotes && (
-                                              <p style={{ fontSize: 9, color: '#6B7280', margin: 0, lineHeight: 1.4, fontStyle: 'italic' }}>
-                                                {cert.floNotes}
-                                                {cert.floDate && <span style={{ display: 'block', fontSize: 8.5, color: '#B0B4BB', marginTop: 2 }}>{cert.floDate}</span>}
-                                              </p>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-
-                                      {/* Col 5 : Bon de commande */}
-                                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        {isConfirmed ? (
-                                          msgData.po ? (
-                                            <>
-                                              <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 9, padding: '9px 11px' }}>
-                                                <span style={{ fontSize: 9, fontWeight: 800, color: '#16A34A', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 3 }}>📄 BON DE COMMANDE</span>
-                                                <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4 }}>
-                                                  {msgData.poNum && <span style={{ fontWeight: 700, color: '#15171C' }}>{msgData.poNum} · </span>}
-                                                  {msgData.po.slice(0, 70).replace(/\*\*/g, '')}…
-                                                </p>
-                                              </div>
-                                              <button onClick={() => openPOWindow(msgData.po, person.name, msgData.poNum || `PO-000000`)}
-                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px 10px', borderRadius: 8, border: 'none', background: '#15171C', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
-                                                📄 Ouvrir / Imprimer PDF
-                                              </button>
-                                              <div style={{ display: 'flex', gap: 4 }}>
-                                                {person.email && (
-                                                  <a href={`mailto:${person.email}?subject=${encodeURIComponent(`Bon de commande ${msgData.poNum || ''} — ${project.name || 'Projet'}`)}&body=${encodeURIComponent(msgData.po)}`}
-                                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 8px', borderRadius: 7, border: '1.5px solid #2563EB33', background: '#EFF6FF', fontSize: 10, fontWeight: 700, color: '#2563EB', textDecoration: 'none' }}>
-                                                    ✉ Envoyer
-                                                  </a>
-                                                )}
-                                                <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
-                                                  style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, border: `1px solid ${BRAND}30`, background: `${BRAND}08`, fontSize: 10, fontWeight: 700, color: BRAND, cursor: isLoadingPO ? 'wait' : 'pointer' }}>
-                                                  {isLoadingPO ? <Loader2 size={9} className="animate-spin"/> : '🔄'} Régén.
-                                                </button>
-                                              </div>
-                                            </>
-                                          ) : (
-                                            <button onClick={() => generatePO(tradeName, person, type, pKey, msgData.prix, minDate, maxDate)} disabled={isLoadingPO}
-                                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '9px 10px', borderRadius: 9, border: 'none', background: isLoadingPO ? '#F0F0F0' : '#16A34A', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: isLoadingPO ? 'wait' : 'pointer', width: '100%' }}>
-                                              {isLoadingPO ? <Loader2 size={10} className="animate-spin"/> : '📄'}
-                                              {isLoadingPO ? 'Génération…' : 'Générer bon de commande'}
-                                            </button>
-                                          )
-                                        ) : (
-                                          <span style={{ fontSize: 10, color: '#D4D6DA', fontStyle: 'italic' }}>
-                                            Disponible quand {type === 'internal' ? 'confirmé' : 'accepté'}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                            {/* Ajout personne */}
-                            {!tradeStatusFilter && (
-                              <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px 7px 16px', borderTop: list.length ? '1px solid #F4F5F6' : 'none' }}>
-                                <span style={{ fontSize: 9, color: '#C4C8CE', fontWeight: 700, textTransform: 'uppercase', width: 50, flexShrink: 0 }}>{typeIcon}</span>
-                                <input
-                                  value={tradeResInput[inputKey] || ''}
-                                  onChange={e => setTradeResInput(m => ({ ...m, [inputKey]: e.target.value }))}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter' && (tradeResInput[inputKey] || '').trim()) {
-                                      e.preventDefault();
-                                      const newPerson = { name: tradeResInput[inputKey].trim(), status: 'a_contacter', phone: '', email: '', location: '' };
-                                      const newList = [...resources[type], newPerson];
-                                      updateResources(type, newList);
-                                      const newPKey = personKey(tradeName, type, newList.length - 1);
-                                      // Ouvrir la ligne + auto-générer message
-                                      setTradePersonExpanded(m => ({ ...m, [newPKey]: true }));
-                                      setTradeResInput(m => ({ ...m, [inputKey]: '' }));
-                                      generateContactMessage(tradeName, newPerson, type, newPKey);
-                                    }
-                                  }}
-                                  placeholder={`+ Ajouter ${type === 'internal' ? 'un employé' : 'un sous-traitant'} — Entrée pour confirmer`}
-                                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 11.5, color: typeColor, background: 'transparent', padding: 0, fontWeight: 600 }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      };
-
-                      return (
-                        <div key={tradeName} style={{ borderTop: idx > 0 ? '2px solid #EAECEF' : 'none' }}>
-                          {/* Barre header du corps de métier */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px 8px 16px', background: '#FAFAFA', borderBottom: '1px solid #F1F3F5', flexWrap: 'wrap' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: tradePhases[0]?.color || BRAND, flexShrink: 0 }}/>
-                            <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: 0 }}>{tradeName}</p>
-                            {tradeHours > 0 && (
-                              <span style={{ fontSize: 10.5, fontWeight: 700, color: BRAND, background: `${BRAND}12`, borderRadius: 999, padding: '1px 7px' }}>
-                                {tradeHours % 1 === 0 ? tradeHours : tradeHours.toFixed(1)} h
-                              </span>
-                            )}
-                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 2 }}>
-                              {tradePhases.map(phase => {
-                                const phStart = phase.start_date ? fmtDate(phase.start_date) : null;
-                                const phEnd   = phase.end_date   ? fmtDate(phase.end_date)   : null;
-                                const phH     = phase.duration_hours ? `${Number(phase.duration_hours) % 1 === 0 ? Number(phase.duration_hours) : Number(phase.duration_hours).toFixed(1)} h` : null;
-                                const dateStr = phStart
-                                  ? ` (${phStart}${phEnd && phEnd !== phStart ? ` → ${phEnd}` : ''}${phH ? ` · ${phH}` : ''})`
-                                  : phH ? ` (${phH})` : '';
-                                return (
-                                  <span key={phase.id} onClick={() => setEditPhase(phase)}
-                                    style={{ fontSize: 10, fontWeight: 700, color: phase.color || BRAND, background: `${phase.color || BRAND}18`, borderRadius: 999, padding: '2px 8px', cursor: 'pointer' }}>
-                                    {phase.name}{dateStr}
-                                  </span>
-                                );
-                              })}
-                              {!tradePhases.length && <span style={{ fontSize: 10, color: '#B0B4BB' }}>Aucune phase liée</span>}
-                            </div>
-                          </div>
-
-                          {renderPersonSection('internal')}
-                          {renderPersonSection('external')}
-                        </div>
-                      );
-                    })}
-
-                  </div>{/* fin minWidth */}
-                </div>{/* fin overflow-x */}
-              </div>
-            );
-          })()}
-
-
-
-        </ProjectSection>{/* fin s-equipe */}
 
         {/* ── Recherche de matériaux ── */}
         <ProjectMaterialsSection
@@ -9204,491 +7959,85 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         />
 
         {/* ── Devis détaillé ── */}
-        <ProjectSection
-          sectionId="s-soumission"
-          icon="📄"
-          title="Devis & contrat"
-          summary={sectionSummaries['s-soumission']?.summary}
-          stats={sectionSummaries['s-soumission']?.stats}
-          expanded={!!sectionExpanded['s-soumission']}
-          onToggle={() => toggleProjectSection('s-soumission')}
-          background="#fff"
-          borderTop="2px solid #E8EAED"
-        >
-          {salesLocked && (
-            <div style={{ marginBottom: 18, padding: '10px 14px', borderRadius: 10, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', fontSize: 12.5, fontWeight: 600 }}>
-              Le devis, le contrat et l’estimation approximative sont maintenant verrouillés, car le client a signé/accepté.
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 20 }}>
-              {/* Markup */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F9FAFB', borderRadius: 8, padding: '5px 11px', border: '1px solid #E8EAED' }}>
-                <span style={{ fontSize: 11, color: '#8B919A' }}>Markup</span>
-                <input type="number" min="0" max="300" step="1" value={quoteMarkup}
-                  disabled={salesLocked}
-                  onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
-                  style={{ width: 42, fontSize: 13, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
-                <span style={{ fontSize: 11, color: '#8B919A' }}>%</span>
-              </div>
-              {/* Flo button */}
-              <button disabled={salesLocked} onClick={() => setShowFloQuotePanel(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: showFloQuotePanel ? `${BRAND}15` : '#fff', color: BRAND, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                <Sparkles size={12}/>{floQuoteLoading ? 'Analyse…' : 'Flo complète le devis'}
-              </button>
-              {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
-              {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
-              {quoteSaving && <span style={{ fontSize: 11, color: '#9CA3AF' }}>Enreg…</span>}
-          </div>
+        <ProjectQuoteSection
+          sectionSummaries={sectionSummaries}
+          sectionExpanded={sectionExpanded}
+          toggleProjectSection={toggleProjectSection}
+          salesLocked={salesLocked}
+          quoteMarkup={quoteMarkup}
+          setQuoteMarkup={setQuoteMarkup}
+          setUiPref={setUiPref}
+          showFloQuotePanel={showFloQuotePanel}
+          setShowFloQuotePanel={setShowFloQuotePanel}
+          BRAND={BRAND}
+          floQuoteLoading={floQuoteLoading}
+          quoteBuilderQuote={quoteBuilderQuote}
+          quoteSaving={quoteSaving}
+          floInspirationInput={floInspirationInput}
+          setFloInspirationInput={setFloInspirationInput}
+          fetchQuoteRecos={fetchQuoteRecos}
+          quoteSelected={quoteSelected}
+          quoteMassMarkup={quoteMassMarkup}
+          setQuoteMassMarkup={setQuoteMassMarkup}
+          quoteBuilderItems={quoteBuilderItems}
+          setQuoteBuilderItems={setQuoteBuilderItems}
+          scheduleQuoteSave={scheduleQuoteSave}
+          showHideExtraItems={showHideExtraItems}
+          setShowHideExtraItems={setShowHideExtraItems}
+          setQuoteSelected={setQuoteSelected}
+          quoteSections={quoteSections}
+          setQuoteSections={setQuoteSections}
+          quoteStatusBusy={quoteStatusBusy}
+          quotePdfPreview={quotePdfPreview}
+          setQuotePdfPreview={setQuotePdfPreview}
+          pdf={pdf}
+          downloadQuotePdf={downloadQuotePdf}
+          createOrRefreshContractDraft={createOrRefreshContractDraft}
+          contractTemplateConfig={contractTemplateConfig}
+          selectedContractTemplateKey={selectedContractTemplateKey}
+          setSelectedContractTemplateKey={setSelectedContractTemplateKey}
+          saveContractTemplateConfig={saveContractTemplateConfig}
+          project={project}
+          quoteForm={quoteForm}
+          setQuoteForm={setQuoteForm}
+          saveQuoteForm={saveQuoteForm}
+          showContractEditor={showContractEditor}
+          setShowContractEditor={setShowContractEditor}
+          contractDraft={contractDraft}
+          setContractDraft={setContractDraft}
+          saveContractDraft={saveContractDraft}
+          contractSaving={contractSaving}
+          quoteSendBusy={quoteSendBusy}
+          sendQuoteByEmail={sendQuoteByEmail}
+          quoteCopied={quoteCopied}
+          copyQuoteLink={copyQuoteLink}
+          money={money}
+          preview={preview}
+          setPreview={setPreview}
+          contractBusy={contractBusy}
+          quoteBuilderStats={quoteBuilderStats}
+          quoteLineTotal={quoteLineTotal}
+          toggleQuoteItemSelection={toggleQuoteItemSelection}
+          updateQuoteItemField={updateQuoteItemField}
+          removeQuoteItem={removeQuoteItem}
+          duplicateQuoteItem={duplicateQuoteItem}
+          addQuoteItem={addQuoteItem}
+          updateQuoteSectionName={updateQuoteSectionName}
+          toggleQuoteSectionCollapsed={toggleQuoteSectionCollapsed}
+          addQuoteSection={addQuoteSection}
+          moveQuoteItemToSection={moveQuoteItemToSection}
+          quoteSectionOptions={quoteSectionOptions}
+          toggleQuoteItemOptional={toggleQuoteItemOptional}
+          toggleQuoteItemVisible={toggleQuoteItemVisible}
+          quoteVisibleItems={quoteVisibleItems}
+          quoteHiddenItems={quoteHiddenItems}
+          quoteContractData={quoteContractData}
+          saveContractHtml={saveContractHtml}
+          shareContractWhatsapp={shareContractWhatsapp}
+          quotePublicUrl={quotePublicUrl}
+          setQuotePublicUrl={setQuotePublicUrl}
+        />
 
-          {/* Panneau Flo */}
-          {showFloQuotePanel && (
-            <div style={{ background: '#F5F3FF', borderRadius: 12, padding: '16px 20px', marginBottom: 20, border: '1px solid #DDD6FE' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Sparkles size={13} style={{ color: BRAND }}/><span style={{ fontSize: 13, fontWeight: 700, color: BRAND }}>Flo complète le devis</span>
-              </div>
-              <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 10px', lineHeight: 1.5 }}>
-                Collez des URLs d'images d'inspiration (Pinterest, Houzz…) ou décrivez le style. Flo identifie les matériaux, propose des produits disponibles au Québec avec prix et sources, importe les prix convenus avec les sous-traitants de la section Équipe, et ajoute la main d'œuvre basée sur les phases.
-              </p>
-              <textarea value={floInspirationInput} onChange={e => setFloInspirationInput(e.target.value)}
-                placeholder={"https://pinterest.com/pin/…\nhttps://houzz.com/…\nOu décrivez : planchers de bois naturel, comptoirs de quartz blanc, robinetterie matte noire…"}
-                rows={3}
-                style={{ width: '100%', fontSize: 12, border: '1px solid #DDD6FE', borderRadius: 8, padding: '8px 10px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: '#15171C', boxSizing: 'border-box' }}/>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                <button onClick={fetchQuoteRecos} disabled={floQuoteLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: floQuoteLoading ? 'wait' : 'pointer' }}>
-                  {floQuoteLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={12}/>}
-                  {floQuoteLoading ? 'Analyse en cours…' : 'Analyser et compléter le devis'}
-                </button>
-                <span style={{ fontSize: 11, color: '#9CA3AF' }}>Les postes existants sont conservés — Flo ajoute uniquement les nouvelles lignes.</span>
-              </div>
-            </div>
-          )}
-
-          {/* Barre multi-select + mass-markup */}
-          {quoteSelected.size > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: BRAND }}>{quoteSelected.size} ligne(s)</span>
-              {/* Mass markup */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#EDE9FE', borderRadius: 7, padding: '3px 10px' }}>
-                <span style={{ fontSize: 11, color: BRAND }}>Markup</span>
-                <input type="number" min="0" max="300" step="1" value={quoteMassMarkup}
-                  disabled={salesLocked}
-                  onChange={e => setQuoteMassMarkup(e.target.value)}
-                  placeholder="0"
-                  style={{ width: 38, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
-                <span style={{ fontSize: 11, color: BRAND }}>%</span>
-                <button onClick={() => {
-                  if (quoteMassMarkup === '') return;
-                  const v = Number(quoteMassMarkup);
-                  const next = quoteBuilderItems.map((it, i) => quoteSelected.has(i) ? { ...it, markup: v } : it);
-                  setQuoteBuilderItems(next); scheduleQuoteSave(next); setQuoteMassMarkup('');
-                }}
-                  disabled={salesLocked}
-                  style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, border: 'none', background: BRAND, color: '#fff', fontWeight: 700, cursor: salesLocked ? 'not-allowed' : 'pointer', marginLeft: 4, opacity: salesLocked ? 0.5 : 1 }}>
-                  Appliquer
-                </button>
-              </div>
-              <button onClick={() => { [...quoteSelected].sort((a, b) => b - a).forEach(i => removeQuoteItem(i)); setQuoteSelected(new Set()); }}
-                disabled={salesLocked}
-                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 7, border: '1px solid #FCA5A5', background: '#FFF5F5', color: '#DC2626', fontWeight: 700, cursor: salesLocked ? 'not-allowed' : 'pointer', opacity: salesLocked ? 0.5 : 1 }}>
-                Supprimer
-              </button>
-              <button onClick={() => setQuoteSelected(new Set())}
-                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid #E0E4E8', background: '#fff', color: '#8B919A', cursor: 'pointer', marginLeft: 'auto' }}>
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Tableau devis unifié — style Excel avec groupes repliables */}
-          {(() => {
-            const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
-            const typeIcons  = { material: '🪵', labor: '🔨', subcontractor: '🏗️', other: '📦' };
-            const typeUnits  = { labor: 'h', material: 'un.', subcontractor: 'forfait', other: 'un.' };
-            const iS = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '3px 2px' };
-            const TH = { padding: '5px 6px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', background: '#F9FAFB', whiteSpace: 'nowrap' };
-            const allItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i }));
-            return (
-              <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-                    <colgroup>
-                      <col style={{ width: 28 }}/>{/* checkbox */}
-                      <col style={{ minWidth: 180 }}/>{/* description */}
-                      <col style={{ width: 60 }}/>{/* qty */}
-                      <col style={{ width: 54 }}/>{/* unit */}
-                      <col style={{ width: 90 }}/>{/* prix unit */}
-                      <col style={{ width: 72 }}/>{/* markup */}
-                      <col style={{ width: 100 }}/>{/* total */}
-                      <col style={{ width: 84 }}/>{/* source */}
-                      <col style={{ width: 24 }}/>{/* delete */}
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th style={{ ...TH, textAlign: 'center' }}>
-                          <input type="checkbox"
-                            disabled={salesLocked}
-                            checked={allItems.length > 0 && allItems.every(it => quoteSelected.has(it._i))}
-                            onChange={e => setQuoteSelected(() => {
-                              const n = new Set();
-                              if (e.target.checked) allItems.forEach(it => n.add(it._i));
-                              return n;
-                            })}
-                            style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
-                        </th>
-                        <th style={{ ...TH, textAlign: 'left' }}>Description</th>
-                        {/* Colonnes PDF — œil cliquable pour inclure/exclure du PDF client */}
-                        <th style={{ ...TH, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }} title="Afficher Qté sur le PDF" onClick={() => togglePdfCol('qty')}>
-                          <span style={{ opacity: isPdfColOn('qty') ? 1 : 0.35 }}>Qté {isPdfColOn('qty') ? '👁' : '🙈'}</span>
-                        </th>
-                        <th style={{ ...TH, textAlign: 'left', cursor: 'pointer', userSelect: 'none' }} title="Afficher Unité sur le PDF" onClick={() => togglePdfCol('unit')}>
-                          <span style={{ opacity: isPdfColOn('unit') ? 1 : 0.35 }}>Unité {isPdfColOn('unit') ? '👁' : '🙈'}</span>
-                        </th>
-                        <th style={{ ...TH, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }} title="Afficher Prix unit. sur le PDF" onClick={() => togglePdfCol('unit_price')}>
-                          <span style={{ opacity: isPdfColOn('unit_price') ? 1 : 0.35 }}>Prix unit. {isPdfColOn('unit_price') ? '👁' : '🙈'}</span>
-                        </th>
-                        <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
-                        <th style={{ ...TH, textAlign: 'right' }}>Total</th>
-                        <th style={{ ...TH, textAlign: 'left' }}>Source</th>
-                        <th style={{ ...TH }}/>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {['material', 'labor', 'subcontractor', 'other'].map(type => {
-                        const typeItems = allItems.filter(it => it.type === type);
-                        const nd = quoteNewRow[type] || {};
-                        const isCollapsed = quoteCollapsed[type];
-                        const sectionTotal = typeItems.reduce((s, it) => {
-                          const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
-                          return s + base * (1 + (Number(it.markup) || 0) / 100);
-                        }, 0);
-                        return (
-                          <React.Fragment key={type}>
-                            {/* Ligne-groupe repliable */}
-                            <tr onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
-                              style={{ background: '#F3F4F6', cursor: 'pointer', userSelect: 'none' }}>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                <span style={{ fontSize: 8, color: '#9CA3AF', display: 'inline-block', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
-                              </td>
-                              <td colSpan={7} style={{ padding: '6px 6px' }}>
-                                <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em', marginRight: 8 }}>
-                                  {typeIcons[type]} {typeLabels[type]}
-                                </span>
-                                <span style={{ fontSize: 10, color: '#9CA3AF' }}>{typeItems.length} poste{typeItems.length !== 1 ? 's' : ''}</span>
-                              </td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                                {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                              </td>
-                              <td/>
-                            </tr>
-
-                            {/* Lignes d'articles */}
-                            {!isCollapsed && typeItems.map(it => {
-                              const isSel = quoteSelected.has(it._i);
-                              const mu = Number(it.markup) || 0;
-                              const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
-                              return (
-                                <tr key={it._i} style={{ background: isSel ? '#F5F3FF' : it.source === 'flo' ? '#F7FFF3' : 'white', borderBottom: '1px solid #F3F4F6' }}>
-                                  <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                                    <input type="checkbox" checked={isSel}
-                                      disabled={salesLocked}
-                                      onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
-                                      style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
-                                  </td>
-                                  <td style={{ padding: '1px 6px', verticalAlign: 'middle' }}>
-                                    <input value={it.name} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
-                                      placeholder="Description"
-                                      style={{ ...iS, fontSize: 12, color: '#111827', fontWeight: it.name ? 500 : 400 }}/>
-                                  </td>
-                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input type="number" value={it.qty || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { qty: Number(e.target.value) })}
-                                      style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
-                                  </td>
-                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input value={it.unit || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { unit: e.target.value })}
-                                      placeholder={typeUnits[type]}
-                                      style={{ ...iS, fontSize: 11, color: '#6B7280' }}/>
-                                  </td>
-                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <input type="number" value={it.unit_price || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { unit_price: Number(e.target.value) })}
-                                      placeholder="0"
-                                      style={{ ...iS, fontSize: 11, color: '#374151', textAlign: 'right' }}/>
-                                  </td>
-                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
-                                      <input type="number" value={it.markup || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { markup: Number(e.target.value) })}
-                                        placeholder="0"
-                                        style={{ ...iS, fontSize: 11, color: BRAND, textAlign: 'right', width: 36, fontWeight: 600 }}/>
-                                      <span style={{ fontSize: 10, color: BRAND, flexShrink: 0 }}>%</span>
-                                    </div>
-                                  </td>
-                                  <td style={{ padding: '2px 8px', verticalAlign: 'middle', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                                    {lineTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                                    {it.source === 'flo' && <span style={{ fontSize: 8, color: '#16A34A', marginLeft: 3 }}>✦</span>}
-                                  </td>
-                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle' }}>
-                                    {it.url ? (
-                                      <a href={it.url} target="_blank" rel="noreferrer"
-                                        style={{ fontSize: 10, color: BRAND, textDecoration: 'none', whiteSpace: 'nowrap' }}>🔗 Source</a>
-                                    ) : (
-                                      <input value={it.url || ''} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { url: e.target.value })}
-                                        placeholder="URL"
-                                        style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                    <button onClick={() => removeQuoteItem(it._i)} disabled={salesLocked}
-                                      style={{ background: 'none', border: 'none', cursor: salesLocked ? 'not-allowed' : 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px', opacity: salesLocked ? 0.5 : 1 }}>×</button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-
-                            {/* Ligne d'ajout rapide */}
-                            {!isCollapsed && (
-                              <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
-                                <td/>
-                                <td style={{ padding: '4px 6px' }}>
-                                  <input value={nd.name || ''} placeholder={`+ Ajouter ${typeLabels[type].toLowerCase()}…`}
-                                    readOnly={salesLocked}
-                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], name: e.target.value } }))}
-                                    onKeyDown={e => { if (!salesLocked && e.key === 'Enter') commitNewRow(type, nd); }}
-                                    onBlur={() => { if (!salesLocked) commitNewRow(type, nd); }}
-                                    style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
-                                </td>
-                                <td style={{ padding: '4px 4px' }}>
-                                  <input type="number" value={nd.qty || ''} placeholder="1"
-                                    readOnly={salesLocked}
-                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], qty: e.target.value } }))}
-                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
-                                </td>
-                                <td style={{ padding: '4px 4px' }}>
-                                  <input value={nd.unit || ''} placeholder={typeUnits[type]}
-                                    readOnly={salesLocked}
-                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit: e.target.value } }))}
-                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                                </td>
-                                <td style={{ padding: '4px 4px' }}>
-                                  <input type="number" value={nd.unit_price || ''} placeholder="0"
-                                    readOnly={salesLocked}
-                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], unit_price: e.target.value } }))}
-                                    style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
-                                </td>
-                                <td/><td/><td style={{ padding: '4px 4px' }}>
-                                  <input value={nd.url || ''} placeholder="URL"
-                                    readOnly={salesLocked}
-                                    onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
-                                    style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
-                                </td>
-                                <td/>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Totaux */}
-          {quoteBuilderItems.length > 0 && (() => {
-            const costRaw   = quoteBuilderItems.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || 0), 0);
-            const costTotal = quoteBuilderItems.reduce((s, it) => {
-              const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
-              return s + base * (1 + (Number(it.markup) || 0) / 100);
-            }, 0);
-            const globalMarkupAmt = costTotal * (quoteMarkup / 100);
-            const subtotal  = costTotal + globalMarkupAmt;
-            const tps  = subtotal * 0.05;
-            const tvq  = subtotal * 0.09975;
-            const total = subtotal + tps + tvq;
-            const fmt = v => v.toLocaleString('fr-CA', { minimumFractionDigits: 2 }) + ' $';
-            const hasPerLineMarkup = quoteBuilderItems.some(it => Number(it.markup) > 0);
-            return (
-              <div style={{ marginTop: 8, paddingTop: 16, borderTop: '2px solid #E8EAED', display: 'flex', justifyContent: 'flex-end' }}>
-                <div style={{ width: 340 }}>
-                  {hasPerLineMarkup && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 11, color: '#6B7280' }}>
-                      <span>Coût brut</span><span>{fmt(costRaw)}</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12, color: '#374151' }}>
-                    <span>Coût total{hasPerLineMarkup ? ' (avec markups lignes)' : ''}</span><span>{fmt(costTotal)}</span>
-                  </div>
-                  {/* Global markup */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderTop: '1px dashed #E8EAED', marginTop: 4 }}>
-                    <span style={{ fontSize: 11, color: '#6B7280', flex: 1 }}>Markup global</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: `${BRAND}10`, borderRadius: 6, padding: '2px 8px' }}>
-                      <input type="number" min="0" max="300" step="1" value={quoteMarkup}
-                        disabled={salesLocked}
-                        onChange={e => { const v = Number(e.target.value); setQuoteMarkup(v); localStorage.setItem('monflux-quote-markup', v); setUiPref('quote_markup', v); }}
-                        style={{ width: 40, fontSize: 12, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: BRAND, fontFamily: 'inherit' }}/>
-                      <span style={{ fontSize: 11, color: BRAND }}>%</span>
-                    </div>
-                    {globalMarkupAmt > 0 && <span style={{ fontSize: 12, color: BRAND, fontWeight: 600 }}>+ {fmt(globalMarkupAmt)}</span>}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0 3px', fontSize: 13, fontWeight: 700, color: '#111827', borderTop: '1px solid #E8EAED', marginTop: 2 }}>
-                    <span>Sous-total</span><span>{fmt(subtotal)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#6B7280' }}>
-                    <span>TPS (5%)</span><span>{fmt(tps)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11, color: '#6B7280' }}>
-                    <span>TVQ (9,975%)</span><span>{fmt(tvq)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0 3px', fontSize: 17, fontWeight: 900, color: '#111827', borderTop: '2px solid #E8EAED', marginTop: 6 }}>
-                    <span>Total</span><span style={{ color: BRAND }}>{fmt(total)}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Actions devis */}
-          <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {quoteBuilderItems.length > 0 && quoteBuilderQuote?.status !== 'sent' && quoteBuilderQuote?.status !== 'signed' && (
-              <button className="btn-primary text-xs py-2" onClick={sendQuoteToClient} disabled={quoteSending || !quoteBuilderQuote}>
-                {quoteSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>} Envoyer au client
-              </button>
-            )}
-            {quoteBuilderQuote && (
-              <button className="btn-secondary text-xs py-2" onClick={() => {
-                const cols = ['qty','unit','unit_price'].filter(c => isPdfColOn(c)).join(',');
-                const url = pdf.quoteUrl(quoteBuilderQuote.id) + (cols ? `&cols=${cols}` : '&cols=qty,unit,unit_price');
-                setPreview({ url, title: 'Soumission' });
-              }}>
-                <Eye size={13}/> Aperçu PDF
-              </button>
-            )}
-            {quoteBuilderQuote?.status === 'sent' && (
-              <p className="text-xs text-blue-500 flex items-center gap-1"><CheckCircle size={12}/> Soumission envoyée au client.</p>
-            )}
-          </div>
-
-          {/* ── Contrat — inline sous le devis ── */}
-          <div id="s-contracts" style={{ marginTop: 48, paddingTop: 36, borderTop: '2px dashed #E8EAED' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F5F3FF', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 }}>✍️</div>
-              <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: 20, fontWeight: 800, color: '#15171C', margin: 0, letterSpacing: '-.01em' }}>Contrat</h3>
-                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Document éditable lié automatiquement au type de projet et synchronisé avec le devis</p>
-              </div>
-              {projectContracts.length > 0 && <span className="badge badge-green text-xs">{projectContracts.length} contrat(s)</span>}
-            </div>
-
-            {projectContracts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', background: '#FAFAFA', borderRadius: 12, border: '1px dashed #E5E7EB' }}>
-                <FileSignature size={24} style={{ margin: '0 auto 8px', color: '#D1D5DB' }}/>
-                <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 4px', fontWeight: 600 }}>
-                  {quoteBuilderQuote ? 'Préparation du contrat…' : 'Le contrat sera créé avec le devis'}
-                </p>
-                <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
-                  {quoteBuilderQuote ? `Modèle détecté automatiquement : ${selectedContractTemplate?.label || 'Contrat lié au projet'}.` : 'Le contrat apparaîtra automatiquement dès que le devis existe.'}
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {projectContracts.map(c => {
-                  const isSending = contractSendingId === c.id;
-                  const isOpen = showContractContent === c.id;
-                  const isSaving = contractSavingId === c.id;
-                  const isEnriching = contractEnrichingId === c.id;
-                  const draft = contractDrafts[c.id] || { title: c.title || '', content: normalizeContractHtml(c.content) };
-                  const statusColor = { draft: '#6B7280', sent: '#2563EB', signed: '#16A34A', cancelled: '#9CA3AF' };
-                  const statusLabel = { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé ✓', cancelled: 'Annulé' };
-                  return (
-                    <div key={c.id} style={{ border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
-                      {/* En-tête contrat */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#FAFAFA', borderBottom: isOpen ? '1px solid #E5E7EB' : 'none' }}>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>{c.title}</p>
-                          <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>
-                            {new Date(c.created_at).toLocaleDateString('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
-                            {c.meta?.template_label ? ` · ${c.meta.template_label}` : ''}
-                          </p>
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: statusColor[c.status] || '#6B7280', background: `${statusColor[c.status]}15`, padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                          {statusLabel[c.status] || c.status}
-                        </span>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn-secondary text-xs py-1" onClick={() => setShowContractContent(isOpen ? null : c.id)}>
-                            <Eye size={11}/> {isOpen ? 'Masquer' : 'Ouvrir'}
-                          </button>
-                          {c.status === 'draft' && (
-                            <button className="btn-secondary text-xs py-1" onClick={() => enrichContractWithFlo(c.id)} disabled={isEnriching}>
-                              {isEnriching ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>} Flo
-                            </button>
-                          )}
-                          {c.status === 'draft' && (
-                            <button className="btn-primary text-xs py-1" onClick={() => sendContract(c.id)} disabled={isSending}>
-                              {isSending ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>} Envoyer
-                            </button>
-                          )}
-                          <button className="btn-ghost text-xs py-1 text-gray-300 hover:text-red-500" onClick={() => deleteContract(c.id)}>
-                            <Trash2 size={11}/>
-                          </button>
-                        </div>
-                      </div>
-                      {c.status === 'signed' && (
-                        <div style={{ padding: '8px 16px', background: '#F0FFF4', borderBottom: isOpen ? '1px solid #E5E7EB' : 'none' }}>
-                          <p style={{ fontSize: 11, color: '#16A34A', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <CheckCircle size={11}/> Signé par {c.signer_name} le {new Date(c.signed_at).toLocaleDateString('fr-CA')}
-                          </p>
-                        </div>
-                      )}
-                      {/* Contenu du contrat — affiché inline */}
-                      {isOpen && (
-                        <div style={{ padding: '20px 24px', background: '#FCFCFD' }}>
-                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-                            <input
-                              className="input"
-                              value={draft.title}
-                              onChange={(e) => updateContractDraft(c.id, { title: e.target.value })}
-                              placeholder="Titre du contrat"
-                              style={{ flex: 1, fontWeight: 700 }}
-                            />
-                            {c.status === 'draft' && (
-                              <button className="btn-primary text-xs" onClick={() => saveContractDraft(c.id)} disabled={isSaving}>
-                                {isSaving ? <Loader2 size={12} className="animate-spin"/> : <Save size={12} />} Enregistrer
-                              </button>
-                            )}
-                          </div>
-                          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '28px 34px', boxShadow: '0 8px 24px rgba(15,23,42,.04)' }}>
-                            <div
-                              contentEditable={c.status === 'draft'}
-                              suppressContentEditableWarning
-                              onInput={(e) => updateContractDraft(c.id, { content: e.currentTarget.innerHTML })}
-                              dangerouslySetInnerHTML={{ __html: draft.content }}
-                              style={{
-                                minHeight: 320,
-                                outline: 'none',
-                                fontSize: 13,
-                                color: '#374151',
-                                lineHeight: 1.8,
-                                fontFamily: "'Georgia', serif",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {c.status === 'draft' && (
-                        <div style={{ padding: '10px 16px', background: '#FFFBEB', borderTop: '1px solid #FEF3C7', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          <AlertCircle size={12} style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }}/>
-                          <p style={{ fontSize: 11, color: '#92400E', margin: 0, lineHeight: 1.5 }}>
-                            Brouillon modifiable en mode document. Flo peut enrichir le contexte avant l’envoi au client.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </ProjectSection>
 
         {/* s-feed et s-comms sont maintenant dans leurs propres onglets */}
 
