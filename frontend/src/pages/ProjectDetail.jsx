@@ -5,6 +5,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore, useConfigStore } from '../store';
 import Layout from '../components/Layout';
 import ProjectSection from '../components/project/ProjectSection';
+import ProjectChangeOrdersSection from '../components/project/project-detail/sections/ProjectChangeOrdersSection';
+import ProjectDenonciationsSection from '../components/project/project-detail/sections/ProjectDenonciationsSection';
+import ProjectDescriptionSection from '../components/project/project-detail/sections/ProjectDescriptionSection';
+import ProjectExpensesSection from '../components/project/project-detail/sections/ProjectExpensesSection';
+import ProjectInvoicesSection from '../components/project/project-detail/sections/ProjectInvoicesSection';
+import ProjectMaterialsSection from '../components/project/project-detail/sections/ProjectMaterialsSection';
+import ProjectMediaSection from '../components/project/project-detail/sections/ProjectMediaSection';
+import ProjectPipelineSection from '../components/project/project-detail/sections/ProjectPipelineSection';
+import ProjectPunchSection from '../components/project/project-detail/sections/ProjectPunchSection';
+import ProjectQuittancesSection from '../components/project/project-detail/sections/ProjectQuittancesSection';
 import { isSectionAvailable, unavailableReason } from '../config/projectSections';
 import { projects as projectsApi, punch as punchApi, timesheets as tsApi, invoices as invoicesApi, quotes as quotesApi, quittances as quittancesApi, changeOrders as changeOrdersApi, subcontractors as subsApi, companies as companiesApi, rfqs as rfqsApi, contracts as contractsApi, materialOrders as materialOrdersApi, siteMedia as siteMediaApi, ai as aiApi, pdf, email as emailApi, contacts as contactsApi, documents as documentsApi, activityLog as activityLogApi } from '../api';
 import { ArrowLeft, QrCode, Plus, Loader2, MapPin, Calendar, DollarSign, CheckCircle, Pencil, StickyNote, Receipt, FileText, GitBranch, Shield, Link2, ExternalLink, MessageCircle, MessageSquare, Globe, FileEdit, Trash2, Copy, CheckCheck, TrendingUp, HardHat, FolderOpen, Eye, EyeOff, X, ClipboardCheck, Send, Camera, Sparkles, CreditCard, FileSignature, Briefcase, Users, UserPlus, LayoutDashboard, Wrench, FolderClosed, AlertCircle, Clock, Package, Image, ShieldAlert, Wand2, AlertTriangle, Mic, GripVertical, Video, Square, Paperclip, Upload, Share2, Download, Repeat, Pin, Save } from 'lucide-react';
@@ -7718,264 +7728,36 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       {/* ── Doc sections (detail tab only) ── */}
       <div style={{ display: activeTab === 'detail' ? 'flex' : 'none', flexDirection: 'column' }}>
 
-        {/* ── Descriptif de la demande ── */}
-        {(() => {
-          const fa = project.field_assessment || {};
-          const vision = fa.vision || {};
-          const inspirations = vision.inspirations || [];
-          const storedAnalysis = fa.plan_analysis || planAnalysis;
-          const planUrl = fa.plan_url;
-
-          const SubLabel = ({ children }) => (
-            <p style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: '#9CA3AF', margin: 0 }}>{children}</p>
-          );
-
-          const addInspiration = async (url) => {
-            if (!url.trim()) return;
-            const next = [...inspirations, url.trim()];
-            setVisionInspirationInput('');
-            await saveVisionField({ inspirations: next });
-          };
-
-          const removeInspiration = async (idx) => {
-            const next = inspirations.filter((_, i) => i !== idx);
-            await saveVisionField({ inspirations: next });
-          };
-
-          return (
-            <ProjectSection
-              sectionId="s-description"
-              icon="📝"
-              title="Descriptif de la demande"
-              summary={sectionSummaries['s-description']?.summary}
-              stats={sectionSummaries['s-description']?.stats}
-              expanded={!!sectionExpanded['s-description']}
-              onToggle={() => toggleProjectSection('s-description')}
-              background="#fff"
-              borderTop="1px solid #E8EAED"
-            >
-
-              {/* ─── 1. Description des besoins ─── */}
-              <div style={{ padding: '22px 56px 18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <SubLabel>Descriptif de la demande</SubLabel>
-                </div>
-                <InlineField
-                  value={project.description || ''}
-                  onSave={v => saveField('description', v)}
-                  placeholder="Décris ici la demande du client, la portée des travaux, les contraintes particulières…"
-                  multiline
-                  style={{ fontSize: 14, color: '#3F3F46', fontWeight: 400, lineHeight: 1.65, maxWidth: 760 }}
-                  displayStyle={{ fontSize: 14, color: project.description ? '#3F3F46' : '#B0B3BA', fontWeight: 400, lineHeight: 1.65, maxWidth: 760 }}
-                />
-                {showClientReply && (
-                  <div style={{ marginTop: 12, padding: 14, background: '#F8FAFB', borderRadius: 10, border: '1px solid #E8EAED' }}>
-                    <p style={{ fontSize: 11.5, fontWeight: 700, color: '#4B5563', margin: '0 0 8px' }}>Colle ici la réponse reçue du client — elle remplacera le descriptif actuel.</p>
-                    <textarea value={clientReplyText} onChange={e => setClientReplyText(e.target.value)}
-                      placeholder="Copie-colle le courriel ou message du client ici…"
-                      style={{ width: '100%', minHeight: 100, padding: '10px 12px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 13, lineHeight: 1.6, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#15171C' }}/>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button disabled={!clientReplyText.trim()}
-                        onClick={async () => { await saveField('description', clientReplyText.trim()); setShowClientReply(false); setClientReplyText(''); }}
-                        className="btn-primary text-xs">Enregistrer comme descriptif</button>
-                      <button onClick={() => { setShowClientReply(false); setClientReplyText(''); }} className="btn-secondary text-xs">Annuler</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ─── 2. Photos et documents pré-chantier ─── */}
-              <div style={{ padding: '0 56px 22px', borderTop: '1px solid #F4F5F6' }}
-                onDragOver={e => { e.preventDefault(); setPhotoDragOver(true); }}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setPhotoDragOver(false); }}
-                onDrop={async e => {
-                  e.preventDefault(); setPhotoDragOver(false);
-                  const droppedFiles = Array.from(e.dataTransfer.files);
-                  if (!droppedFiles.length) return;
-                  const token = localStorage.getItem('token');
-                  for (const file of droppedFiles) {
-                    const fd = new FormData();
-                    fd.append('file', file); fd.append('project_id', id);
-                    fd.append('type', file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document');
-                    fd.append('caption', file.name);
-                    try {
-                      const res = await fetch(`${PROJ_API_BASE}/media`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
-                      if (res.ok) { const data = await res.json(); setMedia(prev => [data, ...prev]); }
-                    } catch {}
-                  }
-                }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 10px' }}>
-                  <SubLabel>Photos et documents pré-chantier</SubLabel>
-                  {(media.length > 0 || (project.documents || []).length > 0) && (
-                    <span style={{ fontSize: 10, color: '#C4C8CE' }}>{media.length + (project.documents || []).length} fichier{media.length + (project.documents || []).length !== 1 ? 's' : ''}</span>
-                  )}
-                  {photoDragOver && (
-                    <span style={{ marginLeft: 'auto', fontSize: 11, color: BRAND, fontWeight: 700, background: `${BRAND}12`, border: `1.5px dashed ${BRAND}`, borderRadius: 7, padding: '3px 10px' }}>
-                      Déposer ici
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', alignItems: 'flex-start' }}>
-                  {media.map(m => (
-                    <div key={m.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F4F5F6', position: 'relative', cursor: 'pointer' }}
-                      onClick={() => setLightboxItem(m)}>
-                      {m.type === 'photo' && m.url
-                        ? <img src={m.url} alt={m.caption || 'Photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                        : m.type === 'video'
-                          ? <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#1C1C1E', color: '#fff', fontSize: 28 }}>▶</div>
-                          : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontSize: 28 }}>📎</div>}
-                      {m.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9.5, padding: '3px 6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.caption}</div>}
-                    </div>
-                  ))}
-                  {(project.documents || []).map(d => (
-                    <div key={d.id} style={{ flexShrink: 0, width: 120, height: 90, borderRadius: 10, border: '1px solid #E8EAED', overflow: 'hidden', background: '#F8FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', padding: 8, boxSizing: 'border-box' }}
-                      onClick={() => setLightboxItem({ ...d, type: 'doc' })}>
-                      <span style={{ fontSize: 26 }}>📄</span>
-                      <span style={{ fontSize: 9.5, color: '#4B5563', textAlign: 'center', lineHeight: 1.3, overflow: 'hidden', maxWidth: '100%', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.filename || 'Document'}</span>
-                    </div>
-                  ))}
-                  {/* Tuile + toujours présente à la fin */}
-                  <button onClick={() => setShowCapture(true)}
-                    style={{ flexShrink: 0, width: 90, height: 90, borderRadius: 10, border: '1.5px dashed #D1D5DB', background: photoDragOver ? `${BRAND}08` : '#F9FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', color: '#9CA3AF', transition: 'all .15s', padding: 0 }}>
-                    <Plus size={20} strokeWidth={1.5}/>
-                    <span style={{ fontSize: 9.5 }}>Ajouter</span>
-                  </button>
-                </div>
-                {(media.length === 0 && (project.documents || []).length === 0) && !photoDragOver && (
-                  <p style={{ fontSize: 11.5, color: '#B0B3BA', margin: '2px 0 0', fontStyle: 'italic' }}>Glisse des fichiers ici ou clique sur + pour ajouter des photos et documents.</p>
-                )}
-              </div>
-
-              {/* ─── 3. Vision + Prévisualisation IA ─── */}
-              <div style={{ padding: '0 56px 26px', borderTop: '1px solid #F4F5F6' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 12px' }}>
-                  <SubLabel>Vision</SubLabel>
-                </div>
-
-                {/* Plans d'architecte et Images d'inspiration — AVANT la textarea */}
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Plans d'architecte et Images d'inspiration</p>
-                  <input ref={planUploadRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) analyzePlan(f); e.target.value = ''; }}/>
-                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', alignItems: 'flex-start' }}>
-                    {planUrl && (
-                      <div style={{ flexShrink: 0, width: 110, height: 82, borderRadius: 9, border: `1.5px solid ${BRAND}40`, background: `${BRAND}06`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', position: 'relative' }}
-                        onClick={() => window.open(planUrl, '_blank')}>
-                        <span style={{ fontSize: 26 }}>📐</span>
-                        <span style={{ fontSize: 9.5, color: BRAND, fontWeight: 600 }}>Voir plan ↗</span>
-                        {planAnalysisLoading && (
-                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 9 }}>
-                            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: BRAND }}/>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {/* Tuile + pour uploader un plan */}
-                    <button onClick={() => planUploadRef.current?.click()}
-                      style={{ flexShrink: 0, width: 90, height: 82, borderRadius: 9, border: '1.5px dashed #D1D5DB', background: '#F9FAFB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', color: '#9CA3AF', padding: 0 }}>
-                      <Plus size={18} strokeWidth={1.5}/>
-                      <span style={{ fontSize: 9.5 }}>{planUrl ? 'Remplacer' : 'Plan'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Zone texte vision + bouton génération côte à côte */}
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
-                  <textarea
-                    value={vision.text || ''}
-                    onChange={e => {
-                      const v = e.target.value;
-                      setProject(p => ({ ...p, field_assessment: { ...(p.field_assessment || {}), vision: { ...(p.field_assessment?.vision || {}), text: v } } }));
-                    }}
-                    onBlur={e => saveVisionField({ text: e.target.value })}
-                    rows={4}
-                    placeholder="Décris la vision du projet, le style souhaité, les matériaux envisagés… Colle des liens Pinterest, Houzz, Instagram ou toute référence."
-                    style={{ flex: 1, padding: '10px 13px', border: '1.5px solid #E0E4E8', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', color: '#15171C', lineHeight: 1.65 }}
-                  />
-                  <button onClick={() => generatePreview(vision.text)}
-                    disabled={floGenLoading || !(vision.text || '').trim()}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '12px 14px', borderRadius: 10, border: 'none', background: BRAND, color: '#fff', fontSize: 11, fontWeight: 700, cursor: floGenLoading || !(vision.text || '').trim() ? 'default' : 'pointer', opacity: !(vision.text || '').trim() ? 0.4 : 1, flexShrink: 0, minWidth: 80, alignSelf: 'stretch' }}>
-                    {floGenLoading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={15}/>}
-                    <span style={{ lineHeight: 1.3, textAlign: 'center' }}>{floGenLoading ? 'Génération…' : 'Générer\nprévisualisation'}</span>
-                  </button>
-                </div>
-
-                {/* Tableau analyse du plan */}
-                {storedAnalysis && (
-                  <div style={{ marginTop: 4 }}>
-                    {storedAnalysis.general && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                        {[['Superficie', storedAnalysis.general.superficie_totale], ['Pièces', storedAnalysis.general.nb_pieces], ['Style', storedAnalysis.general.style], ['Contraintes', storedAnalysis.general.contraintes_particulieres]].filter(([, v]) => v).map(([label, val]) => (
-                          <div key={label} style={{ background: '#F8F9FA', borderRadius: 8, padding: '5px 12px', border: '1px solid #E8EAED' }}>
-                            <span style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block' }}>{label}</span>
-                            <span style={{ fontSize: 12, color: '#374151', fontWeight: 600 }}>{val}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {(storedAnalysis.specialisations || []).filter(s => s.items?.length > 0).map(spec => (
-                      <div key={spec.metier} style={{ marginBottom: 16 }}>
-                        <p style={{ fontSize: 10.5, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: BRAND }}/>
-                          {spec.metier}
-                        </p>
-                        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #E8EAED' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-                            <thead>
-                              <tr style={{ background: '#F8F9FA' }}>
-                                {['Élément', 'Détail', 'Quantité / mesure', 'Notes chantier'].map(h => (
-                                  <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED' }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {spec.items.map((it, i) => (
-                                <tr key={i} style={{ borderBottom: i < spec.items.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-                                  <td style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, color: '#111827' }}>{it.element}</td>
-                                  <td style={{ padding: '6px 10px', fontSize: 12, color: '#374151' }}>{it.detail}</td>
-                                  <td style={{ padding: '6px 10px', fontSize: 11.5, color: '#6B7280', whiteSpace: 'nowrap' }}>{it.quantite || '—'}</td>
-                                  <td style={{ padding: '6px 10px', fontSize: 11, color: '#9CA3AF' }}>{it.notes_chantier || '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Rendus générés */}
-                {generatedPreviews.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 10px' }}>Prévisualisations générées</p>
-                    <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
-                      {generatedPreviews.map(prev => (
-                        <div key={prev.id} style={{ flexShrink: 0, width: 240, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA' }}>
-                          <img src={prev.url} alt={prev.prompt} loading="lazy"
-                            style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
-                            onError={e => { e.target.style.display = 'none'; }}/>
-                          <div style={{ padding: '8px 10px 9px' }}>
-                            <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{prev.prompt}</p>
-                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                              <a href={prev.url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: BRAND, fontWeight: 700, textDecoration: 'none' }}>Voir grand ↗</a>
-                              <button onClick={() => { const next = generatedPreviews.filter(p => p.id !== prev.id); setGeneratedPreviews(next); localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(next)); }}
-                                style={{ fontSize: 10, color: '#D1D5DB', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Supprimer</button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {generatedPreviews.length === 0 && !floGenLoading && (vision.text || '').trim() && (
-                  <p style={{ fontSize: 11.5, color: '#C4C8CE', fontStyle: 'italic', marginTop: 6 }}>Clique "Générer prévisualisation" pour voir un rendu photoréaliste du résultat final.</p>
-                )}
-              </div>
-
-            </ProjectSection>
-          );
-        })()}
+        <ProjectDescriptionSection
+          sectionSummary={sectionSummaries['s-description']}
+          expanded={!!sectionExpanded['s-description']}
+          onToggle={() => toggleProjectSection('s-description')}
+          project={project}
+          InlineField={InlineField}
+          saveField={saveField}
+          showClientReply={showClientReply}
+          clientReplyText={clientReplyText}
+          setClientReplyText={setClientReplyText}
+          setShowClientReply={setShowClientReply}
+          setPhotoDragOver={setPhotoDragOver}
+          media={media}
+          setMedia={setMedia}
+          setLightboxItem={setLightboxItem}
+          setShowCapture={setShowCapture}
+          BRAND={BRAND}
+          PROJ_API_BASE={PROJ_API_BASE}
+          id={id}
+          planAnalysis={planAnalysis}
+          planUploadRef={planUploadRef}
+          analyzePlan={analyzePlan}
+          planAnalysisLoading={planAnalysisLoading}
+          saveVisionField={saveVisionField}
+          setProject={setProject}
+          generatePreview={generatePreview}
+          floGenLoading={floGenLoading}
+          generatedPreviews={generatedPreviews}
+          setGeneratedPreviews={setGeneratedPreviews}
+        />
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
         {/* ── Estimation approximative ── */}
@@ -8611,171 +8393,46 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         })()}
 
 
-        {/* ── Phases du projet ── */}
-        <ProjectSection
-          sectionId="s-pipeline"
-          icon="🏗️"
-          title="Phases du projet"
-          summary={sectionSummaries['s-pipeline']?.summary}
-          stats={sectionSummaries['s-pipeline']?.stats}
+        <ProjectPipelineSection
+          sectionSummary={sectionSummaries['s-pipeline']}
           expanded={!!sectionExpanded['s-pipeline']}
           onToggle={() => toggleProjectSection('s-pipeline')}
-          background="#E7EFF4"
-        >
-
-          {(showPhase || editPhase) && (
-            <PhaseModal projectId={id} phase={editPhase} trades={project.trades || []}
-              onClose={() => { setShowPhase(false); setEditPhase(null); }} onSave={handlePhaseSave}/>
-          )}
-
-          {/* ── Gantt + Florence — même carte blanche ── */}
-          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,.07)', overflow: 'hidden', marginBottom: 16 }}>
-            {project.phases?.length > 0 ? (
-              <GanttChart
-                phases={project.phases}
-                projectStart={project.start_date}
-                projectEnd={project.end_date}
-                trades={project.trades}
-                onDeletePhase={removePhase}
-                onEditPhase={(ph) => setEditPhase(ph)}
-                onReorderPhases={reorderPhases}
-                onRenamePhase={renamePhase}
-                onDatesChange={handleDatesChange}
-                onAddPhase={async (name) => {
-                  if (!name) { setShowPhase(true); return; }
-                  try {
-                    const { data } = await projectsApi.addPhase(id, { name, status:'not_started', display_order:(project.phases?.length||0) });
-                    setProject(p => ({ ...p, phases:[...(p.phases||[]), data] }));
-                  } catch(err) { console.error('addPhaseInline', err); }
-                }}
-                onUpdatePhase={handleUpdatePhase}
-                currentUserName={currentUser?.name || currentUser?.email || null}
-                onSelfAssign={handleSelfAssign}
-              />
-            ) : (() => {
-              const existing = new Set((project.phases || []).map(p => p.name?.toLowerCase()));
-              const available = recommendedPhaseTemplates.map(tpl => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) })).filter(tpl => !existing.has(tpl.name.toLowerCase()));
-              const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
-              const bulkLabel = projectWorkType || 'ce projet';
-              return (
-                <div style={{ padding:'28px 24px', textAlign:'center' }}>
-                  <div style={{ width:40, height:40, borderRadius:12, background:BRAND_SOFT, display:'grid', placeItems:'center', margin:'0 auto 12px' }}>
-                    <Sparkles size={18} color={BRAND}/>
-                  </div>
-                  <p style={{ fontSize:14, fontWeight:800, color:'#15171C', margin:'0 0 4px' }}>Aucune phase pour le moment</p>
-                  <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 18px' }}>Génère un planning complet avec Flo ou ajoute les étapes recommandées.</p>
-                  <div style={{ display:'flex', justifyContent:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-                    <button onClick={adjustPhasesWithAI} disabled={generatingPhases}
-                      style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'9px 18px', borderRadius:9, border:'none', background:BRAND, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-                      {generatingPhases ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                      {generatingPhases ? 'Génération…' : 'Générer avec Flo'}
-                    </button>
-                    {hasPlaybook && (
-                      <button onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })} disabled={addingTemplatePhase === '__batch__'}
-                        style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'9px 18px', borderRadius:9, border:`1.5px solid ${BRAND_BORDER}`, background:BRAND_SOFT, color:BRAND_DARK, fontSize:12, fontWeight:700, cursor:'pointer' }}>
-                        {addingTemplatePhase === '__batch__' ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
-                        {`Ajouter les étapes de ${bulkLabel}`}
-                      </button>
-                    )}
-                  </div>
-                  {available.length > 0 && (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:5, justifyContent:'center' }}>
-                      {available.slice(0, 8).map(tpl => (
-                        <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name}
-                          style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:7, border:'1.5px solid #E0E4E8', background:'#FAFAFA', fontSize:11, fontWeight:600, color:'#3A3D44', cursor:'pointer' }}>
-                          <Plus size={9}/>{tpl.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-          {/* ── Section "Étapes recommandées" — sous le Gantt, seulement si des phases existent déjà ── */}
-          {(() => {
-            if (!project.phases?.length) return null; // L'état vide les montre déjà
-            const existing = new Set((project.phases || []).map(p => p.name?.toLowerCase()));
-            const available = recommendedPhaseTemplates.map(tpl => ({ ...tpl, trade_name: toTradeLabel(tpl.trade_name) })).filter(tpl => !existing.has(tpl.name.toLowerCase()));
-            const hasPlaybook = Boolean(projectTypePlaybook?.phases?.length);
-            const bulkLabel = projectWorkType || 'ce projet';
-            if (!available.length) return null; // Tout est déjà ajouté
-            return (
-              <div style={{ borderTop:'1px solid #F4F5F6', padding:'10px 16px' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }}>
-                  <span style={{ fontSize:9.5, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF' }}>
-                    {hasPlaybook ? `Étapes recommandées · ${bulkLabel}` : 'Phases suggérées'}
-                  </span>
-                  {hasPlaybook && (
-                    <button onClick={() => applyProjectTypePlaybook({ replaceExisting: false, source: 'manual' })} disabled={addingTemplatePhase === '__batch__'}
-                      style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:7, border:`1px solid ${BRAND_BORDER}`, background:BRAND_SOFT, color:BRAND_DARK, fontSize:11, fontWeight:700, cursor:'pointer', marginLeft:'auto' }}>
-                      {addingTemplatePhase === '__batch__' ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9}/>}
-                      {`Ajouter toutes les étapes de ${bulkLabel}`}
-                    </button>
-                  )}
-                </div>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
-                  {available.map(tpl => (
-                    <button key={tpl.name} onClick={() => addTemplatePhase(tpl)} disabled={addingTemplatePhase === tpl.name || addingTemplatePhase === '__batch__'}
-                      style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:7, border:'1.5px solid #E0E4E8', background: addingTemplatePhase === tpl.name ? '#F4F5F6' : '#FAFAFA', fontSize:11, fontWeight:600, color:'#3A3D44', cursor:'pointer' }}>
-                      {addingTemplatePhase === tpl.name ? <Loader2 size={9} className="animate-spin"/> : <Plus size={9} color={BRAND}/>}
-                      {tpl.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ── Florence — Ajuster avec Flo + conseils ── */}
-          <div style={{ borderTop: '1px solid #F4F5F6', padding: '14px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: BRAND, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <Sparkles size={13} color="#fff"/>
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <p style={{ fontSize: 12.5, fontWeight: 800, color: '#15171C', margin: 0 }}>
-                  {project.phases?.length > 0 ? 'Ajuster le planning avec Flo' : 'Générer les phases avec Flo'}
-                </p>
-                <p style={{ fontSize: 11, color: '#7C8089', margin: '1px 0 0' }}>
-                  {project.phases?.length > 0 ? 'Flo recalcule les dates, l\'ordre logique et les durées ouvrables, en tenant compte des jours fériés du Québec.' : 'Flo analyse le contexte et construit un planning adapté au chantier réel.'}
-                </p>
-              </div>
-              <button onClick={adjustPhasesWithAI} disabled={generatingPhases}
-                style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: BRAND, fontSize: 12, fontWeight: 700, color: '#fff', cursor: generatingPhases ? 'wait' : 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {generatingPhases ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                {generatingPhases ? 'Ajustement…' : project.phases?.length > 0 ? 'Ajuster avec Flo' : 'Générer avec Flo'}
-              </button>
-            </div>
-            {aiNotice && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3 flex items-center gap-2">
-                <AlertTriangle size={14} className="text-amber-500 flex-shrink-0"/>
-                <p className="text-xs text-amber-700">{aiNotice}</p>
-                <button className="ml-auto text-amber-400 hover:text-amber-600" onClick={() => setAiNotice('')}><X size={13}/></button>
-              </div>
-            )}
-            {aiRecommendations.length > 0 && (
-              <div style={{ marginTop:12, borderTop:'1px solid #F4F5F6', paddingTop:10 }}>
-                <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 8px', display:'flex', alignItems:'center', gap:5 }}>
-                  <Sparkles size={10}/> Conseils de Flo
-                </p>
-                <ul style={{ margin:0, padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:5 }}>
-                  {aiRecommendations.map((rec, i) => (
-                    <li key={i} style={{ display:'flex', gap:6, fontSize:11.5, color:'#3A3D44', lineHeight:1.4 }}>
-                      <span style={{ color:BRAND, flexShrink:0, fontWeight:800 }}>›</span>
-                      {rec}
-                    </li>
-                  ))}
-                </ul>
-                <button onClick={() => setAiRecommendations([])} style={{ marginTop:6, fontSize:10, color:'#C0C4CC', background:'transparent', border:'none', cursor:'pointer', padding:0 }}>
-                  Masquer les conseils
-                </button>
-              </div>
-            )}
-          </div>
-          </div>{/* fin carte blanche Gantt+Florence */}
-
-        </ProjectSection>{/* fin s-pipeline */}
+          showPhase={showPhase}
+          editPhase={editPhase}
+          PhaseModal={PhaseModal}
+          id={id}
+          project={project}
+          setShowPhase={setShowPhase}
+          setEditPhase={setEditPhase}
+          handlePhaseSave={handlePhaseSave}
+          GanttChart={GanttChart}
+          removePhase={removePhase}
+          reorderPhases={reorderPhases}
+          renamePhase={renamePhase}
+          handleDatesChange={handleDatesChange}
+          projectsApi={projectsApi}
+          setProject={setProject}
+          handleUpdatePhase={handleUpdatePhase}
+          currentUser={currentUser}
+          handleSelfAssign={handleSelfAssign}
+          recommendedPhaseTemplates={recommendedPhaseTemplates}
+          toTradeLabel={toTradeLabel}
+          projectTypePlaybook={projectTypePlaybook}
+          projectWorkType={projectWorkType}
+          BRAND_SOFT={BRAND_SOFT}
+          BRAND={BRAND}
+          BRAND_BORDER={BRAND_BORDER}
+          BRAND_DARK={BRAND_DARK}
+          adjustPhasesWithAI={adjustPhasesWithAI}
+          generatingPhases={generatingPhases}
+          applyProjectTypePlaybook={applyProjectTypePlaybook}
+          addingTemplatePhase={addingTemplatePhase}
+          addTemplatePhase={addTemplatePhase}
+          aiNotice={aiNotice}
+          setAiNotice={setAiNotice}
+          aiRecommendations={aiRecommendations}
+          setAiRecommendations={setAiRecommendations}
+        />
 
         {/* ── Équipe & conformité ── */}
         <ProjectSection
@@ -9519,211 +9176,32 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         </ProjectSection>{/* fin s-equipe */}
 
         {/* ── Recherche de matériaux ── */}
-        <ProjectSection
-          sectionId="s-materiaux"
-          icon="🔍"
-          title="Recherche de matériaux"
-          summary={sectionSummaries['s-materiaux']?.summary}
-          stats={sectionSummaries['s-materiaux']?.stats}
+        <ProjectMaterialsSection
+          sectionSummary={sectionSummaries['s-materiaux']}
           expanded={!!sectionExpanded['s-materiaux']}
           onToggle={() => toggleProjectSection('s-materiaux')}
-          background="#F0F5FF"
-        >
-          {sectionGuard('s-materiaux')}
-          {(() => {
-            const warnings = (() => { try { return JSON.parse(localStorage.getItem(`monflux-mat-warnings-${id}`) || '[]'); } catch { return []; } })();
-            const displayed = matFilter === 'wishlist' ? matSearchResults.filter(it => matWishlist.includes(it.id)) : matSearchResults;
-            const byCategory = {};
-            displayed.forEach(it => { if (!byCategory[it.categorie]) byCategory[it.categorie] = []; byCategory[it.categorie].push(it); });
-            return (
-              <>
-                {/* Barre de recherche */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-                  <input value={matSearchQuery} onChange={e => setMatSearchQuery(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') fetchMaterialSearch(matSearchQuery); }}
-                    placeholder='ex: "plancher de bois", "robinetterie matte noire"… ou laisse vide pour une proposition complète'
-                    style={{ flex: 1, minWidth: 260, padding: '9px 14px', border: '1px solid #E0E4E8', borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none', color: '#15171C' }}/>
-                  <button onClick={() => fetchMaterialSearch(matSearchQuery)} disabled={matSearchLoading}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: 'none', background: BRAND, color: '#fff', fontSize: 13, fontWeight: 700, cursor: matSearchLoading ? 'wait' : 'pointer', flexShrink: 0 }}>
-                    {matSearchLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={14}/>}
-                    {matSearchLoading ? 'Recherche…' : 'Rechercher avec Flo'}
-                  </button>
-                  {matSearchResults.length > 0 && (
-                    <div style={{ display: 'flex', gap: 3, background: '#F3F4F6', borderRadius: 8, padding: 3, alignSelf: 'center' }}>
-                      {[['all', 'Tout'], ['wishlist', `⭐ Wishlist${matWishlist.length > 0 ? ` (${matWishlist.length})` : ''}`]].map(([val, label]) => (
-                        <button key={val} onClick={() => setMatFilter(val)}
-                          style={{ padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', background: matFilter === val ? '#fff' : 'transparent', color: matFilter === val ? '#111827' : '#9CA3AF', boxShadow: matFilter === val ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Warnings Flo */}
-                {warnings.length > 0 && (
-                  <div style={{ marginBottom: 18 }}>
-                    {warnings.map((w, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 14px', background: '#FFFBEB', borderRadius: 9, border: '1px solid #FCD34D', marginBottom: 8 }}>
-                        <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
-                        <p style={{ fontSize: 12, color: '#92400E', margin: 0, lineHeight: 1.5 }}>{w.message}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Résultats */}
-                {matSearchLoading ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', padding: '48px 0', color: '#9CA3AF' }}>
-                    <Loader2 size={26} style={{ animation: 'spin 1s linear infinite', color: BRAND }}/>
-                    <p style={{ fontSize: 13, margin: 0 }}>Flo recherche les meilleures options chez tes fournisseurs…</p>
-                  </div>
-                ) : Object.keys(byCategory).length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-                    {Object.entries(byCategory).map(([cat, items]) => (
-                      <div key={cat}>
-                        <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em', color: '#6B7280', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: BRAND, display: 'inline-block' }}/>
-                          {cat} · {items.length} option{items.length !== 1 ? 's' : ''}
-                        </p>
-                        <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #E8EAED' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                            <thead>
-                              <tr style={{ background: '#F8F9FA' }}>
-                                {['☑', '', 'Produit', 'Fournisseur', 'Prix unit.', 'Unité', 'Note Flo', 'Lien', 'Wishlist', ''].map((h, hi) => (
-                                  <th key={hi} style={{ padding: '8px 10px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textAlign: (hi === 4 || hi === 8) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #E8EAED', whiteSpace: 'nowrap' }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {items.map((it, i) => {
-                                const inWishlist = matWishlist.includes(it.id);
-                                const isSel = matSelected.has(it.id);
-                                return (
-                                  <tr key={it.id || i} style={{ borderBottom: i < items.length - 1 ? '1px solid #F3F4F6' : 'none', background: isSel ? '#F0FFF4' : inWishlist ? '#FFFDF5' : 'transparent' }}>
-                                    <td style={{ padding: '7px 10px', width: 34 }}>
-                                      <input type="checkbox" checked={isSel}
-                                        onChange={() => setMatSelected(prev => { const n = new Set(prev); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; })}
-                                        style={{ accentColor: BRAND, cursor: 'pointer', width: 15, height: 15 }}/>
-                                    </td>
-                                    <td style={{ padding: '7px 8px', width: 52 }}>
-                                      {it.url_image ? (
-                                        <img src={it.url_image} alt={it.nom}
-                                          style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 7, border: '1px solid #E8EAED' }}
-                                          onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'grid'; }}/>
-                                      ) : null}
-                                      <div style={{ width: 44, height: 44, borderRadius: 7, background: '#F3F4F6', display: it.url_image ? 'none' : 'grid', placeItems: 'center', fontSize: 20 }}>🪵</div>
-                                    </td>
-                                    <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600, color: '#111827', maxWidth: 200 }}>{it.nom}</td>
-                                    <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                        <span style={{ display: 'inline-block', background: '#F3F4F6', borderRadius: 5, padding: '2px 9px', fontSize: 11, fontWeight: 600, color: '#374151' }}>{it.fournisseur}</span>
-                                        {it.source_verified === false ? (
-                                          <span style={{ fontSize: 9.5, color: '#D97706', fontWeight: 600 }}>⚠ Estimation Flo</span>
-                                        ) : it.source_type === 'apify' || it.source_type === 'api' ? (
-                                          <span style={{ fontSize: 9.5, color: '#16A34A', fontWeight: 600 }}>✓ Prix réel</span>
-                                        ) : null}
-                                      </div>
-                                    </td>
-                                    <td style={{ padding: '7px 10px', fontSize: 14, fontWeight: 700, color: '#111827', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                      {it.prix_unitaire ? `${Number(it.prix_unitaire).toFixed(2)} $` : '—'}
-                                    </td>
-                                    <td style={{ padding: '7px 10px', fontSize: 11.5, color: '#9CA3AF' }}>{it.unite || '—'}</td>
-                                    <td style={{ padding: '7px 10px', fontSize: 11.5, color: '#6B7280', maxWidth: 200 }}>
-                                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.note_flo || it.note || '—'}</span>
-                                    </td>
-                                    <td style={{ padding: '7px 10px' }}>
-                                      {it.url_source ? (
-                                        <a href={it.url_source} target="_blank" rel="noreferrer"
-                                          style={{ fontSize: 11.5, color: BRAND, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Voir ↗</a>
-                                      ) : '—'}
-                                    </td>
-                                    <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                                      <button onClick={() => toggleMatWishlist(it.id)}
-                                        style={{ background: inWishlist ? '#FEF3C7' : '#F3F4F6', border: inWishlist ? '1.5px solid #FCD34D' : '1.5px solid #E5E7EB', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', fontSize: 14, color: inWishlist ? '#D97706' : '#9CA3AF', fontWeight: 700, transition: 'all .15s' }}>
-                                        {inWishlist ? '⭐' : '☆'}
-                                      </button>
-                                    </td>
-                                    <td style={{ padding: '7px 8px', textAlign: 'center' }}>
-                                      <button onClick={() => setMatSearchResults(prev => prev.filter(r => r.id !== it.id))}
-                                        title="Supprimer ce résultat"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: '#D1D5DB', lineHeight: 1, padding: '2px 4px' }}>×</button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ))}
-                    {/* Barre sélection → devis */}
-                    {matSelected.size > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F0FFF4', borderRadius: 10, border: '1px solid #86EFAC', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, color: '#15803D', fontWeight: 700 }}>{matSelected.size} article{matSelected.size !== 1 ? 's' : ''} sélectionné{matSelected.size !== 1 ? 's' : ''}</span>
-                        <button onClick={async () => {
-                          const selItems = matSearchResults.filter(it => matSelected.has(it.id));
-                          if (salesLocked) {
-                            const created = await createChangeRequestFromMaterials(selItems, 'matériaux sélectionnés');
-                            if (created) setMatSelected(new Set());
-                            return;
-                          }
-                          const q = await ensureQuote(); if (!q) return;
-                          const newItems = [...quoteBuilderItems, ...selItems.map(it => ({
-                            type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
-                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo', show_on_quote: true,
-                          }))];
-                          setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
-                          setMatSelected(new Set());
-                        }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          → {salesLocked ? 'Ajouter à une demande de changement' : 'Ajouter au devis détaillé'}
-                        </button>
-                        <button onClick={() => setMatSelected(new Set())}
-                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, border: '1px solid #86EFAC', background: 'transparent', color: '#16A34A', cursor: 'pointer' }}>
-                          Désélectionner
-                        </button>
-                      </div>
-                    )}
-                    {/* Import wishlist dans devis */}
-                    {matWishlist.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, color: BRAND, fontWeight: 700 }}>{matWishlist.length} article{matWishlist.length !== 1 ? 's' : ''} dans la wishlist</span>
-                        <button onClick={async () => {
-                          const wishItems = matSearchResults.filter(it => matWishlist.includes(it.id));
-                          if (salesLocked) {
-                            await createChangeRequestFromMaterials(wishItems, 'wishlist matériaux');
-                            return;
-                          }
-                          const q = await ensureQuote(); if (!q) return;
-                          const newItems = [...quoteBuilderItems, ...wishItems.map(it => ({
-                            type: 'material', name: it.nom, qty: 1, unit: it.unite || 'un.',
-                            unit_price: Number(it.prix_unitaire) || 0, url: it.url_source || '', markup: 0, source: 'flo', show_on_quote: true,
-                          }))];
-                          setQuoteBuilderItems(newItems); scheduleQuoteSave(newItems);
-                        }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          → {salesLocked ? 'Créer une demande de changement' : 'Importer wishlist dans le devis'}
-                        </button>
-                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-                          {salesLocked ? 'Le devis est verrouillé : les matériaux partent maintenant en demande de changement.' : 'Ajoutés dans la section Matériaux du devis détaillé.'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '52px 0', color: '#9CA3AF' }}>
-                    <div style={{ fontSize: 44, marginBottom: 14 }}>🔍</div>
-                    <p style={{ fontSize: 14, fontWeight: 600, color: '#6B7280', margin: '0 0 6px' }}>Aucun résultat pour l'instant</p>
-                    <p style={{ fontSize: 12.5, margin: '0 auto', maxWidth: 420, color: '#9CA3AF', lineHeight: 1.6 }}>
-                      Écris ce que tu cherches ou laisse vide — Flo analyse le projet et propose tout ce qui est nécessaire, en tenant compte des éléments conservés et des contraintes.
-                    </p>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </ProjectSection>
+          sectionGuard={sectionGuard}
+          id={id}
+          matFilter={matFilter}
+          setMatFilter={setMatFilter}
+          matSearchResults={matSearchResults}
+          matWishlist={matWishlist}
+          matSearchQuery={matSearchQuery}
+          setMatSearchQuery={setMatSearchQuery}
+          fetchMaterialSearch={fetchMaterialSearch}
+          matSearchLoading={matSearchLoading}
+          BRAND={BRAND}
+          matSelected={matSelected}
+          setMatSelected={setMatSelected}
+          toggleMatWishlist={toggleMatWishlist}
+          setMatSearchResults={setMatSearchResults}
+          salesLocked={salesLocked}
+          createChangeRequestFromMaterials={createChangeRequestFromMaterials}
+          ensureQuote={ensureQuote}
+          quoteBuilderItems={quoteBuilderItems}
+          setQuoteBuilderItems={setQuoteBuilderItems}
+          scheduleQuoteSave={scheduleQuoteSave}
+        />
 
         {/* ── Devis détaillé ── */}
         <ProjectSection
@@ -10214,597 +9692,78 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
 
         {/* s-feed et s-comms sont maintenant dans leurs propres onglets */}
 
-        <ProjectSection
-          sectionId="s-media"
-          icon="📷"
-          title="Notes et photos"
-          summary={sectionSummaries['s-media']?.summary}
-          stats={sectionSummaries['s-media']?.stats}
+        <ProjectMediaSection
+          sectionSummary={sectionSummaries['s-media']}
           expanded={!!sectionExpanded['s-media']}
           onToggle={() => toggleProjectSection('s-media')}
-          background="#F4EFE4"
-        >
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-            <button className="btn-secondary text-xs" onClick={() => setShowMediaForm(v => !v)}><Plus size={13}/> Ajouter</button>
-          </div>
-
-          {/* Notes de chantier inline */}
-          <div style={{ background: '#fff', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E8EAED' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <StickyNote size={14} style={{ color: BRAND }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3D44' }}>Notes de chantier</span>
-              {notesSaving && <span style={{ fontSize: 11, color: '#7C8089', marginLeft: 'auto' }}>Enregistrement…</span>}
-            </div>
-            <textarea
-              className="input resize-none"
-              style={{ minHeight: 80 }}
-              placeholder="Ajoutez des notes, remarques ou observations…"
-              value={notes}
-              onChange={e => handleNotesChange(e.target.value)}
-            />
-          </div>
-
-          {showMediaForm && (
-            <form onSubmit={addMedia} className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
-              {/* Type: Note ou Mémo vocal */}
-              <div className="flex gap-2">
-                {[
-                  { k: 'note',  icon: <StickyNote size={13}/>, l: 'Note' },
-                  { k: 'voice', icon: <Mic size={13}/>, l: 'Mémo vocal' },
-                ].map(({ k, icon, l }) => (
-                  <button key={k} type="button"
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${mediaForm.type === k ? 'border-brand bg-orange-50 text-brand' : 'border-gray-200 text-gray-400'}`}
-                    onClick={() => setMediaForm(f => ({ ...f, type: k }))}>{icon} {l}</button>
-                ))}
-              </div>
-
-              {mediaForm.type === 'voice' ? (
-                <div>
-                  <label className="label">Transcription du mémo vocal *</label>
-                  <textarea className="input" rows={2} value={mediaForm.transcript} onChange={e => setMediaForm(f => ({ ...f, transcript: e.target.value }))} placeholder="Transcrivez ou collez le contenu du mémo… (enregistrement audio à venir)" required/>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="label">Observation ou note *</label>
-                    <textarea className="input" rows={2} value={mediaForm.caption} onChange={e => setMediaForm(f => ({ ...f, caption: e.target.value }))} placeholder="Ex: Coffrage mal aligné au coin sud-est…"/>
-                  </div>
-                  {/* Photos associées */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="label" style={{ margin: 0 }}>Photos (optionnel)</label>
-                      <button type="button" className="flex items-center gap-1 text-xs text-brand font-semibold"
-                        onClick={() => setMediaForm(f => ({ ...f, photos: [...f.photos, { url: '' }] }))}>
-                        <Plus size={11}/> Ajouter une photo
-                      </button>
-                    </div>
-                    {mediaForm.photos.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 mb-1">
-                        <input className="input flex-1" value={p.url} onChange={e => setMediaForm(f => {
-                          const photos = [...f.photos]; photos[i] = { ...photos[i], url: e.target.value }; return { ...f, photos };
-                        })} placeholder="URL de la photo…"/>
-                        {p.url && <img src={p.url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #E8EAED', flexShrink: 0 }} onError={ev => { ev.target.style.display = 'none'; }}/>}
-                        <button type="button" className="text-gray-300 hover:text-red-400"
-                          onClick={() => setMediaForm(f => ({ ...f, photos: f.photos.filter((_, j) => j !== i) }))}>
-                          <Trash2 size={12}/>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              <div className="flex justify-end">
-                <button type="submit" className="btn-primary text-xs px-4"
-                  disabled={mediaForm.type === 'voice' ? !mediaForm.transcript.trim() : (!mediaForm.caption.trim() && !mediaForm.photos.some(p => p.url.trim()))}>
-                  Ajouter
-                </button>
-              </div>
-            </form>
-          )}
-
-          {media.length > 0 ? (
-            <>
-              {/* Galerie horizontale — photos de toutes les entrées */}
-              {media.some(m => m.url || (m.photos && m.photos.length > 0)) && (
-                <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, marginBottom: 4, scrollbarWidth: 'thin' }}>
-                  {media.flatMap(m => {
-                    const photoList = m.photos && m.photos.length > 0
-                      ? m.photos.map((p, i) => ({ _key: `${m.id}-${i}`, url: p.url, caption: m.caption, created_at: m.created_at, _entry: m }))
-                      : m.url ? [{ _key: m.id, url: m.url, caption: m.caption, created_at: m.created_at, _entry: m }]
-                      : [];
-                    return photoList;
-                  }).map(item => (
-                    <div key={`gal-${item._key}`} style={{ flexShrink: 0, width: 160, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer' }}
-                      onClick={() => setLightboxItem(item._entry)}>
-                      <img src={item.url} alt={item.caption || ''} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }}
-                        onError={ev => { ev.target.parentElement.querySelector('.gal-fallback').style.display = 'grid'; ev.target.style.display = 'none'; }}/>
-                      <div className="gal-fallback" style={{ width: '100%', height: 110, background: '#F4F6F8', display: 'none', placeItems: 'center', fontSize: 28 }}>📷</div>
-                      <div style={{ padding: '8px 10px' }}>
-                        <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>{new Date(item.created_at).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}</p>
-                        <p style={{ fontSize: 12, color: '#15171C', margin: '2px 0 0', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{item.caption || '—'}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Détails / analyse IA */}
-              <div className="space-y-2">
-              {media.map(m => {
-                const a = m.ai_analysis;
-                const issues = (a?.non_conformities?.length || 0) + (a?.safety_risks?.length || 0);
-                return (
-                  <div key={m.id} className="border border-gray-100 rounded-xl p-3">
-                    <div className="flex items-start gap-3">
-                      {/* Thumbnail(s) */}
-                      <div className="flex-shrink-0 cursor-pointer" onClick={() => setLightboxItem(m)}>
-                        {m.photos && m.photos.length > 0 ? (
-                          <div style={{ display: 'flex', gap: 3 }}>
-                            {m.photos.slice(0, 3).map((p, i) => (
-                              <img key={i} src={p.url} alt="" style={{ width: m.photos.length === 1 ? 56 : 36, height: m.photos.length === 1 ? 56 : 36, objectFit: 'cover', borderRadius: 8, border: '1px solid #E8EAED' }}/>
-                            ))}
-                            {m.photos.length > 3 && <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F4F6F8', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700, color: '#7C8089', border: '1px solid #E8EAED' }}>+{m.photos.length - 3}</div>}
-                          </div>
-                        ) : m.url ? (
-                          <img src={m.url} alt={m.caption || ''} className="w-14 h-14 rounded-lg object-cover border border-gray-100"/>
-                        ) : (
-                          <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center">{m.type === 'voice' ? <Mic size={18} className="text-gray-300"/> : <StickyNote size={18} className="text-gray-300"/>}</div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="badge badge-gray text-[10px]">{m.type === 'voice' ? 'vocal' : m.photos?.length > 0 ? `note · ${m.photos.length} photo${m.photos.length > 1 ? 's' : ''}` : m.url ? 'note · photo' : 'note'}</span>
-                          {m.ai_status === 'done' && a?.overall_severity && <span className={`badge ${SEV[a.overall_severity]?.c || 'badge-gray'} text-[10px]`}>{issues > 0 ? `${issues} point(s)` : 'Conforme'}</span>}
-                          <span className="text-[11px] text-gray-300 ml-auto">{m.author_name || ''} · {new Date(m.created_at).toLocaleDateString('fr-CA')}</span>
-                        </div>
-                        <p className="text-sm text-gray-700 mt-1 truncate">{m.caption || m.transcript || '—'}</p>
-                      </div>
-                      <div className="flex flex-col gap-1 flex-shrink-0">
-                        <button className="btn-ghost text-[11px] py-1 px-2 text-brand" onClick={() => analyzeMedia(m.id)} disabled={analyzingMediaId === m.id}>
-                          {analyzingMediaId === m.id ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} Analyser
-                        </button>
-                        <button className="btn-ghost p-1 text-gray-300 hover:text-red-500 self-end" onClick={() => deleteMedia(m.id)}><Trash2 size={12}/></button>
-                      </div>
-                    </div>
-                    {/* Résultat analyse IA */}
-                    {m.ai_status === 'done' && a && (
-                      <div className="mt-2 pt-2 border-t border-gray-50 space-y-2">
-                        {a.summary && <p className="text-xs text-gray-500 italic">{a.summary}</p>}
-                        {a.non_conformities?.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1"><AlertCircle size={11} className="text-orange-400"/> Non-conformités</p>
-                            {a.non_conformities.map((nc, i) => (
-                              <div key={i} className="flex items-start gap-2 mb-1">
-                                <span className={`badge ${SEV[nc.severity]?.c || 'badge-gray'} text-[9px] mt-0.5 flex-shrink-0`}>{SEV[nc.severity]?.l || nc.severity}</span>
-                                <p className="text-xs text-gray-600"><span className="font-medium">{nc.issue}</span>{nc.recommendation ? ` — ${nc.recommendation}` : ''}{nc.reference ? ` (${nc.reference})` : ''}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {a.safety_risks?.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-semibold text-gray-500 flex items-center gap-1 mb-1"><ShieldAlert size={11} className="text-red-400"/> Sécurité (CNESST)</p>
-                            {a.safety_risks.map((sr, i) => (
-                              <div key={i} className="flex items-start gap-2 mb-1">
-                                <span className={`badge ${SEV[sr.severity]?.c || 'badge-gray'} text-[9px] mt-0.5 flex-shrink-0`}>{SEV[sr.severity]?.l || sr.severity}</span>
-                                <p className="text-xs text-gray-600"><span className="font-medium">{sr.risk}</span>{sr.action ? ` — ${sr.action}` : ''}{sr.cnesst_reference ? ` (${sr.cnesst_reference})` : ''}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {m.ai_status === 'error' && <p className="text-[11px] text-red-400 mt-2">Échec de l'analyse. Réessayez.</p>}
-                  </div>
-                );
-              })}
-              </div>
-            </>
-          ) : !showMediaForm && (
-            <div className="text-center py-5">
-              <Camera size={26} className="text-gray-200 mx-auto mb-2"/>
-              <p className="text-sm text-gray-400">Aucun média. Ajoutez photos et notes de chantier pour l'analyse IA.</p>
-            </div>
-          )}
-        </ProjectSection>
+          BRAND={BRAND}
+          SEV={SEV}
+          notesSaving={notesSaving}
+          notes={notes}
+          handleNotesChange={handleNotesChange}
+          showMediaForm={showMediaForm}
+          setShowMediaForm={setShowMediaForm}
+          mediaForm={mediaForm}
+          setMediaForm={setMediaForm}
+          addMedia={addMedia}
+          media={media}
+          setLightboxItem={setLightboxItem}
+          analyzeMedia={analyzeMedia}
+          analyzingMediaId={analyzingMediaId}
+          deleteMedia={deleteMedia}
+        />
 
 
         {/* ── Dépenses ── (violet) */}
-        <ProjectSection
-          sectionId="s-expenses"
-          icon="💸"
-          title="Factures fournisseurs"
-          summary={sectionSummaries['s-expenses']?.summary}
-          stats={sectionSummaries['s-expenses']?.stats}
+        <ProjectExpensesSection
+          sectionSummary={sectionSummaries['s-expenses']}
           expanded={!!sectionExpanded['s-expenses']}
           onToggle={() => toggleProjectSection('s-expenses')}
-          background="#F0EBFD"
-        >
-          {sectionGuard('s-expenses')}
-          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="badge badge-gray text-xs">{project.expenses?.length || 0} entrée(s)</span>
-              <span className="badge badge-gray text-xs">Total {money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</span>
-            </div>
-            <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
-          </div>
-
-          <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-                <colgroup>
-                  <col style={{ width: 120 }}/>
-                  <col style={{ minWidth: 220 }}/>
-                  <col style={{ width: 120 }}/>
-                  <col style={{ width: 120 }}/>
-                  <col style={{ width: 150 }}/>
-                  <col style={{ width: 150 }}/>
-                  <col style={{ width: 110 }}/>
-                  <col style={{ width: 120 }}/>
-                </colgroup>
-                <thead>
-                  <tr>
-                    {['Type', 'Description', 'Date', 'Bon de commande', 'Facture fournisseur', 'Reçu', 'Montant', 'Actions'].map((label, index) => (
-                      <th
-                        key={label}
-                        style={{
-                          padding: '8px 10px',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: index === 6 ? BRAND : '#6B7280',
-                          textTransform: 'uppercase',
-                          letterSpacing: '.05em',
-                          borderBottom: '2px solid #E5E7EB',
-                          background: '#F9FAFB',
-                          textAlign: index === 6 ? 'right' : index === 7 ? 'center' : 'left',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {showExpenseForm && (
-                    <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
-                      <td style={{ padding: '6px 8px' }}>
-                        <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
-                          {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Fournisseur / détail" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={expenseForm.po_number} onChange={e => setExpenseForm(f => ({ ...f, po_number: e.target.value }))} placeholder="BC-001" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={expenseForm.supplier_invoice_number} onChange={e => setExpenseForm(f => ({ ...f, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        {expenseForm.type === 'mileage' ? (
-                          <span className="text-xs text-gray-400">Non requis</span>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <label className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
-                              {expenseForm.receipt_url ? 'Changer la photo' : 'Ajouter la photo'}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) attachExpenseReceipt({ file });
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-                            {expenseForm.receipt_url && (
-                              <button type="button" className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: expenseForm.receipt_url, caption: expenseForm.receipt_name || 'Reçu' })}>
-                                Voir
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                        <div className="flex items-center justify-center gap-2">
-                          <button type="button" className="btn-secondary text-xs" onClick={() => setShowExpenseForm(false)}>Annuler</button>
-                          <button type="button" className="btn-primary text-xs" onClick={(e) => addExpense(e)}>Ajouter</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {(project.expenses || []).map((expense) => {
-                    const draft = expenseDrafts[expense.id] || {
-                      type: expense.type || 'supplier_invoice',
-                      description: expense.description || '',
-                      amount: expense.amount ?? '',
-                      expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
-                      po_number: expense.po_number || '',
-                      supplier_invoice_number: expense.supplier_invoice_number || '',
-                      receipt_url: expense.receipt_url || '',
-                      receipt_name: expense.receipt_name || '',
-                    };
-                    const isSupplierInvoice = draft.type === 'supplier_invoice';
-                    const receiptMissing = isExpenseReceiptRequired(draft.type) && !draft.receipt_url;
-                    return (
-                      <tr key={expense.id} style={{ background: 'white', borderBottom: '1px solid #F3F4F6' }}>
-                        <td style={{ padding: '6px 8px' }}>
-                          <select className="input" value={draft.type} onChange={(e) => updateExpenseDraftField(expense.id, 'type', e.target.value)}>
-                            {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" value={draft.description} onChange={(e) => updateExpenseDraftField(expense.id, 'description', e.target.value)} placeholder="Description" />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" type="date" value={draft.expense_date} onChange={(e) => updateExpenseDraftField(expense.id, 'expense_date', e.target.value)} />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" value={draft.po_number} onChange={(e) => updateExpenseDraftField(expense.id, 'po_number', e.target.value)} placeholder="BC-001" />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <div className="flex items-center gap-2">
-                            <input className="input" value={draft.supplier_invoice_number} onChange={(e) => updateExpenseDraftField(expense.id, 'supplier_invoice_number', e.target.value)} placeholder="INV-2026-001" />
-                            {isSupplierInvoice && !draft.po_number && <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" title="Sans bon de commande" />}
-                          </div>
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          {draft.type === 'mileage' ? (
-                            <span className="text-xs text-gray-400">Non requis</span>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <label className={`text-[11px] font-medium border rounded-md px-2 py-1 transition-colors cursor-pointer ${receiptMissing ? 'text-amber-700 border-amber-200 bg-amber-50' : 'text-gray-500 hover:text-brand border-gray-200'}`}>
-                                {draft.receipt_url ? 'Changer' : 'Photo reçu'}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) attachExpenseReceipt({ expenseId: expense.id, file });
-                                    e.target.value = '';
-                                  }}
-                                />
-                              </label>
-                              {draft.receipt_url && (
-                                <button className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: draft.receipt_url, caption: draft.receipt_name || 'Reçu' })}>
-                                  Voir
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} />
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <div className="flex items-center justify-center gap-2">
-                            <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => saveExpenseRow(expense.id)} disabled={savingExpenseId === expense.id}>
-                              {savingExpenseId === expense.id ? 'Enregistrement…' : 'Enregistrer'}
-                            </button>
-                            <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(expense.id)}><Trash2 size={13} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!showExpenseForm && !(project.expenses || []).length && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                        Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </ProjectSection>
+          sectionGuard={sectionGuard}
+          project={project}
+          money={money}
+          BRAND={BRAND}
+          EXPENSE_TYPES={EXPENSE_TYPES}
+          isExpenseReceiptRequired={isExpenseReceiptRequired}
+          showExpenseForm={showExpenseForm}
+          setShowExpenseForm={setShowExpenseForm}
+          expenseForm={expenseForm}
+          setExpenseForm={setExpenseForm}
+          attachExpenseReceipt={attachExpenseReceipt}
+          setLightboxItem={setLightboxItem}
+          addExpense={addExpense}
+          expenseDrafts={expenseDrafts}
+          updateExpenseDraftField={updateExpenseDraftField}
+          saveExpenseRow={saveExpenseRow}
+          savingExpenseId={savingExpenseId}
+          removeExpense={removeExpense}
+        />
 
         {/* ── Feuilles de temps ── (mint) */}
-        <ProjectSection
-          sectionId="s-punch"
-          icon="⏱️"
-          title="Punch et dépenses"
-          summary={sectionSummaries['s-punch']?.summary}
-          stats={sectionSummaries['s-punch']?.stats}
+        <ProjectPunchSection
+          sectionSummary={sectionSummaries['s-punch']}
           expanded={!!sectionExpanded['s-punch']}
           onToggle={() => toggleProjectSection('s-punch')}
-          background="#E9F3EC"
-        >
-          {sectionGuard('s-punch')}
-          <div className="flex items-center gap-2 flex-wrap mb-4">
-            <div className="px-3 py-2 rounded-xl bg-green-50 min-w-[96px] text-center">
-              <p className="text-lg font-bold text-green-700">{activeTs.length}</p>
-              <p className="text-[11px] text-green-700/80">En cours</p>
-            </div>
-            <div className="px-3 py-2 rounded-xl bg-gray-50 min-w-[96px] text-center">
-              <p className="text-lg font-bold text-gray-900">{totalPointedHours.toFixed(1)}h</p>
-              <p className="text-[11px] text-gray-500">Total pointé</p>
-            </div>
-            <div className="px-3 py-2 rounded-xl bg-amber-50 min-w-[96px] text-center">
-              <p className="text-lg font-bold text-amber-700">{pendingApprovalTs.length}</p>
-              <p className="text-[11px] text-amber-700/80">À approuver</p>
-            </div>
-          </div>
-          <div style={{ border: '1px solid #DCEFE2', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
-                <colgroup>
-                  <col style={{ width: 170 }}/>
-                  <col style={{ width: 210 }}/>
-                  <col style={{ minWidth: 220 }}/>
-                  <col style={{ width: 130 }}/>
-                  <col style={{ width: 145 }}/>
-                  <col style={{ width: 145 }}/>
-                  <col style={{ width: 110 }}/>
-                  <col style={{ width: 140 }}/>
-                </colgroup>
-                <thead>
-                  <tr>
-                    {['Travailleur', 'Phase', 'Note', 'Date', 'Début', 'Fin / durée', 'Durée', 'Actions'].map((label, index) => (
-                      <th
-                        key={label}
-                        style={{
-                          padding: '8px 10px',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: '#6B7280',
-                          textTransform: 'uppercase',
-                          letterSpacing: '.05em',
-                          borderBottom: '2px solid #E5E7EB',
-                          background: '#F9FAFB',
-                          textAlign: index === 6 ? 'right' : index === 7 ? 'center' : 'left',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #DCEFE2' }}>
-                    <td style={{ padding: '6px 8px' }}>
-                      <input ref={manualPunchWorkerRef} className="input" value={manualPunchForm.worker_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, worker_name: e.target.value }))} placeholder="Travailleur" />
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      <select className="input" value={manualPunchForm.phase_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, phase_name: e.target.value }))}>
-                        <option value="">Choisir une phase…</option>
-                        {(project.phases || []).map((phase) => (
-                          <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={manualPunchForm.notes} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Note rapide" />
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      <input className="input" type="date" value={manualPunchForm.work_date} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, work_date: e.target.value }))} />
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      <input className="input" type="time" value={manualPunchForm.start_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, start_time: e.target.value }))} />
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      <div className="flex items-center gap-2">
-                        <input className="input" type="time" value={manualPunchForm.end_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, end_time: e.target.value }))} />
-                        <span className="text-[10px] text-gray-400">ou</span>
-                        <input className="input text-right" type="number" min="0" step="0.25" value={manualPunchForm.duration_hours} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, duration_hours: e.target.value }))} placeholder="h" />
-                      </div>
-                    </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                      {manualPunchForm.duration_hours ? `${manualPunchForm.duration_hours}h` : '—'}
-                    </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          className="btn-secondary text-xs"
-                          onClick={() => setManualPunchForm((prev) => ({
-                            ...prev,
-                            work_date: new Date().toISOString().slice(0, 10),
-                            start_time: '08:00',
-                            end_time: '',
-                            duration_hours: '',
-                            notes: '',
-                          }))}
-                        >
-                          Vider
-                        </button>
-                        <button className="btn-primary text-xs" onClick={addManualPunch} disabled={!manualPunchForm.worker_name.trim() || !manualPunchForm.phase_name.trim() || !manualPunchForm.work_date || !manualPunchForm.start_time || (!manualPunchForm.end_time && !manualPunchForm.duration_hours)}>
-                          Ajouter
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {(timesheets || []).map((ts) => {
-                    const draft = timesheetDrafts[ts.id] || {
-                      worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
-                      phase_name: ts.phase_name || '',
-                      notes: ts.notes || '',
-                      work_date: formatInputDate(ts.clock_in),
-                      start_time: formatInputTime(ts.clock_in),
-                      end_time: formatInputTime(ts.clock_out),
-                      duration_hours: ts.hours_total != null ? String(ts.hours_total) : '',
-                    };
-                    const hours = draft.duration_hours
-                      || (ts.clock_out
-                        ? (Number.isFinite(Number(ts.hours_total))
-                          ? Number(ts.hours_total).toFixed(2)
-                          : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(2))
-                        : '');
-                    return (
-                      <tr key={ts.id} style={{ background: ts.clock_out ? 'white' : '#F0FDF4', borderBottom: '1px solid #F3F4F6' }}>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" value={draft.worker_name} onChange={(e) => updateTimesheetDraftField(ts.id, 'worker_name', e.target.value)} placeholder="Travailleur" />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <select className="input" value={draft.phase_name} onChange={(e) => updateTimesheetDraftField(ts.id, 'phase_name', e.target.value)}>
-                            <option value="">Choisir une phase…</option>
-                            {(project.phases || []).map((phase) => (
-                              <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" value={draft.notes} onChange={(e) => updateTimesheetDraftField(ts.id, 'notes', e.target.value)} placeholder="Note rapide" />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" type="date" value={draft.work_date || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'work_date', e.target.value)} />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <input className="input" type="time" value={draft.start_time || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'start_time', e.target.value)} />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <div className="flex items-center gap-2">
-                            <input className="input" type="time" value={draft.end_time || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'end_time', e.target.value)} placeholder="Fin" />
-                            <span className="text-[10px] text-gray-400">ou</span>
-                            <input className="input text-right" type="number" min="0" step="0.25" value={draft.duration_hours || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'duration_hours', e.target.value)} placeholder="h" />
-                          </div>
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                          {hours ? `${hours}h` : (!ts.clock_out ? 'En cours' : '—')}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <div className="flex items-center justify-center gap-2 flex-wrap">
-                            <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => saveTimesheetRow(ts.id)} disabled={savingTimesheetId === ts.id}>
-                              {savingTimesheetId === ts.id ? 'Enregistrement…' : 'Enregistrer'}
-                            </button>
-                            {!ts.clock_out ? (
-                              <button className="text-[11px] font-medium text-green-700 hover:text-green-800 border border-green-200 rounded-md px-2 py-1 transition-colors" onClick={() => stopProjectPunch(ts)} disabled={stoppingPunchId === ts.id}>
-                                {stoppingPunchId === ts.id ? 'Arrêt…' : 'Arrêter'}
-                              </button>
-                            ) : ts.approved_at ? (
-                              <CheckCircle size={14} className="text-green-500" title="Approuvé" />
-                            ) : (
-                              <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => approveTs(ts.id)}>
-                                Approuver
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!timesheets.length && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                        Aucun punch enregistré pour ce projet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </ProjectSection>
+          sectionGuard={sectionGuard}
+          activeTs={activeTs}
+          totalPointedHours={totalPointedHours}
+          pendingApprovalTs={pendingApprovalTs}
+          manualPunchWorkerRef={manualPunchWorkerRef}
+          manualPunchForm={manualPunchForm}
+          setManualPunchForm={setManualPunchForm}
+          addManualPunch={addManualPunch}
+          project={project}
+          timesheets={timesheets}
+          timesheetDrafts={timesheetDrafts}
+          formatInputDate={formatInputDate}
+          formatInputTime={formatInputTime}
+          updateTimesheetDraftField={updateTimesheetDraftField}
+          saveTimesheetRow={saveTimesheetRow}
+          savingTimesheetId={savingTimesheetId}
+          stopProjectPunch={stopProjectPunch}
+          stoppingPunchId={stoppingPunchId}
+          approveTs={approveTs}
+        />
 
         {/* ── Soumission détaillée ── (white) */}
         {/* Invite modal */}
@@ -10841,597 +9800,78 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         )}
 
         {/* ── Factures client ── (mint) */}
-        <ProjectSection
-          sectionId="s-invoices"
-          icon="🧾"
-          title="Factures client"
-          summary={sectionSummaries['s-invoices']?.summary}
-          stats={sectionSummaries['s-invoices']?.stats}
+        <ProjectInvoicesSection
+          sectionSummary={sectionSummaries['s-invoices']}
           expanded={!!sectionExpanded['s-invoices']}
           onToggle={() => toggleProjectSection('s-invoices')}
-          background="#E9F3EC"
-        >
-          {sectionGuard('s-invoices')}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-            <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(v => !v)}>
-              <Plus size={13}/> Nouvelle facture
-            </button>
-          </div>
-
-          {/* ── Formulaire nouvelle facture ── */}
-          {showNewInvoice && (
-            <form onSubmit={createInvoiceInline} style={{ background: '#fff', borderRadius: 16, border: '1px solid #D1FAE5', padding: 24, marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#15171C' }}>Nouvelle facture</h3>
-                <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }} onClick={() => setShowNewInvoice(false)}><X size={16}/></button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: 16 }}>
-                <div><label className="label">Titre (optionnel)</label><input className="input" value={newInvoice.title} onChange={e => setNewInvoice(f => ({...f, title: e.target.value}))} placeholder="Ex : Acompte 50%" /></div>
-                <div><label className="label">Date d'échéance</label><input className="input" type="date" value={newInvoice.due_date} onChange={e => setNewInvoice(f => ({...f, due_date: e.target.value}))} /></div>
-                <div><label className="label">Nom client</label><input className="input" value={newInvoice.client_name} onChange={e => setNewInvoice(f => ({...f, client_name: e.target.value}))} placeholder={project.client_name || 'Client'} /></div>
-                <div><label className="label">Courriel client</label><input className="input" type="email" value={newInvoice.client_email} onChange={e => setNewInvoice(f => ({...f, client_email: e.target.value}))} placeholder={project.client_email || ''} /></div>
-              </div>
-
-              {/* Lignes de la facture */}
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 110px 32px', gap: 6, marginBottom: 6 }}>
-                  <span className="label" style={{ margin: 0 }}>Description</span>
-                  <span className="label" style={{ margin: 0 }}>Qté</span>
-                  <span className="label" style={{ margin: 0 }}>Prix unitaire</span>
-                  <span/>
-                </div>
-                {newInvoiceItems.map((it, i) => {
-                  const lineTotal = (Number(it.qty)||0) * (Number(it.unit_price)||0);
-                  return (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 110px 32px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                      <input className="input" value={it.description} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, description: e.target.value} : x))} placeholder="Travaux, matériaux..." required />
-                      <input className="input" type="number" min="0" step="1" value={it.qty} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, qty: e.target.value} : x))} />
-                      <input className="input" type="number" min="0" step="0.01" value={it.unit_price} onChange={e => setNewInvoiceItems(items => items.map((x,j) => j===i ? {...x, unit_price: e.target.value} : x))} placeholder="0.00" required />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {lineTotal > 0 && <span style={{ fontSize: 10, color: '#6B7280', whiteSpace: 'nowrap' }}>{money(lineTotal)}</span>}
-                        {newInvoiceItems.length > 1 && <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 2 }} onClick={() => setNewInvoiceItems(items => items.filter((_,j) => j !== i))}><X size={12}/></button>}
-                      </div>
-                    </div>
-                  );
-                })}
-                <button type="button" className="btn-ghost text-xs mt-1" onClick={() => setNewInvoiceItems(items => [...items, { description: '', qty: 1, unit_price: '' }])}>
-                  <Plus size={12}/> Ajouter une ligne
-                </button>
-              </div>
-
-              {/* Totaux */}
-              {(() => {
-                const sub = newInvoiceItems.reduce((acc, it) => acc + (Number(it.qty)||0)*(Number(it.unit_price)||0), 0);
-                const tps = sub * 0.05; const tvq = sub * 0.09975;
-                return sub > 0 ? (
-                  <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
-                    <div style={{ display: 'flex', gap: 24 }}>
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>Sous-total</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#15171C' }}>{money(sub)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 24 }}>
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>TPS (5%)</span>
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>{money(tps)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 24 }}>
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>TVQ (9,975%)</span>
-                      <span style={{ fontSize: 12, color: '#6B7280' }}>{money(tvq)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 24, borderTop: '1px solid #D1FAE5', paddingTop: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: '#15171C' }}>Total</span>
-                      <span style={{ fontSize: 14, fontWeight: 900, color: BRAND }}>{money(sub + tps + tvq)}</span>
-                    </div>
-                  </div>
-                ) : null;
-              })()}
-
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-secondary text-xs" onClick={() => setShowNewInvoice(false)}>Annuler</button>
-                <button type="submit" className="btn-primary text-xs" disabled={savingInvoice}>
-                  {savingInvoice ? <Loader2 size={13} className="animate-spin"/> : <FileText size={13}/>} Créer la facture
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ── Tableau des factures ── */}
-          {projectInvoices.length > 0 ? (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #D1FAE5', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#F0FDF4' }}>
-                    {['N°', 'Client', 'Échéance', 'Total', 'Statut', 'Actions'].map((h, i) => (
-                      <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #D1FAE5' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {projectInvoices.map(inv => {
-                    const SB = { draft:'#9CA3AF', sent:'#3B82F6', viewed:'#F59E0B', partial:'#F97316', paid:'#22C55E', overdue:'#EF4444', cancelled:'#9CA3AF' };
-                    const SL = { draft:'Brouillon', sent:'Envoyée', viewed:'Vue', partial:'Partielle', paid:'Payée', overdue:'En retard', cancelled:'Annulée' };
-                    const overdue = inv.status === 'overdue' || (inv.due_date && new Date(inv.due_date) < new Date() && !['paid','cancelled'].includes(inv.status));
-                    const isSending = sendingInvoiceId === inv.id;
-                    const justSent = invoiceSentId === inv.id;
-                    const isExpanded = expandedInvoiceId === inv.id;
-                    const isLoading = loadingInvoiceId === inv.id;
-                    const draft = invoiceDrafts[inv.id];
-                    const detail = invoiceDetails[inv.id];
-                    const draftItems = draft?.items || [];
-                    const sub = draftItems.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unit_price) || 0), 0);
-                    const tps = sub * 0.05;
-                    const tvq = sub * 0.09975;
-                    const total = sub + tps + tvq;
-                    return (
-                      <React.Fragment key={inv.id}>
-                        <tr style={{ borderBottom: isExpanded ? 'none' : '1px solid #F0FDF4', background: isExpanded ? '#FCFFFC' : 'white' }}>
-                          <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{inv.number}</td>
-                          <td style={{ padding: '12px 14px', fontSize: 12, color: '#6B7280' }}>{inv.client_name || '—'}</td>
-                          <td style={{ padding: '12px 14px', fontSize: 12, color: overdue ? '#EF4444' : '#6B7280', fontWeight: overdue ? 700 : 400 }}>
-                            {inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-CA') : '—'}
-                          </td>
-                          <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#15171C' }}>{money(inv.total || 0)}</td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, border: `1px solid ${(SB[inv.status]||'#9CA3AF')}60`, background: (SB[inv.status]||'#9CA3AF') + '15', color: SB[inv.status]||'#9CA3AF' }}>
-                              {SL[inv.status] || inv.status}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Éditer" onClick={() => toggleInvoiceEditor(inv)}>{isExpanded ? <EyeOff size={13}/> : <Pencil size={13}/>}</button>
-                              <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Générer PDF" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Download size={13}/></a>
-                              {justSent ? (
-                                <span style={{ fontSize: 11, color: '#22C55E', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircle size={12}/> Envoyée</span>
-                              ) : (
-                                <button className="btn-ghost p-1" title={`Envoyer à ${inv.client_email || project.client_email || 'client'}`} onClick={() => sendInvoiceEmail(inv)} disabled={isSending} style={{ color: '#3B82F6' }}>
-                                  {isSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr style={{ borderBottom: '1px solid #D1FAE5', background: '#FCFFFC' }}>
-                            <td colSpan={6} style={{ padding: 16 }}>
-                              {isLoading || !draft ? (
-                                <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Chargement…</div>
-                              ) : (
-                                <div style={{ display: 'grid', gap: 16 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                                    <div>
-                                      <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#15171C' }}>Facture {inv.number}</p>
-                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6B7280' }}>Édition directe des lignes, comme dans le devis.</p>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                      <button className="btn-secondary text-xs" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: `Facture ${inv.number}` })}><Eye size={13}/> Prévisualiser</button>
-                                      <a href={pdf.invoiceUrl(inv.id)} target="_blank" rel="noreferrer" className="btn-secondary text-xs" style={{ textDecoration: 'none' }}><Download size={13}/> Générer le PDF</a>
-                                      <button className="btn-primary text-xs" onClick={() => saveInvoiceDraft(inv.id)} disabled={savingInvoiceId === inv.id}>
-                                        {savingInvoiceId === inv.id ? <Loader2 size={13} className="animate-spin"/> : <Save size={13}/>} Enregistrer
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-                                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-                                        <colgroup>
-                                          <col style={{ width: 180 }}/>
-                                          <col style={{ minWidth: 220 }}/>
-                                          <col style={{ width: 170 }}/>
-                                          <col style={{ width: 140 }}/>
-                                          <col style={{ minWidth: 280 }}/>
-                                          <col style={{ width: 90 }}/>
-                                          <col style={{ width: 130 }}/>
-                                          <col style={{ width: 130 }}/>
-                                          <col style={{ width: 70 }}/>
-                                        </colgroup>
-                                        <thead>
-                                          <tr style={{ background: '#F9FAFB' }}>
-                                            {['Client', 'Courriel', 'Échéance', 'Statut', 'Description', 'Qté', 'Prix unit.', 'Total', ''].map((label, index) => (
-                                              <th key={label} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', textAlign: index >= 5 && index <= 7 ? 'right' : 'left' }}>{label}</th>
-                                            ))}
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          <tr style={{ background: '#FCFFFC', borderBottom: '2px solid #E5E7EB' }}>
-                                            <td style={{ padding: '6px 8px' }}>
-                                              <input className="input" value={draft.client_name} onChange={e => updateInvoiceDraftField(inv.id, 'client_name', e.target.value)} />
-                                            </td>
-                                            <td style={{ padding: '6px 8px' }}>
-                                              <input className="input" value={draft.client_email} onChange={e => updateInvoiceDraftField(inv.id, 'client_email', e.target.value)} />
-                                            </td>
-                                            <td style={{ padding: '6px 8px' }}>
-                                              <input className="input" type="date" value={draft.due_date} onChange={e => updateInvoiceDraftField(inv.id, 'due_date', e.target.value)} />
-                                            </td>
-                                            <td style={{ padding: '6px 8px' }}>
-                                              <select className="input" value={draft.status} onChange={e => updateInvoiceDraftField(inv.id, 'status', e.target.value)}>
-                                                {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                                              </select>
-                                            </td>
-                                            <td colSpan={5} style={{ padding: '8px 10px', fontSize: 12, color: '#6B7280' }}>
-                                              En-tête de facture
-                                            </td>
-                                          </tr>
-                                          {draftItems.map((item, index) => {
-                                            const lineTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
-                                            return (
-                                              <tr key={`${inv.id}-${index}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
-                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
-                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
-                                                <td style={{ padding: '6px 8px', background: '#FAFAFA' }} />
-                                                <td style={{ padding: '6px 8px' }}>
-                                                  <input className="input" value={item.description} onChange={e => updateInvoiceDraftItem(inv.id, index, 'description', e.target.value)} placeholder="Travaux, matériaux…" />
-                                                </td>
-                                                <td style={{ padding: '6px 8px' }}>
-                                                  <input className="input text-right" type="number" min="0" step="1" value={item.qty} onChange={e => updateInvoiceDraftItem(inv.id, index, 'qty', e.target.value)} />
-                                                </td>
-                                                <td style={{ padding: '6px 8px' }}>
-                                                  <input className="input text-right" type="number" min="0" step="0.01" value={item.unit_price} onChange={e => updateInvoiceDraftItem(inv.id, index, 'unit_price', e.target.value)} />
-                                                </td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#15171C', whiteSpace: 'nowrap' }}>{money(lineTotal)}</td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                  <button onClick={() => removeInvoiceDraftItem(inv.id, index)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 16, lineHeight: 1 }}>×</button>
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-                                          <tr style={{ background: '#FAFAFA' }}>
-                                            <td colSpan={9} style={{ padding: '8px 10px' }}>
-                                              <button type="button" className="btn-ghost text-xs" onClick={() => addInvoiceDraftItem(inv.id)}><Plus size={12}/> Ajouter une ligne</button>
-                                            </td>
-                                          </tr>
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-
-                                  <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
-                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>Sous-total</span><span style={{ fontSize: 12, fontWeight: 700, color: '#15171C' }}>{money(sub)}</span></div>
-                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>TPS (5%)</span><span style={{ fontSize: 12, color: '#6B7280' }}>{money(tps)}</span></div>
-                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>TVQ (9,975%)</span><span style={{ fontSize: 12, color: '#6B7280' }}>{money(tvq)}</span></div>
-                                    <div style={{ display: 'flex', gap: 24, borderTop: '1px solid #D1FAE5', paddingTop: 6, marginTop: 2 }}><span style={{ fontSize: 14, fontWeight: 800, color: '#15171C' }}>Total</span><span style={{ fontSize: 14, fontWeight: 900, color: BRAND }}>{money(total)}</span></div>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <div style={{ padding: '10px 14px', background: '#F9FFF9', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
-                <span style={{ fontSize: 12, color: '#6B7280' }}>Total facturé</span>
-                <span style={{ fontSize: 13, fontWeight: 900, color: '#15171C' }}>{money(projectInvoices.reduce((s, inv) => s + Number(inv.total || 0), 0))}</span>
-              </div>
-            </div>
-          ) : !showNewInvoice && (
-            <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <FileText size={32} style={{ color: '#D1FAE5', margin: '0 auto 12px' }} />
-              <p style={{ fontSize: 14, color: '#9CA3AF', marginBottom: 16 }}>Aucune facture pour ce projet.</p>
-              <button className="btn-primary text-xs" onClick={() => setShowNewInvoice(true)}><Plus size={13}/> Créer la première facture</button>
-            </div>
-          )}
-
-        </ProjectSection>
+          sectionGuard={sectionGuard}
+          setShowNewInvoice={setShowNewInvoice}
+          showNewInvoice={showNewInvoice}
+          createInvoiceInline={createInvoiceInline}
+          newInvoice={newInvoice}
+          setNewInvoice={setNewInvoice}
+          project={project}
+          newInvoiceItems={newInvoiceItems}
+          setNewInvoiceItems={setNewInvoiceItems}
+          money={money}
+          BRAND={BRAND}
+          savingInvoice={savingInvoice}
+          projectInvoices={projectInvoices}
+          sendingInvoiceId={sendingInvoiceId}
+          invoiceSentId={invoiceSentId}
+          expandedInvoiceId={expandedInvoiceId}
+          loadingInvoiceId={loadingInvoiceId}
+          invoiceDrafts={invoiceDrafts}
+          invoiceDetails={invoiceDetails}
+          toggleInvoiceEditor={toggleInvoiceEditor}
+          pdf={pdf}
+          sendInvoiceEmail={sendInvoiceEmail}
+          setPreview={setPreview}
+          updateInvoiceDraftField={updateInvoiceDraftField}
+          updateInvoiceDraftItem={updateInvoiceDraftItem}
+          removeInvoiceDraftItem={removeInvoiceDraftItem}
+          addInvoiceDraftItem={addInvoiceDraftItem}
+          saveInvoiceDraft={saveInvoiceDraft}
+          savingInvoiceId={savingInvoiceId}
+        />
 
         {/* ── Demandes de modification ── */}
-        <ProjectSection
-          sectionId="s-extras"
-          icon="⚡"
-          title="Demandes de modification"
-          summary={sectionSummaries['s-extras']?.summary}
-          stats={sectionSummaries['s-extras']?.stats}
+        <ProjectChangeOrdersSection
+          sectionSummary={sectionSummaries['s-extras']}
           expanded={!!sectionExpanded['s-extras']}
           onToggle={() => toggleProjectSection('s-extras')}
-          background="#FFF7ED"
-          borderTop="1px solid #FED7AA"
-        >
-          {sectionGuard('s-extras')}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-            <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}>
-              <Plus size={13}/> Nouvelle demande
-            </button>
-          </div>
+          sectionGuard={sectionGuard}
+          setShowExtraForm={setShowExtraForm}
+          changeOrdersList={changeOrdersList}
+          money={money}
+        />
 
-          {changeOrdersList.length > 0 ? (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #FED7AA', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#FFF7ED' }}>
-                    {['N°', 'Titre', 'Montant', 'Statut', 'Date'].map((h, i) => (
-                      <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FED7AA' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {changeOrdersList.map(co => {
-                    const CS = { draft:'#9CA3AF', pending_approval:'#F59E0B', approved:'#22C55E', rejected:'#EF4444', completed:'#3B82F6' };
-                    const CL = { draft:'Brouillon', pending_approval:'En attente', approved:'Approuvé', rejected:'Refusé', completed:'Complété' };
-                    return (
-                      <tr key={co.id} style={{ borderBottom: '1px solid #FFF7ED' }}>
-                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{co.number || '—'}</td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#15171C' }}>{co.title}</p>
-                          {co.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>{co.description}</p>}
-                        </td>
-                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: co.amount > 0 ? '#15171C' : '#9CA3AF' }}>
-                          {co.amount > 0 ? money(co.amount) : '—'}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: (CS[co.status]||'#9CA3AF') + '20', color: CS[co.status]||'#9CA3AF', border: `1px solid ${(CS[co.status]||'#9CA3AF')}40` }}>
-                            {CL[co.status] || co.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF' }}>
-                          {co.created_at ? new Date(co.created_at).toLocaleDateString('fr-CA') : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {changeOrdersList.some(co => co.amount > 0) && (
-                <div style={{ padding: '10px 14px', background: '#FFFBF5', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
-                  <span style={{ fontSize: 12, color: '#92400E' }}>Total extras</span>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#F97316' }}>{money(changeOrdersList.reduce((s, co) => s + Number(co.amount || 0), 0))}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '28px 0' }}>
-              <GitBranch size={28} style={{ color: '#FED7AA', margin: '0 auto 10px' }} />
-              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 14 }}>Aucune demande de modification pour ce projet.</p>
-              <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}><Plus size={13}/> Créer la première demande</button>
-            </div>
-          )}
-
-        </ProjectSection>
-
-        {/* ── Quittance ── (mint) */}
-        <ProjectSection
-          sectionId="s-quittances"
-          icon="✅"
-          title="Quittances"
-          summary={sectionSummaries['s-quittances']?.summary}
-          stats={sectionSummaries['s-quittances']?.stats}
+        <ProjectQuittancesSection
+          sectionSummary={sectionSummaries['s-quittances']}
           expanded={!!sectionExpanded['s-quittances']}
           onToggle={() => toggleProjectSection('s-quittances')}
-          background="#E9F3EC"
-        >
+          quittance={quittance}
+          showQuittanceForm={showQuittanceForm}
+          setShowQuittanceForm={setShowQuittanceForm}
+          quittanceForm={quittanceForm}
+          setQuittanceForm={setQuittanceForm}
+          project={project}
+          createQuittance={createQuittance}
+          savingQuittance={savingQuittance}
+          FRONTEND_URL={FRONTEND_URL}
+          pdf={pdf}
+        />
 
-          {!quittance && !showQuittanceForm && (
-            <div className="text-center py-6">
-              <Shield size={28} className="text-gray-200 mx-auto mb-3"/>
-              <p className="text-sm text-gray-400 mb-4">Envoyez une quittance à votre client pour confirmer la fin des travaux et obtenir sa signature électronique.</p>
-              <button
-                className="btn-primary text-xs"
-                onClick={() => {
-                  setQuittanceForm({ client_name: project.client_name||'', client_email: project.client_email||'', project_description: project.name||'', amount_paid: project.contract_value||'', notes: '' });
-                  setShowQuittanceForm(true);
-                }}
-              >
-                <Shield size={13}/> Générer une quittance
-              </button>
-            </div>
-          )}
-
-          {showQuittanceForm && (
-            <form onSubmit={createQuittance} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Nom du client *</label><input className="input" value={quittanceForm.client_name} onChange={e=>setQuittanceForm(f=>({...f,client_name:e.target.value}))} required/></div>
-                <div><label className="label">Courriel client</label><input className="input" type="email" value={quittanceForm.client_email} onChange={e=>setQuittanceForm(f=>({...f,client_email:e.target.value}))}/></div>
-              </div>
-              <div><label className="label">Description des travaux</label><textarea className="input resize-none" rows={2} value={quittanceForm.project_description} onChange={e=>setQuittanceForm(f=>({...f,project_description:e.target.value}))}/></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Montant payé ($)</label><input className="input" type="number" value={quittanceForm.amount_paid} onChange={e=>setQuittanceForm(f=>({...f,amount_paid:e.target.value}))}/></div>
-                <div><label className="label">Note (optionnel)</label><input className="input" value={quittanceForm.notes} onChange={e=>setQuittanceForm(f=>({...f,notes:e.target.value}))}/></div>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" className="btn-secondary flex-1" onClick={()=>setShowQuittanceForm(false)}>Annuler</button>
-                <button type="submit" className="btn-primary flex-1" disabled={savingQuittance}>{savingQuittance&&<Loader2 size={13} className="animate-spin"/>} Créer la quittance</button>
-              </div>
-            </form>
-          )}
-
-          {quittance && (
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${quittance.status==='signed'?'bg-green-500':quittance.status==='sent'?'bg-blue-400':'bg-gray-300'}`}/>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">{quittance.client_name}</p>
-                  <p className="text-xs text-gray-400">
-                    {quittance.status==='signed'
-                      ? `✓ Signée le ${new Date(quittance.signed_at).toLocaleDateString('fr-CA')}`
-                      : quittance.status==='sent' ? 'Envoyée — en attente de signature' : 'Brouillon — non envoyée'}
-                  </p>
-                </div>
-                <span className={`badge ${quittance.status==='signed'?'badge-green':quittance.status==='sent'?'badge-blue':'badge-gray'}`}>
-                  {quittance.status==='signed'?'Signée':quittance.status==='sent'?'Envoyée':'Brouillon'}
-                </span>
-              </div>
-              {quittance.status !== 'signed' && (
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    className="btn-secondary text-xs py-1.5"
-                    onClick={() => {
-                      const url = `${FRONTEND_URL}/quittance/${quittance.public_token}`;
-                      navigator.clipboard.writeText(url);
-                      alert('Lien copié!');
-                    }}
-                  >
-                    <Link2 size={12}/> Copier le lien client
-                  </button>
-                  <a
-                    href={`${FRONTEND_URL}/quittance/${quittance.public_token}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="btn-ghost text-xs py-1.5"
-                  >
-                    <ExternalLink size={12}/> Prévisualiser
-                  </a>
-                  <a
-                    href={pdf.quittanceUrl(quittance.id)}
-                    download={`quittance-${quittance.id.slice(0,8)}.pdf`}
-                    className="btn-ghost text-xs py-1.5"
-                    title="Télécharger PDF"
-                  >
-                    <Download size={12}/> PDF
-                  </a>
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ${quittance.client_name}, voici votre quittance de fin de travaux à signer : ${FRONTEND_URL}/quittance/${quittance.public_token}`)}`}
-                    target="_blank" rel="noreferrer"
-                    className="btn-ghost text-xs py-1.5 text-green-600 hover:text-green-700"
-                    title="Envoyer la quittance par WhatsApp"
-                  >
-                    <MessageCircle size={12}/> WhatsApp
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-        </ProjectSection>
-
-        {/* ── Section Dénonciations (hypothèques légales QC) ── */}
-        {(() => {
-          const fa = project.field_assessment || {};
-          const denList = fa.denonciations || [];
-
-          const saveDen = async (next) => {
-            const nextFa = { ...fa, denonciations: next };
-            await projectsApi.update(id, { field_assessment: nextFa });
-            setProject(p => ({ ...p, field_assessment: nextFa }));
-          };
-
-          const addDen = () => saveDen([...denList, {
-            id: Date.now(),
-            type: 'Hypothèque légale',
-            beneficiaire: '',
-            montant: '',
-            date_envoi: '',
-            date_limite: '',
-            statut: 'à_envoyer',
-            notes: '',
-          }]);
-
-          const updateDen = (idx, patch) => {
-            const next = denList.map((d, i) => i === idx ? { ...d, ...patch } : d);
-            saveDen(next);
-          };
-
-          const removeDen = (idx) => saveDen(denList.filter((_, i) => i !== idx));
-
-          const DEN_STATUTS = [
-            { key: 'à_envoyer',  label: 'À envoyer',  color: '#D97706', bg: '#FFFBEB' },
-            { key: 'envoyée',    label: 'Envoyée',     color: '#2563EB', bg: '#EFF6FF' },
-            { key: 'acceptée',   label: 'Acceptée',    color: '#16a34a', bg: '#F0FDF4' },
-            { key: 'contestée',  label: 'Contestée',   color: '#DC2626', bg: '#FEF2F2' },
-            { key: 'radiée',     label: 'Radiée',      color: '#6B7280', bg: '#F3F4F6' },
-          ];
-
-          return (
-            <ProjectSection
-              sectionId="s-denonciations"
-              icon="⚖️"
-              title="Dénonciations"
-              summary={sectionSummaries['s-denonciations']?.summary}
-              stats={sectionSummaries['s-denonciations']?.stats}
-              expanded={!!sectionExpanded['s-denonciations']}
-              onToggle={() => toggleProjectSection('s-denonciations')}
-            >
-              {sectionGuard('s-denonciations')}
-
-              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, padding: '12px 16px', marginBottom: 20 }}>
-                <p style={{ fontSize: 12, color: '#92400E', margin: 0, lineHeight: 1.6 }}>
-                  <b>Rappel :</b> Au Québec, un sous-traitant ou fournisseur peut inscrire une hypothèque légale de la construction dans les <b>30 jours</b> suivant la fin des travaux (art. 2726–2728 C.c.Q.). La dénonciation préalable au propriétaire est requise pour les parties sans contrat direct avec lui.
-                </p>
-              </div>
-
-              {denList.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                  {denList.map((den, idx) => {
-                    const statut = DEN_STATUTS.find(s => s.key === den.statut) || DEN_STATUTS[0];
-                    const isLate = den.date_limite && new Date(den.date_limite) < new Date() && den.statut !== 'radiée';
-                    return (
-                      <div key={den.id || idx} style={{ background: '#FAFAFA', border: `1px solid ${isLate ? '#FECACA' : '#E8EAED'}`, borderRadius: 12, padding: 16 }}>
-                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                          {/* Type */}
-                          <div style={{ minWidth: 170 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Type</p>
-                            <select value={den.type} onChange={e => updateDen(idx, { type: e.target.value })}
-                              style={{ fontSize: 12, border: '1px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', background: '#fff', color: '#15171C', width: '100%' }}>
-                              <option>Hypothèque légale</option>
-                              <option>Avis de dénonciation</option>
-                              <option>Mise en demeure</option>
-                              <option>Autre</option>
-                            </select>
-                          </div>
-                          {/* Bénéficiaire */}
-                          <div style={{ flex: 1, minWidth: 140 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Bénéficiaire</p>
-                            <input value={den.beneficiaire} onChange={e => updateDen(idx, { beneficiaire: e.target.value })}
-                              placeholder="Sous-traitant ou fournisseur…"
-                              style={{ fontSize: 12, border: '1px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', background: '#fff', color: '#15171C', width: '100%', boxSizing: 'border-box' }}/>
-                          </div>
-                          {/* Montant */}
-                          <div style={{ width: 110 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Montant ($)</p>
-                            <input type="number" value={den.montant} onChange={e => updateDen(idx, { montant: e.target.value })}
-                              placeholder="0.00"
-                              style={{ fontSize: 12, border: '1px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', background: '#fff', color: '#15171C', width: '100%', boxSizing: 'border-box' }}/>
-                          </div>
-                          {/* Date envoi */}
-                          <div style={{ width: 128 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Date d'envoi</p>
-                            <input type="date" value={den.date_envoi} onChange={e => updateDen(idx, { date_envoi: e.target.value })}
-                              style={{ fontSize: 12, border: '1px solid #E0E4E8', borderRadius: 7, padding: '5px 8px', background: '#fff', color: '#15171C', width: '100%', boxSizing: 'border-box' }}/>
-                          </div>
-                          {/* Date limite */}
-                          <div style={{ width: 128 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: isLate ? '#DC2626' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>
-                              {isLate ? '⚠ Échéance dépassée' : 'Date limite (30j)'}
-                            </p>
-                            <input type="date" value={den.date_limite} onChange={e => updateDen(idx, { date_limite: e.target.value })}
-                              style={{ fontSize: 12, border: `1px solid ${isLate ? '#FECACA' : '#E0E4E8'}`, borderRadius: 7, padding: '5px 8px', background: isLate ? '#FEF2F2' : '#fff', color: isLate ? '#DC2626' : '#15171C', fontWeight: isLate ? 700 : 400, width: '100%', boxSizing: 'border-box' }}/>
-                          </div>
-                          {/* Statut */}
-                          <div style={{ width: 118 }}>
-                            <p style={{ fontSize: 9, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', margin: '0 0 4px' }}>Statut</p>
-                            <select value={den.statut} onChange={e => updateDen(idx, { statut: e.target.value })}
-                              style={{ fontSize: 11.5, border: `1.5px solid ${statut.color}60`, borderRadius: 7, padding: '5px 8px', background: statut.bg, color: statut.color, fontWeight: 700, width: '100%' }}>
-                              {DEN_STATUTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                            </select>
-                          </div>
-                          {/* Supprimer */}
-                          <button onClick={() => removeDen(idx)}
-                            style={{ width: 30, height: 30, borderRadius: 8, background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626', fontSize: 16, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                            ×
-                          </button>
-                        </div>
-                        <input value={den.notes} onChange={e => updateDen(idx, { notes: e.target.value })}
-                          placeholder="Notes — notaire, numéro de dossier, références…"
-                          style={{ marginTop: 10, fontSize: 11.5, border: '1px solid #E0E4E8', borderRadius: 7, padding: '5px 10px', background: '#fff', color: '#374151', width: '100%', boxSizing: 'border-box' }}/>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {denList.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '28px 0 20px', color: '#C4C8CE' }}>
-                  <span style={{ fontSize: 34 }}>⚖️</span>
-                  <p style={{ fontSize: 13, marginTop: 8, marginBottom: 2 }}>Aucune dénonciation pour ce projet.</p>
-                  <p style={{ fontSize: 11.5 }}>Ajoutez un avis d'hypothèque légale ou de dénonciation à suivre.</p>
-                </div>
-              )}
-
-              <button onClick={addDen}
-                style={{ fontSize: 12.5, fontWeight: 700, padding: '9px 20px', borderRadius: 10, border: '1.5px dashed #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Ajouter une dénonciation
-              </button>
-            </ProjectSection>
-          );
-        })()}
+        <ProjectDenonciationsSection
+          sectionSummary={sectionSummaries['s-denonciations']}
+          expanded={!!sectionExpanded['s-denonciations']}
+          onToggle={() => toggleProjectSection('s-denonciations')}
+          sectionGuard={sectionGuard}
+          project={project}
+          id={id}
+          projectsApi={projectsApi}
+          setProject={setProject}
+        />
 
         {/* s-comms est maintenant dans son propre onglet */}
 
