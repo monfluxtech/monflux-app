@@ -162,7 +162,7 @@ async function applyMigrations() {
       company_id        UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
       project_id        UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       type              TEXT NOT NULL DEFAULT 'supplier_invoice'
-                          CHECK (type IN ('supplier_invoice','material','equipment','permit','rental','other')),
+                          CHECK (type IN ('supplier_invoice','material','equipment','permit','rental','mileage','other')),
       description       TEXT,
       amount            NUMERIC(12,2) NOT NULL DEFAULT 0,
       subcontractor_id  UUID REFERENCES subcontractors(id) ON DELETE SET NULL,
@@ -177,6 +177,16 @@ async function applyMigrations() {
     `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS po_number TEXT`);
   await run('project_expenses supplier_inv_number col',
     `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS supplier_invoice_number TEXT`);
+  await run('project_expenses receipt_url col',
+    `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT`);
+  await run('project_expenses receipt_name col',
+    `ALTER TABLE project_expenses ADD COLUMN IF NOT EXISTS receipt_name TEXT`);
+  await run('project_expenses type check refresh',
+    `ALTER TABLE project_expenses DROP CONSTRAINT IF EXISTS project_expenses_type_check`);
+  await run('project_expenses type check add',
+    `ALTER TABLE project_expenses
+       ADD CONSTRAINT project_expenses_type_check
+       CHECK (type IN ('supplier_invoice','material','equipment','permit','rental','mileage','other'))`);
 
   // ── Member invites — pending email invitations (2026-06) ────────────────────
   await run('member_invites create',

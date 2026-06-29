@@ -17,6 +17,44 @@ const BRAND_DARK = '#C85A2B';
 const BRAND_SOFT = '#FFF1EB';
 const BRAND_BORDER = '#F9D5C0';
 
+const formatInputDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const formatInputTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const combineDateTime = (dateValue, timeValue) => {
+  if (!dateValue || !timeValue) return null;
+  const [year, month, day] = String(dateValue).split('-').map(Number);
+  const [hours, minutes] = String(timeValue).split(':').map(Number);
+  const built = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0, 0, 0);
+  return Number.isNaN(built.getTime()) ? null : built.toISOString();
+};
+
+const addHoursToIso = (isoValue, hoursValue) => {
+  const base = new Date(isoValue);
+  const duration = Number(hoursValue);
+  if (Number.isNaN(base.getTime()) || !Number.isFinite(duration) || duration <= 0) return null;
+  return new Date(base.getTime() + (duration * 3600000)).toISOString();
+};
+
+const isExpenseReceiptRequired = (type) => type !== 'mileage';
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(reader.error || new Error('read_failed'));
+  reader.readAsDataURL(file);
+});
+
 const STICKY_COLORS = [
   { key: 'yellow', bg: '#FEF9C3', border: '#EAB308', text: '#713F12' },
   { key: 'pink',   bg: '#FCE7F3', border: '#EC4899', text: '#831843' },
@@ -648,6 +686,7 @@ const EXPENSE_TYPES = {
   equipment: 'Équipement',
   permit: 'Permis',
   rental: 'Location',
+  mileage: 'Kilométrage',
   other: 'Autre',
 };
 
@@ -3145,7 +3184,7 @@ export default function ProjectDetail() {
   const [showTradeForm, setShowTradeForm] = useState(false);
   const [tradeForm, setTradeForm] = useState({ trade: '', estimated_cost: '', chosen_subcontractor_id: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '' });
+  const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '', receipt_url: '', receipt_name: '' });
   const [expenseDrafts, setExpenseDrafts] = useState({});
   const [savingExpenseId, setSavingExpenseId] = useState(null);
   const [laborRate, setLaborRate] = useState('');
@@ -3270,7 +3309,7 @@ export default function ProjectDetail() {
   const [proactiveDismissedSections, setProactiveDismissedSections] = useState(new Set());
   const [allOperationalAlerts, setAllOperationalAlerts] = useState([]); // toutes les alertes calculées
   const [showManualPunch, setShowManualPunch] = useState(false);
-  const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', work_date: new Date().toISOString().slice(0,10), hours: '', notes: '', trade: '' });
+  const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', phase_name: '', work_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '', duration_hours: '', notes: '' });
   const [quickPunch, setQuickPunch] = useState({ worker_name: '', phase_name: '', notes: '' });
   const [startingPunch, setStartingPunch] = useState(false);
   const [stoppingPunchId, setStoppingPunchId] = useState(null);
@@ -3312,6 +3351,15 @@ export default function ProjectDetail() {
       phase_name: prev.phase_name || defaultPhase,
       notes: prev.notes || '',
     }));
+    setManualPunchForm((prev) => ({
+      worker_name: prev.worker_name || defaultWorker,
+      phase_name: prev.phase_name || defaultPhase,
+      work_date: prev.work_date || new Date().toISOString().slice(0, 10),
+      start_time: prev.start_time || '08:00',
+      end_time: prev.end_time || '',
+      duration_hours: prev.duration_hours || '',
+      notes: prev.notes || '',
+    }));
   }, [currentUser?.name, currentUser?.email, project?.phases]);
   useEffect(() => {
     setTimesheetDrafts((prev) => {
@@ -3322,6 +3370,10 @@ export default function ProjectDetail() {
             worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
             phase_name: ts.phase_name || '',
             notes: ts.notes || '',
+            work_date: formatInputDate(ts.clock_in),
+            start_time: formatInputTime(ts.clock_in),
+            end_time: formatInputTime(ts.clock_out),
+            duration_hours: ts.hours_total != null ? String(ts.hours_total) : '',
           };
         }
       });
@@ -3340,6 +3392,8 @@ export default function ProjectDetail() {
             expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
             po_number: expense.po_number || '',
             supplier_invoice_number: expense.supplier_invoice_number || '',
+            receipt_url: expense.receipt_url || '',
+            receipt_name: expense.receipt_name || '',
           };
         }
       });
@@ -5177,11 +5231,36 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         expense_date: expenseForm.expense_date || null,
         po_number: expenseForm.po_number || null,
         supplier_invoice_number: expenseForm.supplier_invoice_number || null,
+        receipt_url: expenseForm.receipt_url || null,
+        receipt_name: expenseForm.receipt_name || null,
       });
       setProject(p => ({ ...p, expenses: [data, ...(p.expenses || [])] }));
-      setExpenseForm({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '' });
+      setExpenseForm({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '', receipt_url: '', receipt_name: '' });
       setShowExpenseForm(false);
       refreshProfit();
+    } catch {}
+  };
+
+  const attachExpenseReceipt = async ({ expenseId = null, file }) => {
+    if (!file) return;
+    try {
+      const receiptUrl = await readFileAsDataUrl(file);
+      if (expenseId) {
+        setExpenseDrafts((prev) => ({
+          ...prev,
+          [expenseId]: {
+            ...(prev[expenseId] || {}),
+            receipt_url: receiptUrl,
+            receipt_name: file.name || 'recu.jpg',
+          },
+        }));
+      } else {
+        setExpenseForm((prev) => ({
+          ...prev,
+          receipt_url: receiptUrl,
+          receipt_name: file.name || 'recu.jpg',
+        }));
+      }
     } catch {}
   };
 
@@ -5207,6 +5286,8 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         expense_date: draft.expense_date,
         po_number: draft.po_number,
         supplier_invoice_number: draft.supplier_invoice_number,
+        receipt_url: draft.receipt_url || null,
+        receipt_name: draft.receipt_name || null,
       });
       setProject((prev) => ({
         ...prev,
@@ -5885,12 +5966,22 @@ Règles :
   const saveTimesheetRow = async (timesheetId) => {
     const draft = timesheetDrafts[timesheetId];
     if (!draft) return;
+    const clockInIso = combineDateTime(draft.work_date, draft.start_time);
+    const durationHours = Number(draft.duration_hours);
+    const clockOutIso = draft.end_time
+      ? combineDateTime(draft.work_date, draft.end_time)
+      : (clockInIso && Number.isFinite(durationHours) && durationHours > 0 ? addHoursToIso(clockInIso, durationHours) : null);
     setSavingTimesheetId(timesheetId);
     try {
       const { data } = await tsApi.update(timesheetId, {
         worker_name: draft.worker_name,
         phase_name: draft.phase_name,
         notes: draft.notes,
+        clock_in: clockInIso,
+        clock_out: clockOutIso,
+        hours_total: !draft.end_time && Number.isFinite(durationHours) && durationHours > 0
+          ? durationHours
+          : undefined,
       });
       setTimesheets((prev) => prev.map((timesheet) => (
         timesheet.id === timesheetId ? { ...timesheet, ...data } : timesheet
@@ -5934,17 +6025,40 @@ Règles :
     finally { setStoppingPunchId(null); }
   };
 
-  // Entrée manuelle de temps (stockée dans field_assessment pour ne pas nécessiter de route supplémentaire)
   const addManualPunch = async (e) => {
     e.preventDefault();
-    const entry = { ...manualPunchForm, id: crypto.randomUUID(), created_at: new Date().toISOString() };
-    const fa = project.field_assessment || {};
-    const existing = fa.manual_timesheets || [];
-    const next = [entry, ...existing];
-    await projectsApi.update(id, { field_assessment: { ...fa, manual_timesheets: next } });
-    setProject(p => ({ ...p, field_assessment: { ...(p.field_assessment || {}), manual_timesheets: next } }));
-    setManualPunchForm({ worker_name: '', work_date: new Date().toISOString().slice(0,10), hours: '', notes: '', trade: '' });
-    setShowManualPunch(false);
+    const worker_name = manualPunchForm.worker_name.trim() || currentUser?.name || currentUser?.email || '';
+    const phase_name = manualPunchForm.phase_name.trim();
+    const clockInIso = combineDateTime(manualPunchForm.work_date, manualPunchForm.start_time);
+    const durationHours = Number(manualPunchForm.duration_hours);
+    const clockOutIso = manualPunchForm.end_time
+      ? combineDateTime(manualPunchForm.work_date, manualPunchForm.end_time)
+      : (clockInIso && Number.isFinite(durationHours) && durationHours > 0 ? addHoursToIso(clockInIso, durationHours) : null);
+    if (!worker_name || !phase_name || !clockInIso || !clockOutIso) return;
+    try {
+      const { data } = await tsApi.start({
+        project_id: id,
+        worker_name,
+        phase_name,
+        notes: manualPunchForm.notes.trim(),
+        clock_in: clockInIso,
+        clock_out: clockOutIso,
+        hours_total: !manualPunchForm.end_time && Number.isFinite(durationHours) && durationHours > 0
+          ? durationHours
+          : undefined,
+      });
+      setTimesheets((prev) => [data, ...prev]);
+      setManualPunchForm({
+        worker_name,
+        phase_name,
+        work_date: new Date().toISOString().slice(0, 10),
+        start_time: '08:00',
+        end_time: '',
+        duration_hours: '',
+        notes: '',
+      });
+      setShowManualPunch(false);
+    } catch {}
   };
 
   const createOrder = async (e) => {
@@ -6108,6 +6222,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
   const activeTs = timesheets.filter(t=>!t.clock_out);
   const completedTs = timesheets.filter(t => t.clock_out);
   const pendingApprovalTs = completedTs.filter(t => !t.approved_at);
+  const myActiveTimesheet = activeTs.find((ts) => (
+    (currentUser?.id && ts.user_id && ts.user_id === currentUser.id)
+    || ((currentUser?.name || '').trim() && (ts.worker_name || ts.user_name || '').trim() === (currentUser?.name || '').trim())
+    || ((currentUser?.email || '').trim() && (ts.worker_name || ts.user_name || '').trim() === (currentUser?.email || '').trim())
+  )) || null;
+  const openPunchSection = () => {
+    setSectionExpanded((prev) => {
+      const next = { ...prev, 's-punch': true };
+      try { localStorage.setItem(sectionPrefKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    setTimeout(() => scrollToSection('s-punch'), 40);
+  };
   const totalPointedHours = completedTs.reduce((sum, ts) => {
     if (Number.isFinite(Number(ts.hours_total))) return sum + Number(ts.hours_total);
     if (!ts.clock_in || !ts.clock_out) return sum;
@@ -7136,8 +7263,44 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   })()}
 
                   {/* Colonne droite : QR + portails */}
-                  {(qrData || project.portal_token) && (
-                    <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                      <button
+                        onClick={() => {
+                          if (myActiveTimesheet) {
+                            stopProjectPunch(myActiveTimesheet);
+                            return;
+                          }
+                          if (!quickPunch.worker_name.trim() || !quickPunch.phase_name.trim()) {
+                            openPunchSection();
+                            return;
+                          }
+                          startProjectPunch();
+                        }}
+                        title={myActiveTimesheet ? 'Arrêter mon punch en cours' : 'Démarrer mon punch'}
+                        style={{
+                          width: 56,
+                          minHeight: 56,
+                          borderRadius: 12,
+                          border: myActiveTimesheet ? '1px solid #BBF7D0' : '1px solid #E8EAED',
+                          background: myActiveTimesheet ? '#ECFDF3' : '#fff',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 3,
+                          boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+                        }}
+                      >
+                        {myActiveTimesheet
+                          ? <Square size={16} className="text-green-700" fill="currentColor" />
+                          : startingPunch
+                            ? <Loader2 size={16} className="animate-spin text-brand" />
+                            : <Clock size={16} className="text-brand" />}
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: myActiveTimesheet ? '#15803D' : BRAND_DARK }}>
+                          {myActiveTimesheet ? 'Arrêter' : 'Punch'}
+                        </span>
+                      </button>
                       {qrData && (
                         <button onClick={() => setShowQrModal(true)} title="QR Punch — cliquer pour agrandir"
                           style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
@@ -7205,8 +7368,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           </div>
                         </div>
                       )}
-                    </div>
-                  )}
+                  </div>
                 </div>
               );
             })()}
@@ -10297,24 +10459,25 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   <col style={{ width: 120 }}/>
                   <col style={{ width: 120 }}/>
                   <col style={{ width: 150 }}/>
+                  <col style={{ width: 150 }}/>
                   <col style={{ width: 110 }}/>
                   <col style={{ width: 120 }}/>
                 </colgroup>
                 <thead>
                   <tr>
-                    {['Type', 'Description', 'Date', 'Bon de commande', 'Facture fournisseur', 'Montant', 'Actions'].map((label, index) => (
+                    {['Type', 'Description', 'Date', 'Bon de commande', 'Facture fournisseur', 'Reçu', 'Montant', 'Actions'].map((label, index) => (
                       <th
                         key={label}
                         style={{
                           padding: '8px 10px',
                           fontSize: 10,
                           fontWeight: 700,
-                          color: index === 5 ? BRAND : '#6B7280',
+                          color: index === 6 ? BRAND : '#6B7280',
                           textTransform: 'uppercase',
                           letterSpacing: '.05em',
                           borderBottom: '2px solid #E5E7EB',
                           background: '#F9FAFB',
-                          textAlign: index === 5 ? 'right' : index === 6 ? 'center' : 'left',
+                          textAlign: index === 6 ? 'right' : index === 7 ? 'center' : 'left',
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -10344,6 +10507,32 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                         <input className="input" value={expenseForm.supplier_invoice_number} onChange={e => setExpenseForm(f => ({ ...f, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" />
                       </td>
                       <td style={{ padding: '6px 8px' }}>
+                        {expenseForm.type === 'mileage' ? (
+                          <span className="text-xs text-gray-400">Non requis</span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <label className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
+                              {expenseForm.receipt_url ? 'Changer la photo' : 'Ajouter la photo'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) attachExpenseReceipt({ file });
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {expenseForm.receipt_url && (
+                              <button type="button" className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: expenseForm.receipt_url, caption: expenseForm.receipt_name || 'Reçu' })}>
+                                Voir
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
                         <input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>
@@ -10362,8 +10551,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                       expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
                       po_number: expense.po_number || '',
                       supplier_invoice_number: expense.supplier_invoice_number || '',
+                      receipt_url: expense.receipt_url || '',
+                      receipt_name: expense.receipt_name || '',
                     };
                     const isSupplierInvoice = draft.type === 'supplier_invoice';
+                    const receiptMissing = isExpenseReceiptRequired(draft.type) && !draft.receipt_url;
                     return (
                       <tr key={expense.id} style={{ background: 'white', borderBottom: '1px solid #F3F4F6' }}>
                         <td style={{ padding: '6px 8px' }}>
@@ -10387,6 +10579,32 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           </div>
                         </td>
                         <td style={{ padding: '6px 8px' }}>
+                          {draft.type === 'mileage' ? (
+                            <span className="text-xs text-gray-400">Non requis</span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <label className={`text-[11px] font-medium border rounded-md px-2 py-1 transition-colors cursor-pointer ${receiptMissing ? 'text-amber-700 border-amber-200 bg-amber-50' : 'text-gray-500 hover:text-brand border-gray-200'}`}>
+                                {draft.receipt_url ? 'Changer' : 'Photo reçu'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) attachExpenseReceipt({ expenseId: expense.id, file });
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                              {draft.receipt_url && (
+                                <button className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: draft.receipt_url, caption: draft.receipt_name || 'Reçu' })}>
+                                  Voir
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
                           <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} />
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'center' }}>
@@ -10402,7 +10620,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   })}
                   {!showExpenseForm && !(project.expenses || []).length && (
                     <tr>
-                      <td colSpan={7} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                      <td colSpan={8} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
                         Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.
                       </td>
                     </tr>
@@ -10479,22 +10697,28 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 Démarrer
               </button>
             </div>
+            <div className="flex justify-end mt-2">
+              <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => setShowManualPunch((prev) => !prev)}>
+                {showManualPunch ? 'Masquer la ligne manuelle' : 'Ajouter un timelog oublié'}
+              </button>
+            </div>
           </div>
           <div style={{ border: '1px solid #DCEFE2', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
                 <colgroup>
                   <col style={{ width: 170 }}/>
                   <col style={{ width: 210 }}/>
                   <col style={{ minWidth: 220 }}/>
+                  <col style={{ width: 130 }}/>
                   <col style={{ width: 145 }}/>
                   <col style={{ width: 145 }}/>
-                  <col style={{ width: 90 }}/>
+                  <col style={{ width: 110 }}/>
                   <col style={{ width: 140 }}/>
                 </colgroup>
                 <thead>
                   <tr>
-                    {['Travailleur', 'Phase', 'Note', 'Début', 'Fin', 'Total', 'Actions'].map((label, index) => (
+                    {['Travailleur', 'Phase', 'Note', 'Date', 'Début', 'Fin / durée', 'Durée', 'Actions'].map((label, index) => (
                       <th
                         key={label}
                         style={{
@@ -10506,7 +10730,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           letterSpacing: '.05em',
                           borderBottom: '2px solid #E5E7EB',
                           background: '#F9FAFB',
-                          textAlign: index === 5 ? 'right' : index === 6 ? 'center' : 'left',
+                          textAlign: index === 6 ? 'right' : index === 7 ? 'center' : 'left',
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -10516,17 +10740,64 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   </tr>
                 </thead>
                 <tbody>
+                  {showManualPunch && (
+                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #DCEFE2' }}>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" value={manualPunchForm.worker_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, worker_name: e.target.value }))} placeholder="Travailleur" />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <select className="input" value={manualPunchForm.phase_name} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, phase_name: e.target.value }))}>
+                          <option value="">Choisir une phase…</option>
+                          {(project.phases || []).map((phase) => (
+                            <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" value={manualPunchForm.notes} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Note rapide" />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" type="date" value={manualPunchForm.work_date} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, work_date: e.target.value }))} />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" type="time" value={manualPunchForm.start_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, start_time: e.target.value }))} />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <div className="flex items-center gap-2">
+                          <input className="input" type="time" value={manualPunchForm.end_time} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, end_time: e.target.value }))} />
+                          <span className="text-[10px] text-gray-400">ou</span>
+                          <input className="input text-right" type="number" min="0" step="0.25" value={manualPunchForm.duration_hours} onChange={(e) => setManualPunchForm((prev) => ({ ...prev, duration_hours: e.target.value }))} placeholder="h" />
+                        </div>
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                        {manualPunchForm.duration_hours ? `${manualPunchForm.duration_hours}h` : '—'}
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <div className="flex items-center justify-center gap-2">
+                          <button className="btn-secondary text-xs" onClick={() => setShowManualPunch(false)}>Annuler</button>
+                          <button className="btn-primary text-xs" onClick={addManualPunch} disabled={!manualPunchForm.worker_name.trim() || !manualPunchForm.phase_name.trim() || !manualPunchForm.work_date || !manualPunchForm.start_time || (!manualPunchForm.end_time && !manualPunchForm.duration_hours)}>
+                            Ajouter
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {(timesheets || []).map((ts) => {
                     const draft = timesheetDrafts[ts.id] || {
                       worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
                       phase_name: ts.phase_name || '',
                       notes: ts.notes || '',
+                      work_date: formatInputDate(ts.clock_in),
+                      start_time: formatInputTime(ts.clock_in),
+                      end_time: formatInputTime(ts.clock_out),
+                      duration_hours: ts.hours_total != null ? String(ts.hours_total) : '',
                     };
-                    const hours = ts.clock_out
-                      ? Number.isFinite(Number(ts.hours_total))
-                        ? Number(ts.hours_total).toFixed(1)
-                        : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1)
-                      : null;
+                    const hours = draft.duration_hours
+                      || (ts.clock_out
+                        ? (Number.isFinite(Number(ts.hours_total))
+                          ? Number(ts.hours_total).toFixed(2)
+                          : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(2))
+                        : '');
                     return (
                       <tr key={ts.id} style={{ background: ts.clock_out ? 'white' : '#F0FDF4', borderBottom: '1px solid #F3F4F6' }}>
                         <td style={{ padding: '6px 8px' }}>
@@ -10543,22 +10814,21 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                         <td style={{ padding: '6px 8px' }}>
                           <input className="input" value={draft.notes} onChange={(e) => updateTimesheetDraftField(ts.id, 'notes', e.target.value)} placeholder="Note rapide" />
                         </td>
-                        <td style={{ padding: '6px 8px', fontSize: 12, color: '#374151' }}>
-                          <div>{new Date(ts.clock_in).toLocaleDateString('fr-CA')}</div>
-                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</div>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" type="date" value={draft.work_date || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'work_date', e.target.value)} />
                         </td>
-                        <td style={{ padding: '6px 8px', fontSize: 12, color: '#374151' }}>
-                          {ts.clock_out ? (
-                            <>
-                              <div>{new Date(ts.clock_out).toLocaleDateString('fr-CA')}</div>
-                              <div style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</div>
-                            </>
-                          ) : (
-                            <span className="badge badge-green text-[10px]">En cours</span>
-                          )}
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" type="time" value={draft.start_time || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'start_time', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <div className="flex items-center gap-2">
+                            <input className="input" type="time" value={draft.end_time || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'end_time', e.target.value)} placeholder="Fin" />
+                            <span className="text-[10px] text-gray-400">ou</span>
+                            <input className="input text-right" type="number" min="0" step="0.25" value={draft.duration_hours || ''} onChange={(e) => updateTimesheetDraftField(ts.id, 'duration_hours', e.target.value)} placeholder="h" />
+                          </div>
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                          {hours ? `${hours}h` : '—'}
+                          {hours ? `${hours}h` : (!ts.clock_out ? 'En cours' : '—')}
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -10583,7 +10853,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   })}
                   {!timesheets.length && (
                     <tr>
-                      <td colSpan={7} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                      <td colSpan={8} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
                         Aucun punch enregistré pour ce projet.
                       </td>
                     </tr>

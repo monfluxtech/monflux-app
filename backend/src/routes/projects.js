@@ -610,16 +610,16 @@ router.delete('/:id/trades/:tradeId', async (req, res) => {
 
 // ── Dépenses réelles (factures fournisseurs, matériaux…) ──────────────────────
 router.post('/:id/expenses', async (req, res) => {
-  const { type, description, amount, subcontractor_id, expense_date, po_number, supplier_invoice_number } = req.body;
+  const { type, description, amount, subcontractor_id, expense_date, po_number, supplier_invoice_number, receipt_url, receipt_name } = req.body;
   try {
     if (!(await assertProjectInCompany(req.params.id, req.company_id)))
       return res.status(404).json({ error: 'Projet introuvable' });
     const { rows: [row] } = await query(
-      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, subcontractor_id, expense_date, created_by, po_number, supplier_invoice_number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, subcontractor_id, expense_date, created_by, po_number, supplier_invoice_number, receipt_url, receipt_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [req.company_id, req.params.id, type || 'supplier_invoice', description || null,
        Number(amount) || 0, subcontractor_id || null, expense_date || null, req.user.userId,
-       po_number || null, supplier_invoice_number || null]
+       po_number || null, supplier_invoice_number || null, receipt_url || null, receipt_name || null]
     );
     res.status(201).json(row);
   } catch (err) {
@@ -629,7 +629,7 @@ router.post('/:id/expenses', async (req, res) => {
 });
 
 router.patch('/:id/expenses/:expenseId', async (req, res) => {
-  const { type, description, amount, expense_date, po_number, supplier_invoice_number } = req.body || {};
+  const { type, description, amount, expense_date, po_number, supplier_invoice_number, receipt_url, receipt_name } = req.body || {};
   try {
     if (!(await assertProjectInCompany(req.params.id, req.company_id)))
       return res.status(404).json({ error: 'Projet introuvable' });
@@ -640,10 +640,12 @@ router.patch('/:id/expenses/:expenseId', async (req, res) => {
               amount = $3,
               expense_date = $4,
               po_number = $5,
-              supplier_invoice_number = $6
-        WHERE id = $7
-          AND project_id = $8
-          AND company_id = $9
+              supplier_invoice_number = $6,
+              receipt_url = $7,
+              receipt_name = $8
+        WHERE id = $9
+          AND project_id = $10
+          AND company_id = $11
         RETURNING *`,
       [
         type || 'supplier_invoice',
@@ -652,6 +654,8 @@ router.patch('/:id/expenses/:expenseId', async (req, res) => {
         expense_date || null,
         po_number || null,
         supplier_invoice_number || null,
+        receipt_url || null,
+        receipt_name || null,
         req.params.expenseId,
         req.params.id,
         req.company_id,

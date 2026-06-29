@@ -4,8 +4,22 @@ import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
 
+const toIsoOrNull = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
+const hoursBetween = (clockIn, clockOut) => {
+  if (!clockIn || !clockOut) return null;
+  const diff = new Date(clockOut).getTime() - new Date(clockIn).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return null;
+  return Number((diff / 3600000).toFixed(2));
+};
+
 router.post('/start', async (req, res) => {
-  const { project_id, worker_name, phase_name, notes } = req.body || {};
+  const { project_id, worker_name, phase_name, notes, clock_in, clock_out, hours_total } = req.body || {};
   if (!project_id) return res.status(400).json({ error: 'Projet requis' });
   try {
     const { rows: [project] } = await query(
@@ -15,11 +29,17 @@ router.post('/start', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Projet non trouvé' });
 
     const resolvedWorkerName = String(worker_name || req.user?.name || '').trim() || null;
+    const clockInIso = toIsoOrNull(clock_in) || new Date().toISOString();
+    const clockOutIso = toIsoOrNull(clock_out);
+    const manualHours = Number(hours_total);
+    const resolvedHours = Number.isFinite(manualHours)
+      ? Number(manualHours.toFixed(2))
+      : hoursBetween(clockInIso, clockOutIso);
     const { rows: [timesheet] } = await query(
       `INSERT INTO timesheets (
-         company_id, project_id, user_id, worker_name, phase_name, notes, clock_in, method
+         company_id, project_id, user_id, worker_name, phase_name, notes, clock_in, clock_out, hours_total, method
        )
-       VALUES ($1,$2,$3,$4,$5,$6,NOW(),'manual')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'manual')
        RETURNING *`,
       [
         req.company_id,
@@ -28,6 +48,9 @@ router.post('/start', async (req, res) => {
         resolvedWorkerName,
         phase_name || null,
         notes || null,
+        clockInIso,
+        clockOutIso,
+        resolvedHours,
       ]
     );
     res.status(201).json(timesheet);
@@ -56,20 +79,42 @@ router.get('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const { worker_name, phase_name, notes } = req.body || {};
+  const { worker_name, phase_name, notes, clock_in, clock_out, hours_total } = req.body || {};
   try {
+    const { rows: [existing] } = await query(
+      `SELECT * FROM timesheets WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!existing) return res.status(404).json({ error: 'Punch introuvable' });
+
+    const hasClockIn = Object.prototype.hasOwnProperty.call(req.body || {}, 'clock_in');
+    const hasClockOut = Object.prototype.hasOwnProperty.call(req.body || {}, 'clock_out');
+    const hasHoursTotal = Object.prototype.hasOwnProperty.call(req.body || {}, 'hours_total');
+    const nextClockIn = hasClockIn ? toIsoOrNull(clock_in) : existing.clock_in;
+    const nextClockOut = hasClockOut ? toIsoOrNull(clock_out) : existing.clock_out;
+    const manualHours = hasHoursTotal ? Number(hours_total) : Number(existing.hours_total);
+    const nextHours = Number.isFinite(manualHours)
+      ? Number(manualHours.toFixed(2))
+      : hoursBetween(nextClockIn, nextClockOut);
+
     const { rows: [timesheet] } = await query(
       `UPDATE timesheets
           SET worker_name = $1,
               phase_name = $2,
-              notes = $3
-        WHERE id = $4
-          AND company_id = $5
+              notes = $3,
+              clock_in = $4,
+              clock_out = $5,
+              hours_total = $6
+        WHERE id = $7
+          AND company_id = $8
         RETURNING *`,
       [
         String(worker_name || '').trim() || null,
         String(phase_name || '').trim() || null,
         String(notes || '').trim() || null,
+        nextClockIn,
+        nextClockOut,
+        nextHours,
         req.params.id,
         req.company_id,
       ]
