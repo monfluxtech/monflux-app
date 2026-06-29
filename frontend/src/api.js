@@ -61,6 +61,7 @@ export const projects = {
   updateTrade: (id, tid, data)    => http.patch(`/projects/${id}/trades/${tid}`, data),
   deleteTrade: (id, tid)          => http.delete(`/projects/${id}/trades/${tid}`),
   addExpense:  (id, data)         => http.post(`/projects/${id}/expenses`, data),
+  updateExpense: (id, eid, data)  => http.patch(`/projects/${id}/expenses/${eid}`, data),
   deleteExpense: (id, eid)        => http.delete(`/projects/${id}/expenses/${eid}`),
   // Batch 3 — estimation terrain
   estimateField:     (id, data)   => http.post(`/projects/${id}/estimate-field`, data),
@@ -140,6 +141,7 @@ export const punch = {
 export const timesheets = {
   list:    (params)     => http.get('/timesheets', { params }),
   start:   (data)       => http.post('/timesheets/start', data),
+  update:  (id, data)   => http.patch(`/timesheets/${id}`, data),
   stop:    (id, data)   => http.patch(`/timesheets/${id}/stop`, data),
   approve: (id)         => http.patch(`/timesheets/${id}/approve`),
 };

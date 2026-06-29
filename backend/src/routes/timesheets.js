@@ -55,6 +55,33 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+router.patch('/:id', async (req, res) => {
+  const { worker_name, phase_name, notes } = req.body || {};
+  try {
+    const { rows: [timesheet] } = await query(
+      `UPDATE timesheets
+          SET worker_name = $1,
+              phase_name = $2,
+              notes = $3
+        WHERE id = $4
+          AND company_id = $5
+        RETURNING *`,
+      [
+        String(worker_name || '').trim() || null,
+        String(phase_name || '').trim() || null,
+        String(notes || '').trim() || null,
+        req.params.id,
+        req.company_id,
+      ]
+    );
+    if (!timesheet) return res.status(404).json({ error: 'Punch introuvable' });
+    res.json(timesheet);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.patch('/:id/stop', async (req, res) => {
   const { phase_name, notes } = req.body || {};
   try {

@@ -628,6 +628,43 @@ router.post('/:id/expenses', async (req, res) => {
   }
 });
 
+router.patch('/:id/expenses/:expenseId', async (req, res) => {
+  const { type, description, amount, expense_date, po_number, supplier_invoice_number } = req.body || {};
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    const { rows: [row] } = await query(
+      `UPDATE project_expenses
+          SET type = $1,
+              description = $2,
+              amount = $3,
+              expense_date = $4,
+              po_number = $5,
+              supplier_invoice_number = $6
+        WHERE id = $7
+          AND project_id = $8
+          AND company_id = $9
+        RETURNING *`,
+      [
+        type || 'supplier_invoice',
+        description || null,
+        Number(amount) || 0,
+        expense_date || null,
+        po_number || null,
+        supplier_invoice_number || null,
+        req.params.expenseId,
+        req.params.id,
+        req.company_id,
+      ]
+    );
+    if (!row) return res.status(404).json({ error: 'Dépense introuvable' });
+    res.json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.delete('/:id/expenses/:expenseId', async (req, res) => {
   try {
     const { rowCount } = await query(

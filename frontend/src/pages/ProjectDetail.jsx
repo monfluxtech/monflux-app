@@ -3116,6 +3116,11 @@ export default function ProjectDetail() {
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
+  const [invoiceDetails, setInvoiceDetails] = useState({});
+  const [invoiceDrafts, setInvoiceDrafts] = useState({});
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
+  const [loadingInvoiceId, setLoadingInvoiceId] = useState(null);
+  const [savingInvoiceId, setSavingInvoiceId] = useState(null);
   const [projectQuotes, setProjectQuotes] = useState([]);
   const [notes, setNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -3141,6 +3146,8 @@ export default function ProjectDetail() {
   const [tradeForm, setTradeForm] = useState({ trade: '', estimated_cost: '', chosen_subcontractor_id: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '' });
+  const [expenseDrafts, setExpenseDrafts] = useState({});
+  const [savingExpenseId, setSavingExpenseId] = useState(null);
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -3267,6 +3274,8 @@ export default function ProjectDetail() {
   const [quickPunch, setQuickPunch] = useState({ worker_name: '', phase_name: '', notes: '' });
   const [startingPunch, setStartingPunch] = useState(false);
   const [stoppingPunchId, setStoppingPunchId] = useState(null);
+  const [timesheetDrafts, setTimesheetDrafts] = useState({});
+  const [savingTimesheetId, setSavingTimesheetId] = useState(null);
   const [ganttSnapshots, setGanttSnapshots] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`mf-gantt-snaps-${id}`) || '[]'); } catch { return []; }
   });
@@ -3304,6 +3313,39 @@ export default function ProjectDetail() {
       notes: prev.notes || '',
     }));
   }, [currentUser?.name, currentUser?.email, project?.phases]);
+  useEffect(() => {
+    setTimesheetDrafts((prev) => {
+      const next = { ...prev };
+      (timesheets || []).forEach((ts) => {
+        if (!next[ts.id]) {
+          next[ts.id] = {
+            worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
+            phase_name: ts.phase_name || '',
+            notes: ts.notes || '',
+          };
+        }
+      });
+      return next;
+    });
+  }, [timesheets]);
+  useEffect(() => {
+    setExpenseDrafts((prev) => {
+      const next = { ...prev };
+      (project?.expenses || []).forEach((expense) => {
+        if (!next[expense.id]) {
+          next[expense.id] = {
+            type: expense.type || 'supplier_invoice',
+            description: expense.description || '',
+            amount: expense.amount ?? '',
+            expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
+            po_number: expense.po_number || '',
+            supplier_invoice_number: expense.supplier_invoice_number || '',
+          };
+        }
+      });
+      return next;
+    });
+  }, [project?.expenses]);
   const [matWishlist, setMatWishlist] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`monflux-mat-wishlist-${id}`) || '[]'); } catch { return []; }
   });
@@ -5143,6 +5185,43 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     } catch {}
   };
 
+  const updateExpenseDraftField = (expenseId, key, value) => {
+    setExpenseDrafts((prev) => ({
+      ...prev,
+      [expenseId]: {
+        ...(prev[expenseId] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const saveExpenseRow = async (expenseId) => {
+    const draft = expenseDrafts[expenseId];
+    if (!draft) return;
+    setSavingExpenseId(expenseId);
+    try {
+      const { data } = await projectsApi.updateExpense(id, expenseId, {
+        type: draft.type,
+        description: draft.description,
+        amount: draft.amount,
+        expense_date: draft.expense_date,
+        po_number: draft.po_number,
+        supplier_invoice_number: draft.supplier_invoice_number,
+      });
+      setProject((prev) => ({
+        ...prev,
+        expenses: (prev.expenses || []).map((expense) => (expense.id === expenseId ? data : expense)),
+      }));
+      setExpenseDrafts((prev) => {
+        const next = { ...prev };
+        delete next[expenseId];
+        return next;
+      });
+      refreshProfit();
+    } catch {}
+    finally { setSavingExpenseId(null); }
+  };
+
   const removeExpense = async (expenseId) => {
     if (!confirm('Supprimer cette dépense ?')) return;
     await projectsApi.deleteExpense(id, expenseId);
@@ -5165,11 +5244,136 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         items: items.map((it, idx) => ({ description: it.description, qty: Number(it.qty) || 1, unit_price: Number(it.unit_price) || 0, total: (Number(it.qty)||1) * (Number(it.unit_price)||0), order_idx: idx })),
       });
       setProjectInvoices(prev => [data, ...prev]);
+      setExpandedInvoiceId(data.id);
+      try {
+        const detail = await invoicesApi.get(data.id);
+        setInvoiceDetails((prev) => ({ ...prev, [data.id]: detail.data }));
+        ensureInvoiceDraft(data.id, detail.data);
+      } catch {}
       setShowNewInvoice(false);
       setNewInvoice({ title: '', client_name: '', client_email: '', due_date: '' });
       setNewInvoiceItems([{ description: '', qty: 1, unit_price: '' }]);
     } catch (err) { console.error(err); }
     finally { setSavingInvoice(false); }
+  };
+
+  const ensureInvoiceDraft = (invoiceId, payload) => {
+    setInvoiceDrafts((prev) => ({
+      ...prev,
+      [invoiceId]: {
+        client_name: payload.client_name || '',
+        client_email: payload.client_email || '',
+        due_date: payload.due_date ? String(payload.due_date).slice(0, 10) : '',
+        status: payload.status || 'draft',
+        items: (payload.items || []).map((item) => ({
+          id: item.id || null,
+          description: item.description || '',
+          qty: item.qty ?? 1,
+          unit_price: item.unit_price ?? '',
+        })),
+      },
+    }));
+  };
+
+  const toggleInvoiceEditor = async (invoice) => {
+    if (expandedInvoiceId === invoice.id) {
+      setExpandedInvoiceId(null);
+      return;
+    }
+    setExpandedInvoiceId(invoice.id);
+    if (invoiceDetails[invoice.id]) return;
+    setLoadingInvoiceId(invoice.id);
+    try {
+      const { data } = await invoicesApi.get(invoice.id);
+      setInvoiceDetails((prev) => ({ ...prev, [invoice.id]: data }));
+      ensureInvoiceDraft(invoice.id, data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingInvoiceId(null);
+    }
+  };
+
+  const updateInvoiceDraftField = (invoiceId, key, value) => {
+    setInvoiceDrafts((prev) => ({
+      ...prev,
+      [invoiceId]: {
+        ...(prev[invoiceId] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const updateInvoiceDraftItem = (invoiceId, index, key, value) => {
+    setInvoiceDrafts((prev) => {
+      const draft = prev[invoiceId];
+      if (!draft) return prev;
+      const items = (draft.items || []).map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item);
+      return {
+        ...prev,
+        [invoiceId]: {
+          ...draft,
+          items,
+        },
+      };
+    });
+  };
+
+  const addInvoiceDraftItem = (invoiceId) => {
+    setInvoiceDrafts((prev) => {
+      const draft = prev[invoiceId];
+      if (!draft) return prev;
+      return {
+        ...prev,
+        [invoiceId]: {
+          ...draft,
+          items: [...(draft.items || []), { id: null, description: '', qty: 1, unit_price: '' }],
+        },
+      };
+    });
+  };
+
+  const removeInvoiceDraftItem = (invoiceId, index) => {
+    setInvoiceDrafts((prev) => {
+      const draft = prev[invoiceId];
+      if (!draft) return prev;
+      return {
+        ...prev,
+        [invoiceId]: {
+          ...draft,
+          items: (draft.items || []).filter((_, itemIndex) => itemIndex !== index),
+        },
+      };
+    });
+  };
+
+  const saveInvoiceDraft = async (invoiceId) => {
+    const draft = invoiceDrafts[invoiceId];
+    if (!draft) return;
+    setSavingInvoiceId(invoiceId);
+    try {
+      const payload = {
+        client_name: draft.client_name,
+        client_email: draft.client_email,
+        due_date: draft.due_date || null,
+        status: draft.status || 'draft',
+        items: (draft.items || [])
+          .filter((item) => String(item.description || '').trim())
+          .map((item) => ({
+            description: item.description,
+            qty: Number(item.qty) || 0,
+            unit_price: Number(item.unit_price) || 0,
+          })),
+      };
+      const { data } = await invoicesApi.update(invoiceId, payload);
+      setProjectInvoices((prev) => prev.map((invoice) => invoice.id === invoiceId ? { ...invoice, ...data } : invoice));
+      setInvoiceDetails((prev) => ({ ...prev, [invoiceId]: data }));
+      ensureInvoiceDraft(invoiceId, data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingInvoiceId(null);
+    }
   };
 
   const sendInvoiceEmail = async (inv) => {
@@ -5666,6 +5870,38 @@ Règles :
       await tsApi.approve(tsId);
       setTimesheets(prev => prev.map(t => t.id === tsId ? { ...t, approved_at: new Date().toISOString() } : t));
     } catch {}
+  };
+
+  const updateTimesheetDraftField = (timesheetId, key, value) => {
+    setTimesheetDrafts((prev) => ({
+      ...prev,
+      [timesheetId]: {
+        ...(prev[timesheetId] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const saveTimesheetRow = async (timesheetId) => {
+    const draft = timesheetDrafts[timesheetId];
+    if (!draft) return;
+    setSavingTimesheetId(timesheetId);
+    try {
+      const { data } = await tsApi.update(timesheetId, {
+        worker_name: draft.worker_name,
+        phase_name: draft.phase_name,
+        notes: draft.notes,
+      });
+      setTimesheets((prev) => prev.map((timesheet) => (
+        timesheet.id === timesheetId ? { ...timesheet, ...data } : timesheet
+      )));
+      setTimesheetDrafts((prev) => {
+        const next = { ...prev };
+        delete next[timesheetId];
+        return next;
+      });
+    } catch {}
+    finally { setSavingTimesheetId(null); }
   };
 
   const startProjectPunch = async () => {
@@ -10044,64 +10280,137 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           background="#F0EBFD"
         >
           {sectionGuard('s-expenses')}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="badge badge-gray text-xs">{project.expenses?.length || 0} entrée(s)</span>
+              <span className="badge badge-gray text-xs">Total {money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</span>
+            </div>
             <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
           </div>
 
-          {showExpenseForm && (
-            <form onSubmit={addExpense} className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div><label className="label">Type</label>
-                  <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
-                    {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
-                </div>
-                <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
-                <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
-                <div><label className="label">Description</label><input className="input" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Fournisseur / détail" /></div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
-                <div><label className="label">N° bon de commande</label><input className="input" value={expenseForm.po_number} onChange={e => setExpenseForm(f => ({ ...f, po_number: e.target.value }))} placeholder="BC-001" /></div>
-                <div><label className="label">N° facture fournisseur</label><input className="input" value={expenseForm.supplier_invoice_number} onChange={e => setExpenseForm(f => ({ ...f, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" /></div>
-                <div className="flex gap-2 items-end">
-                  <button type="button" className="btn-secondary text-xs flex-1" onClick={() => setShowExpenseForm(false)}>Annuler</button>
-                  <button type="submit" className="btn-primary text-xs flex-1">Enregistrer</button>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {project.expenses?.length > 0 ? (
-            <div className="space-y-1.5">
-              {project.expenses.map(x => {
-                const noPO = x.type === 'supplier_invoice' && !x.po_number;
-                return (
-                  <div key={x.id} className="flex items-center gap-3 py-2 border-b border-purple-50 last:border-0">
-                    {noPO && (
-                      <span title="Aucun bon de commande associé" style={{ color: '#f59e0b', flexShrink: 0 }}><AlertTriangle size={13}/></span>
-                    )}
-                    <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-700 truncate">{x.description || x.subcontractor_name || '—'}</p>
-                      <div className="flex gap-3 mt-0.5">
-                        {x.supplier_invoice_number && <span className="text-xs text-gray-400">Facture : {x.supplier_invoice_number}</span>}
-                        {x.po_number ? <span className="text-xs text-purple-600 font-medium">BC : {x.po_number}</span>
-                          : x.type === 'supplier_invoice' && <span className="text-xs text-amber-500">Sans bon de commande</span>}
-                      </div>
-                    </div>
-                    {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
-                    <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
-                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
-                  </div>
-                );
-              })}
-              <div className="flex justify-end pt-2 border-t border-purple-50">
-                <p className="text-sm font-bold text-gray-800">Total : {money(project.expenses.reduce((s, x) => s + Number(x.amount || 0), 0))}</p>
-              </div>
+          <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+                <colgroup>
+                  <col style={{ width: 120 }}/>
+                  <col style={{ minWidth: 220 }}/>
+                  <col style={{ width: 120 }}/>
+                  <col style={{ width: 120 }}/>
+                  <col style={{ width: 150 }}/>
+                  <col style={{ width: 110 }}/>
+                  <col style={{ width: 120 }}/>
+                </colgroup>
+                <thead>
+                  <tr>
+                    {['Type', 'Description', 'Date', 'Bon de commande', 'Facture fournisseur', 'Montant', 'Actions'].map((label, index) => (
+                      <th
+                        key={label}
+                        style={{
+                          padding: '8px 10px',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: index === 5 ? BRAND : '#6B7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: '.05em',
+                          borderBottom: '2px solid #E5E7EB',
+                          background: '#F9FAFB',
+                          textAlign: index === 5 ? 'right' : index === 6 ? 'center' : 'left',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {showExpenseForm && (
+                    <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
+                      <td style={{ padding: '6px 8px' }}>
+                        <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
+                          {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Fournisseur / détail" />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" value={expenseForm.po_number} onChange={e => setExpenseForm(f => ({ ...f, po_number: e.target.value }))} placeholder="BC-001" />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" value={expenseForm.supplier_invoice_number} onChange={e => setExpenseForm(f => ({ ...f, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" />
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <div className="flex items-center justify-center gap-2">
+                          <button type="button" className="btn-secondary text-xs" onClick={() => setShowExpenseForm(false)}>Annuler</button>
+                          <button type="button" className="btn-primary text-xs" onClick={(e) => addExpense(e)}>Ajouter</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {(project.expenses || []).map((expense) => {
+                    const draft = expenseDrafts[expense.id] || {
+                      type: expense.type || 'supplier_invoice',
+                      description: expense.description || '',
+                      amount: expense.amount ?? '',
+                      expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
+                      po_number: expense.po_number || '',
+                      supplier_invoice_number: expense.supplier_invoice_number || '',
+                    };
+                    const isSupplierInvoice = draft.type === 'supplier_invoice';
+                    return (
+                      <tr key={expense.id} style={{ background: 'white', borderBottom: '1px solid #F3F4F6' }}>
+                        <td style={{ padding: '6px 8px' }}>
+                          <select className="input" value={draft.type} onChange={(e) => updateExpenseDraftField(expense.id, 'type', e.target.value)}>
+                            {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" value={draft.description} onChange={(e) => updateExpenseDraftField(expense.id, 'description', e.target.value)} placeholder="Description" />
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" type="date" value={draft.expense_date} onChange={(e) => updateExpenseDraftField(expense.id, 'expense_date', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" value={draft.po_number} onChange={(e) => updateExpenseDraftField(expense.id, 'po_number', e.target.value)} placeholder="BC-001" />
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <div className="flex items-center gap-2">
+                            <input className="input" value={draft.supplier_invoice_number} onChange={(e) => updateExpenseDraftField(expense.id, 'supplier_invoice_number', e.target.value)} placeholder="INV-2026-001" />
+                            {isSupplierInvoice && !draft.po_number && <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" title="Sans bon de commande" />}
+                          </div>
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                          <div className="flex items-center justify-center gap-2">
+                            <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => saveExpenseRow(expense.id)} disabled={savingExpenseId === expense.id}>
+                              {savingExpenseId === expense.id ? 'Enregistrement…' : 'Enregistrer'}
+                            </button>
+                            <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(expense.id)}><Trash2 size={13} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!showExpenseForm && !(project.expenses || []).length && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                        Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          ) : !showExpenseForm && (
-            <p className="text-sm text-gray-400 text-center py-4">Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.</p>
-          )}
+          </div>
         </ProjectSection>
 
         {/* ── Feuilles de temps ── (mint) */}
@@ -10171,153 +10480,117 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               </button>
             </div>
           </div>
-
-          {activeTs.length > 0 && (
-            <div className="bg-green-50 border border-green-100 rounded-2xl p-3 sm:p-4 mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <p className="text-sm font-bold text-gray-900">Punchs en cours</p>
-              </div>
-              <div className="space-y-2">
-                {activeTs.map((ts) => (
-                  <div key={ts.id} className="bg-white rounded-xl border border-green-100 px-3 py-2.5 flex items-center gap-3 flex-wrap">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-900">{ts.user_name || ts.sub_name || ts.worker_name || 'Travailleur'}</p>
-                      <p className="text-xs text-gray-500">{ts.phase_name || 'Phase à confirmer'}{ts.notes ? ` · ${ts.notes}` : ''}</p>
-                      <p className="text-[11px] text-gray-400">
-                        Début {new Date(ts.clock_in).toLocaleDateString('fr-CA')} · {new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                    <button
-                      className="btn-secondary text-xs"
-                      onClick={() => stopProjectPunch(ts)}
-                      disabled={stoppingPunchId === ts.id}
-                    >
-                      {stoppingPunchId === ts.id ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
-                      Arrêter
-                    </button>
-                  </div>
-                ))}
-              </div>
+          <div style={{ border: '1px solid #DCEFE2', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+                <colgroup>
+                  <col style={{ width: 170 }}/>
+                  <col style={{ width: 210 }}/>
+                  <col style={{ minWidth: 220 }}/>
+                  <col style={{ width: 145 }}/>
+                  <col style={{ width: 145 }}/>
+                  <col style={{ width: 90 }}/>
+                  <col style={{ width: 140 }}/>
+                </colgroup>
+                <thead>
+                  <tr>
+                    {['Travailleur', 'Phase', 'Note', 'Début', 'Fin', 'Total', 'Actions'].map((label, index) => (
+                      <th
+                        key={label}
+                        style={{
+                          padding: '8px 10px',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: '#6B7280',
+                          textTransform: 'uppercase',
+                          letterSpacing: '.05em',
+                          borderBottom: '2px solid #E5E7EB',
+                          background: '#F9FAFB',
+                          textAlign: index === 5 ? 'right' : index === 6 ? 'center' : 'left',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(timesheets || []).map((ts) => {
+                    const draft = timesheetDrafts[ts.id] || {
+                      worker_name: ts.worker_name || ts.user_name || ts.sub_name || '',
+                      phase_name: ts.phase_name || '',
+                      notes: ts.notes || '',
+                    };
+                    const hours = ts.clock_out
+                      ? Number.isFinite(Number(ts.hours_total))
+                        ? Number(ts.hours_total).toFixed(1)
+                        : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1)
+                      : null;
+                    return (
+                      <tr key={ts.id} style={{ background: ts.clock_out ? 'white' : '#F0FDF4', borderBottom: '1px solid #F3F4F6' }}>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" value={draft.worker_name} onChange={(e) => updateTimesheetDraftField(ts.id, 'worker_name', e.target.value)} placeholder="Travailleur" />
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <select className="input" value={draft.phase_name} onChange={(e) => updateTimesheetDraftField(ts.id, 'phase_name', e.target.value)}>
+                            <option value="">Choisir une phase…</option>
+                            {(project.phases || []).map((phase) => (
+                              <option key={phase.id || phase.name} value={phase.name || ''}>{phase.name || 'Phase sans nom'}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <input className="input" value={draft.notes} onChange={(e) => updateTimesheetDraftField(ts.id, 'notes', e.target.value)} placeholder="Note rapide" />
+                        </td>
+                        <td style={{ padding: '6px 8px', fontSize: 12, color: '#374151' }}>
+                          <div>{new Date(ts.clock_in).toLocaleDateString('fr-CA')}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td style={{ padding: '6px 8px', fontSize: 12, color: '#374151' }}>
+                          {ts.clock_out ? (
+                            <>
+                              <div>{new Date(ts.clock_out).toLocaleDateString('fr-CA')}</div>
+                              <div style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</div>
+                            </>
+                          ) : (
+                            <span className="badge badge-green text-[10px]">En cours</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                          {hours ? `${hours}h` : '—'}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                          <div className="flex items-center justify-center gap-2 flex-wrap">
+                            <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => saveTimesheetRow(ts.id)} disabled={savingTimesheetId === ts.id}>
+                              {savingTimesheetId === ts.id ? 'Enregistrement…' : 'Enregistrer'}
+                            </button>
+                            {!ts.clock_out ? (
+                              <button className="text-[11px] font-medium text-green-700 hover:text-green-800 border border-green-200 rounded-md px-2 py-1 transition-colors" onClick={() => stopProjectPunch(ts)} disabled={stoppingPunchId === ts.id}>
+                                {stoppingPunchId === ts.id ? 'Arrêt…' : 'Arrêter'}
+                              </button>
+                            ) : ts.approved_at ? (
+                              <CheckCircle size={14} className="text-green-500" title="Approuvé" />
+                            ) : (
+                              <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => approveTs(ts.id)}>
+                                Approuver
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!timesheets.length && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                        Aucun punch enregistré pour ce projet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
-
-          <div className="bg-white rounded-2xl border border-green-100 overflow-hidden">
-            <div className="hidden md:grid grid-cols-[1.2fr_1fr_1.1fr_1.1fr_90px_120px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Travailleur</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Phase</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Début</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Fin</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 text-right">Total</p>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 text-right">Actions</p>
-            </div>
-            {timesheets.length > 0 ? (
-              <div className="divide-y divide-gray-100">
-                {timesheets.map((ts) => {
-                  const hours = ts.clock_out
-                    ? Number.isFinite(Number(ts.hours_total))
-                      ? Number(ts.hours_total).toFixed(1)
-                      : ((new Date(ts.clock_out) - new Date(ts.clock_in)) / 3600000).toFixed(1)
-                    : null;
-                  return (
-                    <div key={ts.id} className={`grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1.1fr_1.1fr_90px_120px] gap-2 md:gap-3 px-4 py-3 ${!ts.clock_out ? 'bg-green-50/60' : 'bg-white'}`}>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">{ts.user_name || ts.sub_name || ts.worker_name || 'Travailleur'}</p>
-                        {ts.notes && <p className="text-[11px] text-gray-400 truncate">{ts.notes}</p>}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-gray-700">{ts.phase_name || '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-700">{new Date(ts.clock_in).toLocaleDateString('fr-CA')}</p>
-                        <p className="text-[11px] text-gray-400">{new Date(ts.clock_in).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</p>
-                      </div>
-                      <div>
-                        {ts.clock_out ? (
-                          <>
-                            <p className="text-sm text-gray-700">{new Date(ts.clock_out).toLocaleDateString('fr-CA')}</p>
-                            <p className="text-[11px] text-gray-400">{new Date(ts.clock_out).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}</p>
-                          </>
-                        ) : (
-                          <span className="badge badge-green text-[10px]">En cours</span>
-                        )}
-                      </div>
-                      <div className="md:text-right">
-                        {hours
-                          ? <p className="text-sm font-bold text-gray-900">{hours}h</p>
-                          : <p className="text-sm font-bold text-green-700">—</p>}
-                      </div>
-                      <div className="flex items-center justify-start md:justify-end gap-2">
-                        {!ts.clock_out ? (
-                          <button
-                            className="text-[11px] font-medium text-green-700 hover:text-green-800 border border-green-200 rounded-md px-2 py-1 transition-colors"
-                            onClick={() => stopProjectPunch(ts)}
-                            disabled={stoppingPunchId === ts.id}
-                          >
-                            {stoppingPunchId === ts.id ? 'Arrêt…' : 'Arrêter'}
-                          </button>
-                        ) : ts.approved_at ? (
-                          <CheckCircle size={14} className="text-green-500" title="Approuvé" />
-                        ) : (
-                          <button
-                            className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors"
-                            onClick={() => approveTs(ts.id)}
-                          >
-                            Approuver
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 text-center py-6">Aucun punch enregistré pour ce projet.</p>
-            )}
-          </div>
-
-          {/* ── Dépenses de chantier (dans Punch et dépenses) ── */}
-          <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1.5px solid #D1FAE5' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <span style={{ fontSize: 18 }}>💸</span>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Dépenses</p>
-                <p style={{ fontSize: 11.5, color: '#7C8089', margin: 0 }}>Matériaux, frais divers, dépenses directes{project.expenses?.length > 0 ? ` · ${project.expenses.length} entrée(s)` : ''}</p>
-              </div>
-              <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm(v => !v)}><Plus size={13} /> Ajouter</button>
-            </div>
-
-            {showExpenseForm && (
-              <form onSubmit={addExpense} className="bg-white rounded-xl p-3 mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end border border-green-100">
-                <div><label className="label">Type</label>
-                  <select className="input" value={expenseForm.type} onChange={e => setExpenseForm(f => ({ ...f, type: e.target.value }))}>
-                    {Object.entries(EXPENSE_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
-                </div>
-                <div><label className="label">Montant ($) *</label><input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} required /></div>
-                <div><label className="label">Date</label><input className="input" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(f => ({ ...f, expense_date: e.target.value }))} /></div>
-                <div className="flex gap-2"><input className="input flex-1" value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="Description" /><button type="submit" className="btn-primary text-xs px-3">OK</button></div>
-              </form>
-            )}
-
-            {project.expenses?.length > 0 ? (
-              <div className="space-y-1.5">
-                {project.expenses.map(x => (
-                  <div key={x.id} className="flex items-center gap-3 py-1.5 border-b border-green-50 last:border-0">
-                    <span className="badge badge-gray text-xs">{EXPENSE_TYPES[x.type] || x.type}</span>
-                    <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{x.description || x.subcontractor_name || '—'}</span>
-                    {x.expense_date && <span className="text-xs text-gray-400">{new Date(x.expense_date).toLocaleDateString('fr-CA')}</span>}
-                    <span className="text-sm font-semibold text-gray-700">{money(x.amount)}</span>
-                    <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(x.id)}><Trash2 size={13} /></button>
-                  </div>
-                ))}
-                <div className="flex justify-end pt-2 border-t border-green-100">
-                  <p className="text-sm font-bold text-gray-800">Total : {money(project.expenses.reduce((s, x) => s + Number(x.amount || 0), 0))}</p>
-                </div>
-              </div>
-            ) : !showExpenseForm && (
-              <p className="text-sm text-gray-400 text-center py-3">Aucune dépense enregistrée pour ce projet.</p>
-            )}
           </div>
         </ProjectSection>
 
@@ -10455,7 +10728,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#F0FDF4' }}>
-                    {['N°', 'Titre', 'Client', 'Échéance', 'Total', 'Statut', 'Actions'].map((h, i) => (
+                    {['N°', 'Client', 'Échéance', 'Total', 'Statut', 'Actions'].map((h, i) => (
                       <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #D1FAE5' }}>{h}</th>
                     ))}
                   </tr>
@@ -10467,43 +10740,135 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                     const overdue = inv.status === 'overdue' || (inv.due_date && new Date(inv.due_date) < new Date() && !['paid','cancelled'].includes(inv.status));
                     const isSending = sendingInvoiceId === inv.id;
                     const justSent = invoiceSentId === inv.id;
-                    const isUpdating = updatingInvoiceId === inv.id;
+                    const isExpanded = expandedInvoiceId === inv.id;
+                    const isLoading = loadingInvoiceId === inv.id;
+                    const draft = invoiceDrafts[inv.id];
+                    const detail = invoiceDetails[inv.id];
+                    const draftItems = draft?.items || [];
+                    const sub = draftItems.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unit_price) || 0), 0);
+                    const tps = sub * 0.05;
+                    const tvq = sub * 0.09975;
+                    const total = sub + tps + tvq;
                     return (
-                      <tr key={inv.id} style={{ borderBottom: '1px solid #F0FDF4' }}>
-                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{inv.number}</td>
-                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: '#15171C', maxWidth: 180 }}>
-                          <p style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.title || `Facture ${inv.number}`}</p>
-                        </td>
-                        <td style={{ padding: '12px 14px', fontSize: 12, color: '#6B7280' }}>{inv.client_name || '—'}</td>
-                        <td style={{ padding: '12px 14px', fontSize: 12, color: overdue ? '#EF4444' : '#6B7280', fontWeight: overdue ? 700 : 400 }}>
-                          {inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-CA') : '—'}
-                          {overdue && <span style={{ marginLeft: 4 }}>⚠️</span>}
-                        </td>
-                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#15171C' }}>{money(inv.total || 0)}</td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <select
-                            value={inv.status || 'draft'}
-                            disabled={isUpdating}
-                            onChange={e => updateInvoiceStatus(inv, e.target.value)}
-                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, border: `1px solid ${(SB[inv.status]||'#9CA3AF')}60`, background: (SB[inv.status]||'#9CA3AF') + '15', color: SB[inv.status]||'#9CA3AF', cursor: 'pointer', outline: 'none', appearance: 'none' }}
-                          >
-                            {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            {justSent ? (
-                              <span style={{ fontSize: 11, color: '#22C55E', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircle size={12}/> Envoyée</span>
-                            ) : (
-                              <button className="btn-ghost p-1" title={`Envoyer à ${inv.client_email || project.client_email || 'client'}`} onClick={() => sendInvoiceEmail(inv)} disabled={isSending} style={{ color: '#3B82F6' }}>
-                                {isSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
-                              </button>
-                            )}
-                            <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Prévisualiser" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: inv.title || `Facture ${inv.number}` })}><Eye size={13}/></button>
-                            <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="PDF" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Download size={13}/></a>
-                          </div>
-                        </td>
-                      </tr>
+                      <React.Fragment key={inv.id}>
+                        <tr style={{ borderBottom: isExpanded ? 'none' : '1px solid #F0FDF4', background: isExpanded ? '#FCFFFC' : 'white' }}>
+                          <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{inv.number}</td>
+                          <td style={{ padding: '12px 14px', fontSize: 12, color: '#6B7280' }}>{inv.client_name || '—'}</td>
+                          <td style={{ padding: '12px 14px', fontSize: 12, color: overdue ? '#EF4444' : '#6B7280', fontWeight: overdue ? 700 : 400 }}>
+                            {inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-CA') : '—'}
+                          </td>
+                          <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#15171C' }}>{money(inv.total || 0)}</td>
+                          <td style={{ padding: '12px 14px' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, border: `1px solid ${(SB[inv.status]||'#9CA3AF')}60`, background: (SB[inv.status]||'#9CA3AF') + '15', color: SB[inv.status]||'#9CA3AF' }}>
+                              {SL[inv.status] || inv.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 14px' }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                              <button className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Éditer" onClick={() => toggleInvoiceEditor(inv)}>{isExpanded ? <EyeOff size={13}/> : <Pencil size={13}/>}</button>
+                              <a href={pdf.invoiceUrl(inv.id)} download={`facture-${inv.number || inv.id}.pdf`} className="btn-ghost p-1 text-gray-300 hover:text-brand" title="Générer PDF" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}><Download size={13}/></a>
+                              {justSent ? (
+                                <span style={{ fontSize: 11, color: '#22C55E', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircle size={12}/> Envoyée</span>
+                              ) : (
+                                <button className="btn-ghost p-1" title={`Envoyer à ${inv.client_email || project.client_email || 'client'}`} onClick={() => sendInvoiceEmail(inv)} disabled={isSending} style={{ color: '#3B82F6' }}>
+                                  {isSending ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr style={{ borderBottom: '1px solid #D1FAE5', background: '#FCFFFC' }}>
+                            <td colSpan={6} style={{ padding: 16 }}>
+                              {isLoading || !draft ? (
+                                <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Chargement…</div>
+                              ) : (
+                                <div style={{ display: 'grid', gap: 16 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                    <div>
+                                      <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#15171C' }}>Facture {inv.number}</p>
+                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6B7280' }}>Édition directe des lignes, comme dans le devis.</p>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <button className="btn-secondary text-xs" onClick={() => setPreview({ url: pdf.invoiceUrl(inv.id), title: `Facture ${inv.number}` })}><Eye size={13}/> Prévisualiser</button>
+                                      <a href={pdf.invoiceUrl(inv.id)} target="_blank" rel="noreferrer" className="btn-secondary text-xs" style={{ textDecoration: 'none' }}><Download size={13}/> Générer le PDF</a>
+                                      <button className="btn-primary text-xs" onClick={() => saveInvoiceDraft(inv.id)} disabled={savingInvoiceId === inv.id}>
+                                        {savingInvoiceId === inv.id ? <Loader2 size={13} className="animate-spin"/> : <Save size={13}/>} Enregistrer
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 180px 160px', gap: 10 }}>
+                                    <div><label className="label">Nom client</label><input className="input" value={draft.client_name} onChange={e => updateInvoiceDraftField(inv.id, 'client_name', e.target.value)} /></div>
+                                    <div><label className="label">Courriel client</label><input className="input" value={draft.client_email} onChange={e => updateInvoiceDraftField(inv.id, 'client_email', e.target.value)} /></div>
+                                    <div><label className="label">Échéance</label><input className="input" type="date" value={draft.due_date} onChange={e => updateInvoiceDraftField(inv.id, 'due_date', e.target.value)} /></div>
+                                    <div><label className="label">Statut</label>
+                                      <select className="input" value={draft.status} onChange={e => updateInvoiceDraftField(inv.id, 'status', e.target.value)}>
+                                        {Object.entries(SL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
+                                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                                        <colgroup>
+                                          <col style={{ minWidth: 280 }}/>
+                                          <col style={{ width: 90 }}/>
+                                          <col style={{ width: 130 }}/>
+                                          <col style={{ width: 130 }}/>
+                                          <col style={{ width: 70 }}/>
+                                        </colgroup>
+                                        <thead>
+                                          <tr style={{ background: '#F9FAFB' }}>
+                                            {['Description', 'Qté', 'Prix unit.', 'Total', ''].map((label, index) => (
+                                              <th key={label} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', textAlign: index >= 1 && index <= 3 ? 'right' : 'left' }}>{label}</th>
+                                            ))}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {draftItems.map((item, index) => {
+                                            const lineTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
+                                            return (
+                                              <tr key={`${inv.id}-${index}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                <td style={{ padding: '6px 8px' }}>
+                                                  <input className="input" value={item.description} onChange={e => updateInvoiceDraftItem(inv.id, index, 'description', e.target.value)} placeholder="Travaux, matériaux…" />
+                                                </td>
+                                                <td style={{ padding: '6px 8px' }}>
+                                                  <input className="input text-right" type="number" min="0" step="1" value={item.qty} onChange={e => updateInvoiceDraftItem(inv.id, index, 'qty', e.target.value)} />
+                                                </td>
+                                                <td style={{ padding: '6px 8px' }}>
+                                                  <input className="input text-right" type="number" min="0" step="0.01" value={item.unit_price} onChange={e => updateInvoiceDraftItem(inv.id, index, 'unit_price', e.target.value)} />
+                                                </td>
+                                                <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#15171C', whiteSpace: 'nowrap' }}>{money(lineTotal)}</td>
+                                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                                  <button onClick={() => removeInvoiceDraftItem(inv.id, index)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', fontSize: 16, lineHeight: 1 }}>×</button>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                          <tr style={{ background: '#FAFAFA' }}>
+                                            <td colSpan={5} style={{ padding: '8px 10px' }}>
+                                              <button type="button" className="btn-ghost text-xs" onClick={() => addInvoiceDraftItem(inv.id)}><Plus size={12}/> Ajouter une ligne</button>
+                                            </td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>Sous-total</span><span style={{ fontSize: 12, fontWeight: 700, color: '#15171C' }}>{money(sub)}</span></div>
+                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>TPS (5%)</span><span style={{ fontSize: 12, color: '#6B7280' }}>{money(tps)}</span></div>
+                                    <div style={{ display: 'flex', gap: 24 }}><span style={{ fontSize: 12, color: '#6B7280' }}>TVQ (9,975%)</span><span style={{ fontSize: 12, color: '#6B7280' }}>{money(tvq)}</span></div>
+                                    <div style={{ display: 'flex', gap: 24, borderTop: '1px solid #D1FAE5', paddingTop: 6, marginTop: 2 }}><span style={{ fontSize: 14, fontWeight: 800, color: '#15171C' }}>Total</span><span style={{ fontSize: 14, fontWeight: 900, color: BRAND }}>{money(total)}</span></div>
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
