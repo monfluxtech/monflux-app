@@ -13,18 +13,39 @@ export const useAuthStore = create(
       isAuthenticated: false,
 
       setAuth: ({ token, user, company, plan }) => {
-        localStorage.setItem('token', token);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('token', token);
         set({ token, user, company, plan, isAuthenticated: true });
       },
       setCompany: (company) => set({ company }),
       setPlan:    (plan)    => set({ plan }),
 
       logout: () => {
-        localStorage.removeItem('token');
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('token');
         set({ user: null, company: null, plan: null, token: null, isAuthenticated: false });
       },
     }),
-    { name: 'monflux-auth', partialize: (s) => ({ token: s.token, user: s.user, company: s.company }) }
+    {
+      name: 'monflux-auth',
+      partialize: (s) => ({ token: s.token, user: s.user, company: s.company, plan: s.plan }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState || {};
+        const fallbackToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+        const token = persisted.token || currentState.token || fallbackToken || null;
+        return {
+          ...currentState,
+          ...persisted,
+          token,
+          isAuthenticated: !!token,
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const fallbackToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+        const token = state.token || fallbackToken || null;
+        state.token = token;
+        state.isAuthenticated = !!token;
+      },
+    }
   )
 );
 
