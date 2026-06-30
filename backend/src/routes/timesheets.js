@@ -159,4 +159,18 @@ router.patch('/:id/approve', async (req, res) => {
   res.json(t);
 });
 
+router.delete('/:id', async (req, res) => {
+  try {
+    const { rowCount } = await query(
+      `DELETE FROM timesheets WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Punch introuvable' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

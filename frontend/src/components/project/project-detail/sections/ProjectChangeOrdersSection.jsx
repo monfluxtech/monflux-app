@@ -1,16 +1,72 @@
-import React from 'react';
-import { GitBranch, Plus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
+
+const STATUS_OPTIONS = {
+  draft: 'Brouillon',
+  pending_approval: 'En attente',
+  approved: 'Approuvé',
+  rejected: 'Refusé',
+  completed: 'Complété',
+};
+
+const STATUS_COLORS = {
+  draft: '#9CA3AF',
+  pending_approval: '#F59E0B',
+  approved: '#22C55E',
+  rejected: '#EF4444',
+  completed: '#3B82F6',
+};
+
+const EMPTY_ROW = { title: '', description: '', amount: '', notes: '', status: 'draft' };
 
 export default function ProjectChangeOrdersSection({
   sectionSummary,
   expanded,
   onToggle,
   sectionGuard,
-  setShowExtraForm,
   changeOrdersList,
   money,
+  createChangeOrderRow,
+  saveChangeOrderRow,
+  removeChangeOrderRow,
 }) {
+  const [creator, setCreator] = useState(EMPTY_ROW);
+  const [drafts, setDrafts] = useState({});
+  const [savingId, setSavingId] = useState(null);
+
+  useEffect(() => {
+    setDrafts(Object.fromEntries((changeOrdersList || []).map((item) => [item.id, {
+      title: item.title || '',
+      description: item.description || '',
+      amount: item.amount ?? '',
+      notes: item.notes || '',
+      status: item.status || 'draft',
+    }])));
+  }, [changeOrdersList]);
+
+  const createRow = async () => {
+    if (!creator.title.trim()) return;
+    setSavingId('new');
+    try {
+      await createChangeOrderRow(creator);
+      setCreator(EMPTY_ROW);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const saveRow = async (changeOrderId) => {
+    const draft = drafts[changeOrderId];
+    if (!draft?.title?.trim()) return;
+    setSavingId(changeOrderId);
+    try {
+      await saveChangeOrderRow(changeOrderId, draft);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <ProjectSection
       sectionId="s-extras"
@@ -24,63 +80,109 @@ export default function ProjectChangeOrdersSection({
       borderTop="1px solid #FED7AA"
     >
       {sectionGuard('s-extras')}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}>
-          <Plus size={13}/> Nouvelle demande
-        </button>
-      </div>
 
-      {changeOrdersList.length > 0 ? (
-        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #FED7AA', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #FED7AA', overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+            <colgroup>
+              <col style={{ width: 200 }} />
+              <col style={{ minWidth: 240 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 160 }} />
+              <col style={{ minWidth: 220 }} />
+              <col style={{ width: 120 }} />
+            </colgroup>
             <thead>
               <tr style={{ background: '#FFF7ED' }}>
-                {['N°', 'Titre', 'Montant', 'Statut', 'Date'].map((label, index) => (
-                  <th key={index} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FED7AA' }}>{label}</th>
+                {['Titre', 'Description', 'Montant', 'Statut', 'Notes', 'Actions'].map((label, index) => (
+                  <th key={label} style={{ padding: '10px 12px', textAlign: index === 2 ? 'right' : 'left', fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FED7AA' }}>
+                    {label}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {changeOrdersList.map((changeOrder) => {
-                const statusColor = { draft:'#9CA3AF', pending_approval:'#F59E0B', approved:'#22C55E', rejected:'#EF4444', completed:'#3B82F6' };
-                const statusLabel = { draft:'Brouillon', pending_approval:'En attente', approved:'Approuvé', rejected:'Refusé', completed:'Complété' };
+              <tr style={{ background: '#FFFBF5', borderBottom: '2px solid #FED7AA' }}>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={creator.title} onChange={(e) => setCreator((row) => ({ ...row, title: e.target.value }))} placeholder="Première ligne éditable" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={creator.description} onChange={(e) => setCreator((row) => ({ ...row, description: e.target.value }))} placeholder="Description du changement" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input text-right" type="number" min="0" step="0.01" value={creator.amount} onChange={(e) => setCreator((row) => ({ ...row, amount: e.target.value }))} placeholder="0.00" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <select className="input" value={creator.status} onChange={(e) => setCreator((row) => ({ ...row, status: e.target.value }))}>
+                    {Object.entries(STATUS_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={creator.notes} onChange={(e) => setCreator((row) => ({ ...row, notes: e.target.value }))} placeholder="Notes internes / portail" />
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                  <div className="flex items-center justify-center gap-2">
+                    <button type="button" className="btn-ghost p-2 text-green-700 hover:text-green-800" title="Ajouter la demande" onClick={createRow} disabled={savingId === 'new'}>
+                      {savingId === 'new' ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                    </button>
+                    <button type="button" className="btn-ghost p-2 text-gray-400 hover:text-red-500" title="Vider la ligne" onClick={() => setCreator(EMPTY_ROW)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              {(changeOrdersList || []).map((changeOrder) => {
+                const draft = drafts[changeOrder.id] || EMPTY_ROW;
+                const color = STATUS_COLORS[draft.status] || '#9CA3AF';
                 return (
-                  <tr key={changeOrder.id} style={{ borderBottom: '1px solid #FFF7ED' }}>
-                    <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF', fontFamily: 'monospace' }}>#{changeOrder.number || '—'}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#15171C' }}>{changeOrder.title}</p>
-                      {changeOrder.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>{changeOrder.description}</p>}
+                  <tr key={changeOrder.id} style={{ borderBottom: '1px solid #FFF7ED', background: '#fff' }}>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" value={draft.title} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, title: e.target.value } }))} />
                     </td>
-                    <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: changeOrder.amount > 0 ? '#15171C' : '#9CA3AF' }}>
-                      {changeOrder.amount > 0 ? money(changeOrder.amount) : '—'}
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" value={draft.description} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, description: e.target.value } }))} />
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: (statusColor[changeOrder.status] || '#9CA3AF') + '20', color: statusColor[changeOrder.status] || '#9CA3AF', border: `1px solid ${(statusColor[changeOrder.status] || '#9CA3AF')}40` }}>
-                        {statusLabel[changeOrder.status] || changeOrder.status}
-                      </span>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input text-right" type="number" min="0" step="0.01" value={draft.amount} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, amount: e.target.value } }))} />
                     </td>
-                    <td style={{ padding: '12px 14px', fontSize: 12, color: '#9CA3AF' }}>
-                      {changeOrder.created_at ? new Date(changeOrder.created_at).toLocaleDateString('fr-CA') : '—'}
+                    <td style={{ padding: '6px 8px' }}>
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <select className="input" value={draft.status} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, status: e.target.value } }))}>
+                          {Object.entries(STATUS_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                        <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}15`, border: `1px solid ${color}35`, borderRadius: 999, padding: '2px 8px', justifySelf: 'start' }}>
+                          {STATUS_OPTIONS[draft.status] || draft.status}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <input className="input" value={draft.notes} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, notes: e.target.value } }))} />
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                      <div className="flex items-center justify-center gap-2">
+                        <button type="button" className="btn-secondary text-xs" onClick={() => saveRow(changeOrder.id)} disabled={savingId === changeOrder.id}>
+                          {savingId === changeOrder.id ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Enregistrer
+                        </button>
+                        <button type="button" className="btn-ghost p-2 text-gray-400 hover:text-red-500" title="Supprimer" onClick={() => removeChangeOrderRow(changeOrder.id)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {changeOrdersList.some((changeOrder) => changeOrder.amount > 0) && (
-            <div style={{ padding: '10px 14px', background: '#FFFBF5', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
-              <span style={{ fontSize: 12, color: '#92400E' }}>Total extras</span>
-              <span style={{ fontSize: 13, fontWeight: 900, color: '#F97316' }}>{money(changeOrdersList.reduce((sum, changeOrder) => sum + Number(changeOrder.amount || 0), 0))}</span>
-            </div>
-          )}
         </div>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '28px 0' }}>
-          <GitBranch size={28} style={{ color: '#FED7AA', margin: '0 auto 10px' }} />
-          <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 14 }}>Aucune demande de modification pour ce projet.</p>
-          <button className="btn-primary text-xs" style={{ background: '#F97316', border: 'none' }} onClick={() => setShowExtraForm(true)}><Plus size={13}/> Créer la première demande</button>
-        </div>
-      )}
+
+        {(changeOrdersList || []).some((item) => Number(item.amount || 0) > 0) && (
+          <div style={{ padding: '10px 14px', background: '#FFFBF5', display: 'flex', justifyContent: 'flex-end', gap: 20 }}>
+            <span style={{ fontSize: 12, color: '#92400E' }}>Total changements</span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: '#F97316' }}>{money((changeOrdersList || []).reduce((sum, item) => sum + Number(item.amount || 0), 0))}</span>
+          </div>
+        )}
+      </div>
     </ProjectSection>
   );
 }

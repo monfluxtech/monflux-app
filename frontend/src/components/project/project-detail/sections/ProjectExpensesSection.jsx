@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Minus, Plus, Trash2 } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
 
 export default function ProjectExpensesSection({
@@ -12,8 +12,6 @@ export default function ProjectExpensesSection({
   BRAND,
   EXPENSE_TYPES,
   isExpenseReceiptRequired,
-  showExpenseForm,
-  setShowExpenseForm,
   expenseForm,
   setExpenseForm,
   attachExpenseReceipt,
@@ -25,6 +23,17 @@ export default function ProjectExpensesSection({
   savingExpenseId,
   removeExpense,
 }) {
+  const clearCreatorRow = () => setExpenseForm({
+    type: 'supplier_invoice',
+    description: '',
+    amount: '',
+    expense_date: '',
+    po_number: '',
+    supplier_invoice_number: '',
+    receipt_url: '',
+    receipt_name: '',
+  });
+
   return (
     <ProjectSection
       sectionId="s-expenses"
@@ -37,26 +46,23 @@ export default function ProjectExpensesSection({
       background="#F0EBFD"
     >
       {sectionGuard('s-expenses')}
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="badge badge-gray text-xs">{project.expenses?.length || 0} entrée(s)</span>
-          <span className="badge badge-gray text-xs">Total {money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</span>
-        </div>
-        <button className="btn-secondary text-xs" onClick={() => setShowExpenseForm((value) => !value)}><Plus size={13} /> Ajouter</button>
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <span className="badge badge-gray text-xs">{project.expenses?.length || 0} entrée(s)</span>
+        <span className="badge badge-gray text-xs">Total {money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</span>
       </div>
 
-      <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+      <div style={{ border: '1px solid #E5E7EB', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
             <colgroup>
-              <col style={{ width: 120 }}/>
+              <col style={{ width: 140 }}/>
               <col style={{ minWidth: 220 }}/>
+              <col style={{ width: 130 }}/>
+              <col style={{ width: 130 }}/>
+              <col style={{ width: 160 }}/>
+              <col style={{ width: 170 }}/>
               <col style={{ width: 120 }}/>
-              <col style={{ width: 120 }}/>
-              <col style={{ width: 150 }}/>
-              <col style={{ width: 150 }}/>
-              <col style={{ width: 110 }}/>
-              <col style={{ width: 120 }}/>
+              <col style={{ width: 130 }}/>
             </colgroup>
             <thead>
               <tr>
@@ -82,62 +88,65 @@ export default function ProjectExpensesSection({
               </tr>
             </thead>
             <tbody>
-              {showExpenseForm && (
-                <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
-                  <td style={{ padding: '6px 8px' }}>
-                    <select className="input" value={expenseForm.type} onChange={(e) => setExpenseForm((form) => ({ ...form, type: e.target.value }))}>
-                      {Object.entries(EXPENSE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    <input className="input" value={expenseForm.description} onChange={(e) => setExpenseForm((form) => ({ ...form, description: e.target.value }))} placeholder="Fournisseur / détail" />
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    <input className="input" type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm((form) => ({ ...form, expense_date: e.target.value }))} />
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    <input className="input" value={expenseForm.po_number} onChange={(e) => setExpenseForm((form) => ({ ...form, po_number: e.target.value }))} placeholder="BC-001" />
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    <input className="input" value={expenseForm.supplier_invoice_number} onChange={(e) => setExpenseForm((form) => ({ ...form, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" />
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    {expenseForm.type === 'mileage' ? (
-                      <span className="text-xs text-gray-400">Non requis</span>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
-                          {expenseForm.receipt_url ? 'Changer la photo' : 'Ajouter la photo'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) attachExpenseReceipt({ file });
-                              e.target.value = '';
-                            }}
-                          />
-                        </label>
-                        {expenseForm.receipt_url && (
-                          <button type="button" className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: expenseForm.receipt_url, caption: expenseForm.receipt_name || 'Reçu' })}>
-                            Voir
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    <input className="input" type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((form) => ({ ...form, amount: e.target.value }))} placeholder="0.00" />
-                  </td>
-                  <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                    <div className="flex items-center justify-center gap-2">
-                      <button type="button" className="btn-secondary text-xs" onClick={() => setShowExpenseForm(false)}>Annuler</button>
-                      <button type="button" className="btn-primary text-xs" onClick={(e) => addExpense(e)}>Ajouter</button>
+              <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
+                <td style={{ padding: '6px 8px' }}>
+                  <select className="input" value={expenseForm.type} onChange={(e) => setExpenseForm((form) => ({ ...form, type: e.target.value }))}>
+                    {Object.entries(EXPENSE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  </select>
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={expenseForm.description} onChange={(e) => setExpenseForm((form) => ({ ...form, description: e.target.value }))} placeholder="Fournisseur / détail" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm((form) => ({ ...form, expense_date: e.target.value }))} />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={expenseForm.po_number} onChange={(e) => setExpenseForm((form) => ({ ...form, po_number: e.target.value }))} placeholder="BC-001" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input" value={expenseForm.supplier_invoice_number} onChange={(e) => setExpenseForm((form) => ({ ...form, supplier_invoice_number: e.target.value }))} placeholder="INV-2026-001" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  {expenseForm.type === 'mileage' ? (
+                    <span className="text-xs text-gray-400">Non requis</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
+                        {expenseForm.receipt_url ? 'Changer' : 'Photo reçu'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) attachExpenseReceipt({ file });
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {expenseForm.receipt_url && (
+                        <button type="button" className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: expenseForm.receipt_url, caption: expenseForm.receipt_name || 'Reçu' })}>
+                          Voir
+                        </button>
+                      )}
                     </div>
-                  </td>
-                </tr>
-              )}
+                  )}
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <input className="input text-right" type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((form) => ({ ...form, amount: e.target.value }))} placeholder="0.00" />
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                  <div className="flex items-center justify-center gap-2">
+                    <button type="button" className="btn-ghost p-2 text-green-700 hover:text-green-800" title="Ajouter la ligne" onClick={(e) => addExpense(e)}>
+                      <Plus size={16} />
+                    </button>
+                    <button type="button" className="btn-ghost p-2 text-gray-400 hover:text-gray-600" title="Vider la ligne" onClick={clearCreatorRow}>
+                      <Minus size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
               {(project.expenses || []).map((expense) => {
                 const draft = expenseDrafts[expense.id] || {
                   type: expense.type || 'supplier_invoice',
@@ -213,10 +222,11 @@ export default function ProjectExpensesSection({
                   </tr>
                 );
               })}
-              {!showExpenseForm && !(project.expenses || []).length && (
+
+              {!(project.expenses || []).length && (
                 <tr>
-                  <td colSpan={8} style={{ padding: '26px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                    Aucune facture fournisseur. Ajoutez-en pour calculer la rentabilité réelle.
+                  <td colSpan={8} style={{ padding: '22px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                    Aucune facture fournisseur enregistrée.
                   </td>
                 </tr>
               )}

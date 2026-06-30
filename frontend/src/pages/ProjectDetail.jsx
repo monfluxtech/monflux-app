@@ -7,7 +7,6 @@ import Layout from '../components/Layout';
 import ProjectSection from '../components/project/ProjectSection';
 import ProjectChangeOrdersSection from '../components/project/project-detail/sections/ProjectChangeOrdersSection';
 import ProjectDenonciationsSection from '../components/project/project-detail/sections/ProjectDenonciationsSection';
-import ProjectEstimationSection from '../components/project/project-detail/sections/ProjectEstimationSection';
 import ProjectTeamSection from '../components/project/project-detail/sections/ProjectTeamSection';
 import ProjectQuoteSection from '../components/project/project-detail/sections/ProjectQuoteSection';
 import ProjectDescriptionSection from '../components/project/project-detail/sections/ProjectDescriptionSection';
@@ -91,6 +90,26 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Notes et photos' },
 ];
+
+const DEFAULT_PORTAL_VISIBILITY = {
+  client: {
+    overview: true,
+    phases: true,
+    timeline: true,
+    messages: true,
+    quote_signing: true,
+  },
+  supplier: {
+    overview: true,
+    phases: true,
+    timeline: true,
+  },
+};
+
+const mergePortalVisibility = (value) => ({
+  client: { ...DEFAULT_PORTAL_VISIBILITY.client, ...(value?.client || {}) },
+  supplier: { ...DEFAULT_PORTAL_VISIBILITY.supplier, ...(value?.supplier || {}) },
+});
 
 const DEFAULT_CONTRACT_TEMPLATE_CONFIG = {
   default_key: 'general',
@@ -3296,6 +3315,7 @@ export default function ProjectDetail() {
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [newInvoice, setNewInvoice] = useState({ title: '', client_name: '', client_email: '', due_date: '' });
   const [newInvoiceItems, setNewInvoiceItems] = useState([{ description: '', qty: 1, unit_price: '' }]);
+  const [quoteInvoiceSelection, setQuoteInvoiceSelection] = useState([]);
   const [savingInvoice, setSavingInvoice] = useState(false);
   // Extra inline (demande de modification)
   const [showExtraForm, setShowExtraForm] = useState(false);
@@ -4233,6 +4253,18 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
     if (!project.portal_token) return;
     navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`);
     setPortalCopied(true); setTimeout(() => setPortalCopied(false), 2000);
+  };
+
+  const savePortalVisibility = async (target, key, checked) => {
+    const currentVisibility = mergePortalVisibility(project?.field_assessment?.portal_visibility);
+    const nextVisibility = {
+      ...currentVisibility,
+      [target]: {
+        ...currentVisibility[target],
+        [key]: checked,
+      },
+    };
+    await saveAssessmentField('portal_visibility', nextVisibility);
   };
 
   const createChangeOrder = async (e) => {
@@ -5491,6 +5523,71 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     finally { setUpdatingInvoiceId(null); }
   };
 
+  const removeInvoice = async (invoiceId) => {
+    if (!confirm('Supprimer cette facture client ?')) return;
+    try {
+      await invoicesApi.delete(invoiceId);
+      setProjectInvoices((prev) => prev.filter((invoice) => invoice.id !== invoiceId));
+      setInvoiceDrafts((prev) => {
+        const next = { ...prev };
+        delete next[invoiceId];
+        return next;
+      });
+      setInvoiceDetails((prev) => {
+        const next = { ...prev };
+        delete next[invoiceId];
+        return next;
+      });
+      if (expandedInvoiceId === invoiceId) setExpandedInvoiceId(null);
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.error || 'Erreur lors de la suppression de la facture.');
+    }
+  };
+
+  const createInvoiceFromQuoteSelection = async (selectedKeys = []) => {
+    const sourceItems = (quoteBuilderItems || []).filter((item, index) => {
+      const key = item.id || `${item.type || 'other'}-${index}`;
+      return selectedKeys.length ? selectedKeys.includes(key) : true;
+    });
+    const items = sourceItems
+      .filter((item) => String(item.name || item.description || '').trim())
+      .map((item, index) => ({
+        description: `${({ material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' }[item.type] || 'Autre')} · ${item.name || item.description || 'Poste'}`,
+        qty: Number(item.qty) || 1,
+        unit_price: Number(item.unit_price) || 0,
+        total: (Number(item.qty) || 1) * (Number(item.unit_price) || 0),
+        order_idx: index,
+      }))
+      .filter((item) => item.description && (item.qty > 0 || item.unit_price > 0));
+    if (!items.length) {
+      alert('Aucune ligne de devis sélectionnée.');
+      return;
+    }
+    setSavingInvoice(true);
+    try {
+      const { data } = await invoicesApi.create({
+        project_id: id,
+        title: newInvoice.title || 'Facture depuis devis',
+        client_name: newInvoice.client_name || project.client_name || '',
+        client_email: newInvoice.client_email || project.client_email || '',
+        due_date: newInvoice.due_date || undefined,
+        items,
+      });
+      setProjectInvoices((prev) => [data, ...prev]);
+      setExpandedInvoiceId(data.id);
+      setQuoteInvoiceSelection([]);
+      const detail = await invoicesApi.get(data.id);
+      setInvoiceDetails((prev) => ({ ...prev, [data.id]: detail.data }));
+      ensureInvoiceDraft(data.id, detail.data);
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.error || 'Erreur lors de la création de la facture à partir du devis.');
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
+
   const createExtraInline = async (e) => {
     e.preventDefault();
     if (!extraForm.title) return;
@@ -5528,6 +5625,37 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       alert(err?.response?.data?.error || 'Erreur lors de la création de la demande de changement.');
       return null;
     }
+  };
+
+  const createChangeOrderRow = async (payload) => {
+    const { data } = await changeOrdersApi.create({
+      project_id: id,
+      title: payload.title,
+      description: payload.description || undefined,
+      amount: Number(payload.amount) || 0,
+      notes: payload.notes || undefined,
+      status: payload.status || 'draft',
+    });
+    setChangeOrdersList((list) => [data, ...list]);
+    return data;
+  };
+
+  const saveChangeOrderRow = async (changeOrderId, payload) => {
+    const { data } = await changeOrdersApi.update(changeOrderId, {
+      title: payload.title,
+      description: payload.description || '',
+      amount: Number(payload.amount) || 0,
+      notes: payload.notes || '',
+      status: payload.status || 'draft',
+    });
+    setChangeOrdersList((list) => list.map((item) => item.id === changeOrderId ? data : item));
+    return data;
+  };
+
+  const removeChangeOrderRow = async (changeOrderId) => {
+    if (!confirm('Supprimer cette demande de modification ?')) return;
+    await changeOrdersApi.delete(changeOrderId);
+    setChangeOrdersList((list) => list.filter((item) => item.id !== changeOrderId));
   };
 
   const saveLaborRate = async () => {
@@ -6017,6 +6145,20 @@ Règles :
       setTimesheets(prev => prev.map(t => t.id === timesheet.id ? { ...t, ...data } : t));
     } catch {}
     finally { setStoppingPunchId(null); }
+  };
+
+  const removeTimesheetRow = async (timesheetId) => {
+    if (!confirm('Supprimer cette ligne de punch ?')) return;
+    try {
+      await tsApi.delete(timesheetId);
+      setTimesheets((prev) => prev.filter((timesheet) => timesheet.id !== timesheetId));
+      setTimesheetDrafts((prev) => {
+        const next = { ...prev };
+        delete next[timesheetId];
+        return next;
+      });
+      refreshProfit();
+    } catch {}
   };
 
   const addManualPunch = async (e) => {
@@ -6938,7 +7080,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             {project.field_assessment?.work_type || WORK_TYPE_LABELS[project.type] || project.name}
             {project.address ? ` · ${project.address}` : ''}
           </span>
-          {/* Fermer popover portail au clic à l'extérieur */}
+          {/* Fermer modal portail au clic à l'extérieur */}
           {portalCopyTarget && (
             <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
           )}
@@ -6963,17 +7105,120 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   <span style={{ fontSize: 15 }}>📥</span> Exporter PDF
                 </button>
                 <button
-                  onClick={() => { setShowTopMenu(false); if (project.portal_token) navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); }}
+                  onClick={() => { setShowTopMenu(false); setPortalCopyTarget('client'); }}
                   style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#15171C', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 500 }}
                   onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
-                  <span style={{ fontSize: 15 }}>🔗</span> Copier lien portail client
+                  <span style={{ fontSize: 15 }}>🌐</span> Portail client
+                </button>
+                <button
+                  onClick={() => { setShowTopMenu(false); setPortalCopyTarget('supplier'); }}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#15171C', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 500 }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <span style={{ fontSize: 15 }}>🏢</span> Portail fournisseur
                 </button>
               </div>
             )}
           </div>
         </div>
+        {portalCopyTarget && (() => {
+          const isClient = portalCopyTarget === 'client';
+          const visibility = mergePortalVisibility(project?.field_assessment?.portal_visibility);
+          const portalUrl = isClient
+            ? (project.portal_token ? `${FRONTEND_URL}/portal/${project.portal_token}` : '')
+            : (project.supplier_portal_token ? `${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}` : '');
+          const visibilityEntries = isClient
+            ? [
+                ['overview', 'Résumé du projet'],
+                ['phases', 'Phases du projet'],
+                ['timeline', 'Dates et progression'],
+                ['messages', 'Messages portail'],
+                ['quote_signing', 'Lien de signature du devis'],
+              ]
+            : [
+                ['overview', 'Résumé du projet'],
+                ['phases', 'Phases du projet'],
+                ['timeline', 'Dates et progression'],
+              ];
+          return (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              <div style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 18, border: '1px solid #E8EAED', boxShadow: '0 24px 64px rgba(0,0,0,.18)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid #F0F2F4' }}>
+                  <button type="button" onClick={() => setPortalCopyTarget(null)} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                    <ArrowLeft size={15} />
+                  </button>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>{isClient ? 'Portail client' : 'Portail fournisseur'}</p>
+                    <p style={{ fontSize: 11.5, color: '#7C8089', margin: '2px 0 0' }}>Lien, partage et visibilité des sections</p>
+                  </div>
+                  <button type="button" onClick={() => setPortalCopyTarget(null)} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                    <X size={15} />
+                  </button>
+                </div>
+                <div style={{ padding: 18, display: 'grid', gap: 16 }}>
+                  <div style={{ background: '#F9FAFB', borderRadius: 12, border: '1px solid #E5E7EB', padding: 14 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 800, color: '#9CA3AF', letterSpacing: '.08em', textTransform: 'uppercase', margin: '0 0 8px' }}>Lien public</p>
+                    <p style={{ fontSize: 12, color: '#374151', margin: 0, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {portalUrl || 'Aucun lien actif pour le moment.'}
+                    </p>
+                    {!isClient && !project.supplier_portal_token && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const d = await import('../api.js');
+                          const r = await d.projects.resetSupplierPortalToken(project.id);
+                          setProject((p) => ({ ...p, supplier_portal_token: r.data.supplier_portal_token }));
+                        }}
+                        style={{ marginTop: 10, fontSize: 11.5, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', cursor: 'pointer' }}
+                      >
+                        Activer le portail fournisseur
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+                    <button type="button" onClick={() => { if (portalUrl) navigator.clipboard.writeText(portalUrl); setPortalCopyTarget(null); }} className="btn-secondary text-xs">Copier le lien</button>
+                    <a
+                      href={isClient
+                        ? `https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre lien pour suivre l'avancement de vos travaux en temps réel :\n${portalUrl}`)}`
+                        : `https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre lien pour suivre l'avancement du projet :\n${portalUrl}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setPortalCopyTarget(null)}
+                      className="btn-secondary text-xs"
+                      style={{ textDecoration: 'none', textAlign: 'center' }}
+                    >
+                      Envoyer le message
+                    </a>
+                    <a href={portalUrl || '#'} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)} className="btn-primary text-xs" style={{ textDecoration: 'none', textAlign: 'center', pointerEvents: portalUrl ? 'auto' : 'none', opacity: portalUrl ? 1 : 0.45 }}>
+                      Ouvrir
+                    </a>
+                  </div>
+
+                  <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAED', padding: 14 }}>
+                    <p style={{ fontSize: 11.5, fontWeight: 800, color: '#15171C', margin: '0 0 10px' }}>Sections visibles dans ce portail</p>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {visibilityEntries.map(([key, label]) => (
+                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: '#374151', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!visibility[portalCopyTarget]?.[key]}
+                            onChange={(e) => savePortalVisibility(portalCopyTarget, key, e.target.checked)}
+                            style={{ accentColor: BRAND, width: 15, height: 15 }}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {/* Ligne 2 : onglets */}
         <div style={{ display: 'flex', gap: 2, padding: '0 20px' }}>
           {[
@@ -7274,8 +7519,8 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           width: 56,
                           minHeight: 56,
                           borderRadius: 12,
-                          border: myActiveTimesheet ? '1px solid #BBF7D0' : '1px solid #E8EAED',
-                          background: myActiveTimesheet ? '#ECFDF3' : '#fff',
+                          border: myActiveTimesheet ? '1px solid #FECACA' : '1px solid #E8EAED',
+                          background: myActiveTimesheet ? '#FEF2F2' : '#fff',
                           cursor: 'pointer',
                           display: 'flex',
                           flexDirection: 'column',
@@ -7286,9 +7531,9 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                         }}
                       >
                         {myActiveTimesheet
-                          ? <Square size={16} className="text-green-700" fill="currentColor" />
+                          ? <Clock3 size={16} className="text-red-600" />
                           : <Clock size={16} className="text-brand" />}
-                        <span style={{ fontSize: 9.5, fontWeight: 800, color: myActiveTimesheet ? '#15803D' : BRAND_DARK }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: myActiveTimesheet ? '#DC2626' : BRAND_DARK }}>
                           {myActiveTimesheet ? 'Arrêter' : 'Punch'}
                         </span>
                       </button>
@@ -7297,67 +7542,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                           style={{ background: '#fff', border: '1px solid #E8EAED', borderRadius: 10, padding: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
                           <img src={qrData.qr_image} alt="QR Punch" style={{ width: 44, height: 44, display: 'block', borderRadius: 6 }} />
                         </button>
-                      )}
-                      {project.portal_token && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {/* Portail client */}
-                          <div style={{ position: 'relative' }}>
-                            <button title="Portail client" onClick={() => setPortalCopyTarget(portalCopyTarget === 'client' ? null : 'client')}
-                              style={{ width: 32, height: 32, borderRadius: 8, background: '#F0EBFD', border: '1px solid #DDD6FE', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}>🌐</button>
-                            {portalCopyTarget === 'client' && (
-                              <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail client</p>
-                                <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/portal/{project.portal_token}</p>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                  <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/portal/${project.portal_token}`); setPortalCopyTarget(null); }}
-                                    style={{ flex: 1, fontSize: 11.5, fontWeight: 600, background: BRAND, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
-                                    Copier le lien
-                                  </button>
-                                  <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour ! Voici votre lien pour suivre l'avancement de vos travaux en temps réel :\n${FRONTEND_URL}/portal/${project.portal_token}`)}`}
-                                    target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                                    style={{ width: 30, height: 30, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 15, textDecoration: 'none' }} title="WhatsApp">💬</a>
-                                  <a href={`${FRONTEND_URL}/portal/${project.portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                                    style={{ width: 30, height: 30, background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 13, textDecoration: 'none' }} title="Aperçu">↗</a>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          {/* Portail fournisseur */}
-                          <div style={{ position: 'relative' }}>
-                            <button title="Portail fournisseur" onClick={() => setPortalCopyTarget(portalCopyTarget === 'supplier' ? null : 'supplier')}
-                              style={{ width: 32, height: 32, borderRadius: 8, background: '#F0F9FF', border: '1px solid #BAE6FD', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15 }}>🏢</button>
-                            {portalCopyTarget === 'supplier' && (
-                              <div style={{ position: 'absolute', top: 38, right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 12, minWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '.06em' }}>Portail fournisseur</p>
-                                {project.supplier_portal_token ? (
-                                  <>
-                                    <p style={{ fontSize: 10.5, color: '#6B7280', margin: '0 0 10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{FRONTEND_URL}/supplier-portal/{project.supplier_portal_token}</p>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                      <button onClick={() => { navigator.clipboard.writeText(`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`); setPortalCopyTarget(null); }}
-                                        style={{ flex: 1, fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 0', cursor: 'pointer' }}>
-                                        Copier le lien
-                                      </button>
-                                      <a href={`https://wa.me/?text=${encodeURIComponent(`Bonjour, voici votre lien pour suivre l'avancement du projet :\n${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`)}`}
-                                        target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                                        style={{ width: 32, display: 'grid', placeItems: 'center', background: '#22c55e', color: '#fff', borderRadius: 7, textDecoration: 'none', fontSize: 14 }} title="Envoyer par WhatsApp">💬</a>
-                                      <a href={`${FRONTEND_URL}/supplier-portal/${project.supplier_portal_token}`} target="_blank" rel="noopener noreferrer" onClick={() => setPortalCopyTarget(null)}
-                                        style={{ width: 32, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151', borderRadius: 7, textDecoration: 'none', fontSize: 14, border: '1px solid #E5E7EB' }} title="Aperçu">↗</a>
-                                    </div>
-                                    <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
-                                      style={{ marginTop: 8, fontSize: 10, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
-                                      🔄 Générer un nouveau lien
-                                    </button>
-                                  </>
-                                ) : (
-                                  <button onClick={async () => { const d = await import('../api.js'); const r = await d.projects.resetSupplierPortalToken(project.id); setProject(p => ({ ...p, supplier_portal_token: r.data.supplier_portal_token })); }}
-                                    style={{ width: '100%', fontSize: 11, fontWeight: 700, background: '#0EA5E9', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', cursor: 'pointer', marginTop: 4 }}>
-                                    Activer le portail fournisseur
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       )}
                   </div>
                 </div>
@@ -7763,6 +7947,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         />
 
         {/* ── Estimation : 3 façons d'obtenir les infos ── (mint) */}
+        {/* ── Estimation approximative ── */}
         {(() => {
           const fa = project.field_assessment || {};
           const visiteAnswers = fa.visite_answers || {};
@@ -7800,60 +7985,599 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           const totalVente = approxLines.reduce((s, l) => s + (Number(l.prix_vente) || 0), 0);
           const totalMarkup = totalCout > 0 ? Math.round((totalVente - totalCout) / totalCout * 100) : 0;
 
+          /* Questions pertinentes = universelles + celles du type de travaux */
           const typeQs = VISITE_QUESTIONS_BY_TYPE[workTypeVal] || [];
           const allVisiteQs = [...VISITE_QUESTIONS_UNIVERSAL, ...typeQs];
+
           const visiteAnswered = Object.keys(visiteAnswers).length;
 
           return (
-            <ProjectEstimationSection
-              sectionSummaries={sectionSummaries}
-              sectionExpanded={sectionExpanded}
-              toggleProjectSection={toggleProjectSection}
-              salesLocked={salesLocked}
-              sectionGuard={sectionGuard}
-              BRAND={BRAND}
-              BRAND_DARK={BRAND_DARK}
-              estimTab={estimTab}
-              setEstimTab={setEstimTab}
-              searchMaterialPrices={searchMaterialPrices}
-              searchingPrices={searchingPrices}
-              addLine={addLine}
-              hasSuggested={hasSuggested}
-              addSuggestedLines={addSuggestedLines}
-              workTypeVal={workTypeVal}
-              approxLines={approxLines}
-              money={money}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              totalCout={totalCout}
-              totalVente={totalVente}
-              totalMarkup={totalMarkup}
-              aiEstimNotice={aiEstimNotice}
-              setAiEstimNotice={setAiEstimNotice}
-              floEstimPrompt={floEstimPrompt}
-              setFloEstimPrompt={setFloEstimPrompt}
-              sendClientMessage={sendClientMessage}
-              estimatePdfPreview={estimatePdfPreview}
-              setEstimatePdfPreview={setEstimatePdfPreview}
-              estimateSendBusy={estimateSendBusy}
-              sendEstimateByEmail={sendEstimateByEmail}
-              estimateCopied={estimateCopied}
-              copyEstimateToClipboard={copyEstimateToClipboard}
-              allVisiteQs={allVisiteQs}
-              visiteAnswers={visiteAnswers}
-              saveVisite={saveVisite}
-              visiteAnswered={visiteAnswered}
-              selectedTrades={selectedTrades}
-              saveTrades={saveTrades}
-              TRADES_FOR_SITE_VISIT={TRADES_FOR_SITE_VISIT}
-              InlineField={InlineField}
-              project={project}
-              saveField={saveField}
-              formatCompactDate={formatCompactDate}
-            />
+            <ProjectSection
+              sectionId="s-estimation"
+              icon="📊"
+              title="Estimation approximative"
+              summary={sectionSummaries['s-estimation']?.summary}
+              stats={sectionSummaries['s-estimation']?.stats}
+              expanded={!!sectionExpanded['s-estimation']}
+              onToggle={() => toggleProjectSection('s-estimation')}
+              background="#E9F3EC"
+              bodyStyle={{ opacity: salesLocked ? 0.7 : 1, pointerEvents: salesLocked ? 'none' : 'auto' }}
+            >
+              {sectionGuard('s-estimation')}
+
+              {/* Bannière profil métier */}
+              <div style={{ padding: '10px 16px', background: 'rgba(232,121,78,.08)', border: '1px solid rgba(232,121,78,.2)', borderRadius: 10, marginBottom: 20, fontSize: 13, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Sparkles size={14} color={BRAND}/>
+                <span>Adapté à ton profil :</span>
+                <b style={{ color: BRAND }}>Entrepreneur général</b>
+              </div>
+
+              {/* Onglets — 2 niveaux */}
+              <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {/* Rangée haute : Message client + Visite sur place */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, gap: 2, border: '1px solid rgba(0,0,0,.06)' }}>
+                  {[
+                    { k: 'voieB', label: '💬 Message client' },
+                    { k: 'voieC', label: '🏗 Visite sur place' },
+                  ].map(({ k, label }) => (
+                    <button key={k} type="button" onClick={() => setEstimTab(k)}
+                      style={{ border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+                        background: estimTab === k ? '#fff' : 'transparent',
+                        color: estimTab === k ? BRAND_DARK : '#7C8089',
+                        boxShadow: estimTab === k ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                      }}>{label}</button>
+                  ))}
+                </div>
+                {/* Rangée basse : Recherche IA Florence */}
+                <div style={{ background: 'rgba(255,255,255,.7)', borderRadius: 12, padding: 3, border: '1px solid rgba(0,0,0,.06)' }}>
+                  <button type="button" onClick={() => setEstimTab('voieA')}
+                    style={{ width: '100%', border: 'none', borderRadius: 9, padding: '9px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      background: estimTab === 'voieA' ? '#fff' : 'transparent',
+                      color: estimTab === 'voieA' ? BRAND_DARK : '#7C8089',
+                      boxShadow: estimTab === 'voieA' ? '0 1px 4px rgba(0,0,0,.1)' : 'none',
+                    }}>
+                    <Sparkles size={13} color={estimTab === 'voieA' ? BRAND : '#9CA3AF'}/> Estimation approximative
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Voie A — Tableau d'estimation + IA ── */}
+              {estimTab === 'voieA' && (
+                <div>
+                  <div style={{ background: 'rgba(255,255,255,.9)', borderRadius: 12, border: '1px solid #E8EAED', overflow: 'auto' }}>
+                    {/* Entêtes tableau */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, background: '#F8FAFB', borderBottom: '1px solid #E8EAED', padding: '8px 14px', minWidth: 700 }}>
+                      {['POSTE','SOURCE','INCLUS','NON INCLUS','DURÉE','COÛT','PRIX VENTE','MARKUP',''].map((h, i) => (
+                        <span key={i} style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#9CA3AF', textTransform: 'uppercase' }}>{h}</span>
+                      ))}
+                    </div>
+
+                    {approxLines.length === 0 && (
+                      <div style={{ padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, background: 'rgba(248,250,251,.6)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#fff', borderRadius: 11, border: `1px solid rgba(232,121,78,.25)`, width: '100%', maxWidth: 520, boxSizing: 'border-box' }}>
+                          <Sparkles size={16} color={BRAND}/>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#15171C', margin: 0 }}>Laisser Florence remplir automatiquement</p>
+                            <p style={{ fontSize: 11, color: '#7C8089', margin: 0 }}>Florence analyse les projets similaires et les prix Rona, Canac, Home Dépôt, BMR.</p>
+                          </div>
+                          <button className="btn-primary text-xs" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={searchMaterialPrices} disabled={searchingPrices}>
+                            {searchingPrices ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                            {searchingPrices ? 'Analyse…' : 'Rechercher les prix'}
+                          </button>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>— ou —</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={addLine} style={{ background: '#fff', border: '1px solid #E0E4E8', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: BRAND, fontWeight: 700, padding: '7px 14px' }}>+ Ajouter une ligne vide</button>
+                          {hasSuggested && (
+                            <button onClick={addSuggestedLines} style={{ background: BRAND, border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#fff', fontWeight: 700, padding: '7px 14px' }}>
+                              ✦ Lignes types — {workTypeVal || 'projet'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {approxLines.map(line => {
+                      const markup = (Number(line.cout) > 0 && Number(line.prix_vente) > 0)
+                        ? Math.round((Number(line.prix_vente) - Number(line.cout)) / Number(line.cout) * 100) : null;
+                      return (
+                        <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, borderBottom: '1px solid #F4F5F6', padding: '5px 14px', alignItems: 'center', minWidth: 700 }}>
+                          {[
+                            { field:'poste', ph:'Démolition…' },
+                            { field:'source', ph:'Historique / fournisseur' },
+                            { field:'inclus', ph:'Ce qui est inclus' },
+                            { field:'non_inclus', ph:'Non inclus' },
+                            { field:'duree', ph:'3 j' },
+                            { field:'cout', ph:'0', t:'number' },
+                            { field:'prix_vente', ph:'0', t:'number' },
+                          ].map(({ field, ph, t }) => (
+                            <input key={field} type={t||'text'} value={line[field]||''} onChange={e=>updateLine(line.id,field,e.target.value)} placeholder={ph}
+                              style={{ border:'none', background:'transparent', fontSize:12.5, color:'#15171C', padding:'3px 4px 3px 0', outline:'none', width:'100%', minWidth:0, fontFamily:'inherit' }}/>
+                          ))}
+                          <span style={{ fontSize:11.5, fontWeight:700, color: markup > 0 ? '#16a34a' : '#9CA3AF' }}>{markup !== null ? `+${markup}%` : '—'}</span>
+                          <button onClick={() => removeLine(line.id)} style={{ border:'none', background:'none', cursor:'pointer', color:'#C8CACD', padding:0, display:'flex', alignItems:'center' }}><X size={13}/></button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Ligne total */}
+                    {approxLines.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.3fr 1.3fr 0.7fr 0.75fr 0.85fr 0.55fr 24px', gap: 0, padding: '10px 14px', background: '#F8FAFB', borderTop: '2px solid #E0E4E8', alignItems: 'center', minWidth: 700 }}>
+                        <span style={{ fontSize:12, fontWeight:800, color:'#15171C', gridColumn:'1/6' }}>TOTAL · Fourchette : {money(Math.round(totalVente * 0.87))} – {money(Math.round(totalVente * 1.13))}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalCout)}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'#15171C' }}>{money(totalVente)}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color: totalMarkup > 0 ? '#16a34a' : '#9CA3AF' }}>+{totalMarkup}%</span>
+                        <span/>
+                      </div>
+                    )}
+
+                    {/* Footer tableau */}
+                    {approxLines.length > 0 && (
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #F0F2F4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button onClick={addLine} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, color:BRAND, fontWeight:700, padding:0, display:'flex', alignItems:'center', gap:6 }}>
+                          + Ajouter une ligne
+                        </button>
+                        {hasSuggested && (
+                          <button onClick={addSuggestedLines} style={{ background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                            ✦ Lignes types {workTypeVal ? `— ${workTypeVal}` : ''}
+                          </button>
+                        )}
+                        <button onClick={searchMaterialPrices} disabled={searchingPrices} style={{ marginLeft:'auto', background:'none', border:`1px solid rgba(232,121,78,.35)`, borderRadius:7, cursor:'pointer', fontSize:12, color:BRAND, fontWeight:600, padding:'3px 10px', display:'flex', alignItems:'center', gap:5 }}>
+                          {searchingPrices ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+                          {searchingPrices ? 'Florence analyse…' : 'Demander à Florence'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {searchingPrices && (
+                    <div style={{ marginTop:10, padding:'12px 16px', background:'rgba(232,121,78,.06)', borderRadius:10, border:`1px solid rgba(232,121,78,.2)`, display:'flex', alignItems:'center', gap:10, fontSize:12.5, color:BRAND }}>
+                      <Loader2 size={14} className="animate-spin"/>
+                      Florence recherche les prix du marché québécois…
+                    </div>
+                  )}
+                  {aiPriceResult && (
+                    <div style={{ marginTop:12, background:'#fff', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden', fontSize:12.5 }}>
+
+                      {/* Note de Florence */}
+                      {aiPriceResult.comments && (
+                        <div style={{ padding:'12px 18px', color:'#3A3D44', lineHeight:1.65, borderBottom:'1px solid #F0F2F4' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:5 }}>Note de Florence</span>
+                          {aiPriceResult.comments}
+                        </div>
+                      )}
+
+                      {/* Tableau 3 scénarios */}
+                      {aiPriceResult.scenarios?.length > 0 && (
+                        <div style={{ borderBottom:'1px solid #F0F2F4' }}>
+                          <div style={{ padding:'10px 18px 6px', display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF' }}>3 scénarios de prix</span>
+                          </div>
+                          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                            <thead>
+                              <tr style={{ background:'#F8FAFB', borderBottom:'1px solid #E8EAED' }}>
+                                {['Scénario','Description','Coût de revient','Prix de vente','Marge'].map(h => (
+                                  <th key={h} style={{ padding:'7px 14px', fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color:'#9CA3AF', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {aiPriceResult.scenarios.map((s, i) => {
+                                const marge = s.cout > 0 ? Math.round((s.prix_vente - s.cout) / s.cout * 100) : 0;
+                                const rowBg = i === 1 ? 'rgba(232,121,78,.04)' : '#fff';
+                                const nomColor = i === 0 ? '#6B7280' : i === 1 ? BRAND : '#7C3AED';
+                                return (
+                                  <tr key={s.nom} style={{ background: rowBg, borderBottom:'1px solid #F4F5F6' }}>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color: nomColor, whiteSpace:'nowrap' }}>{s.nom}</td>
+                                    <td style={{ padding:'9px 14px', color:'#4B5563', lineHeight:1.4 }}>{s.description}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.cout)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:800, color:'#15171C', whiteSpace:'nowrap' }}>{money(s.prix_vente)}</td>
+                                    <td style={{ padding:'9px 14px', fontWeight:700, color:'#16a34a', whiteSpace:'nowrap' }}>+{marge}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Sources cliquables (URLs construites côté client) */}
+                      {aiPriceResult.sources?.length > 0 && (
+                        <div style={{ padding:'10px 18px 12px' }}>
+                          <span style={{ fontSize:9.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.1em', color:'#9CA3AF', display:'block', marginBottom:7 }}>Références de prix</span>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                            {aiPriceResult.sources.map((s, i) => (
+                              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize:11.5, color:BRAND, fontWeight:600, padding:'4px 11px', background:'rgba(232,121,78,.07)', borderRadius:20, textDecoration:'none', border:`1px solid rgba(232,121,78,.22)`, display:'inline-flex', alignItems:'center', gap:5, transition:'background .15s' }}
+                                onMouseEnter={e => e.currentTarget.style.background='rgba(232,121,78,.15)'}
+                                onMouseLeave={e => e.currentTarget.style.background='rgba(232,121,78,.07)'}>
+                                🔗 {s.label} <span style={{ fontWeight:400, color:'#9CA3AF', fontSize:10.5 }}>· {s.fournisseur}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Étape 1 — Message client + calculateur au pi²/m² ── */}
+              {estimTab === 'voieB' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                  {/* Message prérempli */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', overflow:'hidden' }}>
+                    <textarea ref={clientMsgRef}
+                      key={project.client_name + '|' + project.portal_token}
+                      style={{ width:'100%', minHeight:240, padding:'18px 20px', border:'none', fontSize:14, lineHeight:1.7, resize:'vertical', fontFamily:'inherit', background:'transparent', color:'#15171C', outline:'none', display:'block', boxSizing:'border-box' }}
+                      defaultValue={`Bonjour ${project.client_name || '[Nom du client]'},\n\nMerci pour votre demande concernant ${project.description || project.name || 'votre projet'}.\n\nPour préparer une estimation approximative, j'aimerais en savoir un peu plus avant de vous faire parvenir un prix :\n\n1. Pouvez-vous décrire brièvement ce que vous souhaitez faire ?\n2. Avez-vous des photos de l'espace actuel (4 angles de chaque pièce) ?\n3. Quelle est la superficie approximative (pi² ou m²) ?\n4. Avez-vous un budget cible en tête ?\n5. Quel est votre échéancier souhaité ?\n${project.portal_token ? `\nVous pouvez suivre l'avancement de votre projet en temps réel via votre portail client :\n${FRONTEND_URL}/portal/${project.portal_token}\n` : ''}\nUne fois ces informations reçues, je pourrai vous transmettre une estimation approximative sous 24–48 h.\n\nN'hésitez pas à répondre à ce message ou à m'appeler au besoin.\n\nCordialement,\n${project.project_manager || '[Votre nom]'}`}
+                    />
+                    <div style={{ padding:'10px 16px', borderTop:'1px solid #F0F2F4', display:'flex', gap:8, flexWrap:'wrap', background:'#FAFBFC' }}>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { setClientMsgCopied(true); setTimeout(() => setClientMsgCopied(false), 2000); navigator.clipboard.writeText(clientMsgRef.current?.value || ''); }}>
+                        {clientMsgCopied ? <CheckCheck size={13}/> : <Copy size={13}/>} {clientMsgCopied ? 'Copié !' : 'Copier le message'}
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => { const body = encodeURIComponent(clientMsgRef.current?.value || ''); window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent('Demande d\'informations — ' + project.name)}&body=${body}`,'_blank'); }}
+                        disabled={!project.client_email}>
+                        ✉️ Envoyer par courriel
+                      </button>
+                      <button className="btn-secondary text-xs"
+                        onClick={() => window.open(`sms:${project.client_phone?.replace(/\D/g,'')}?body=${encodeURIComponent(clientMsgRef.current?.value||'')}`, '_blank')}
+                        disabled={!project.client_phone}>
+                        📱 Par SMS
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checklist photos */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <p style={{ fontSize:12.5, fontWeight:800, color:'#15171C', margin:'0 0 12px', display:'flex', alignItems:'center', gap:8 }}>📷 CHECKLIST PHOTOS DEMANDÉES</p>
+                    {['Ensemble de chaque pièce (4 angles)', 'Points d\'eau (évier, douche, WC)', 'Panneau électrique ouvert', 'Sous-sol ou vide sanitaire', 'Toiture / gouttières (de l\'extérieur)'].map((item, i) => (
+                      <label key={i} style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#3A3D44', marginBottom:8, cursor:'pointer' }}>
+                        <input type="checkbox" style={{ accentColor:BRAND, width:15, height:15 }}/> {item}
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* Calculateur au pi²/m² */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'18px 20px' }}>
+                    <p style={{ fontSize:13, fontWeight:800, color:'#15171C', margin:'0 0 14px', display:'flex', alignItems:'center', gap:8 }}>
+                      📐 Calculateur de prix approximatif
+                    </p>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-end' }}>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Unité</p>
+                        <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2, gap:2 }}>
+                          {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                            <button key={u} onClick={() => setSqUnit(u)}
+                              style={{ border:'none', borderRadius:6, padding:'5px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', transition:'all .12s',
+                                background: sqUnit===u ? '#fff' : 'transparent', color: sqUnit===u ? '#15171C' : '#9CA3AF',
+                                boxShadow: sqUnit===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>{lbl}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Tarif par {sqUnit==='sqft'?'pi²':'m²'}</p>
+                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                          <span style={{ fontSize:13, color:'#9CA3AF' }}>$</span>
+                          <input type="number" min="0" step="0.5" value={sqRate} onChange={e=>setSqRate(e.target.value)} placeholder="Ex. 75"
+                            style={{ width:90, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9CA3AF', margin:'0 0 5px' }}>Superficie ({sqUnit==='sqft'?'pi²':'m²'})</p>
+                        <input type="number" min="0" value={sqArea} onChange={e=>setSqArea(e.target.value)} placeholder={sqUnit==='sqft'?'Ex. 1 200':'Ex. 110'}
+                          style={{ width:110, padding:'6px 10px', border:'1px solid #E8EAED', borderRadius:8, fontSize:13, fontFamily:'inherit', outline:'none', color:'#15171C' }}/>
+                      </div>
+                      {sqRate && sqArea && Number(sqRate) > 0 && Number(sqArea) > 0 && (() => {
+                        const base = Number(sqRate) * Number(sqArea);
+                        return (
+                          <div style={{ background:`linear-gradient(135deg,#F0A884,${BRAND})`, borderRadius:10, padding:'10px 16px', color:'#fff', minWidth:200 }}>
+                            <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'rgba(255,255,255,.8)', margin:'0 0 3px' }}>Estimation approximative</p>
+                            <p style={{ fontSize:22, fontWeight:900, margin:0 }}>{money(Math.round(base))}</p>
+                            <p style={{ fontSize:11, color:'rgba(255,255,255,.85)', margin:'2px 0 0' }}>Fourchette : {money(Math.round(base*.85))} – {money(Math.round(base*1.15))}</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Étape 3 — Visite sur place ── */}
+              {estimTab === 'voieC' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+
+                  {/* Question 1 — Corps de métier (multi-select) */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>1</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Quels corps de métier sont impliqués ?</p>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                      {ALL_TRADES.map(t => {
+                        const isSelected = selectedTrades.includes(t.key);
+                        return (
+                          <button key={t.key} type="button"
+                            onClick={() => saveTrades(isSelected ? selectedTrades.filter(k=>k!==t.key) : [...selectedTrades, t.key])}
+                            style={{ padding:'6px 13px', borderRadius:20, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: isSelected ? BRAND : '#fff',
+                              borderColor: isSelected ? BRAND : '#E0E4E8',
+                              color: isSelected ? '#fff' : '#3A3D44' }}>
+                            {t.emoji} {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Questions universelles + spécifiques au type de travaux */}
+                  {allVisiteQs.map((q, qi) => {
+                    const curVal = visiteAnswers[q.id] || null;
+                    const isAutre = curVal && !q.opts.includes(curVal);
+                    return (
+                      <div key={q.id} style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                          <span style={{ width:24, height:24, borderRadius:8, background: curVal ? '#DCFCE7' : `${BRAND}22`, color: curVal ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                            {curVal ? '✓' : qi + 2}
+                          </span>
+                          <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>{q.q}</p>
+                        </div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                          {q.opts.map(opt => (
+                            <button key={opt} type="button"
+                              onClick={() => saveVisite({ [q.id]: curVal === opt ? null : opt })}
+                              style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                                background: curVal === opt ? BRAND : '#fff',
+                                borderColor: curVal === opt ? BRAND : '#E0E4E8',
+                                color: curVal === opt ? '#fff' : '#3A3D44' }}>
+                              {opt}
+                            </button>
+                          ))}
+                          {/* Option Autre */}
+                          <button type="button"
+                            onClick={() => {
+                              if (isAutre) { saveVisite({ [q.id]: null }); setAutreTexts(t => ({ ...t, [q.id]: '' })); }
+                              else { setAutreTexts(t => ({ ...t, [q.id]: '' })); saveVisite({ [q.id]: 'Autre' }); }
+                            }}
+                            style={{ padding:'6px 13px', borderRadius:8, fontSize:12.5, border:'1.5px solid', cursor:'pointer', fontWeight:600, transition:'all .12s',
+                              background: isAutre ? BRAND : '#fff',
+                              borderColor: isAutre ? BRAND : '#E0E4E8',
+                              color: isAutre ? '#fff' : '#3A3D44' }}>
+                            Autre
+                          </button>
+                        </div>
+                        {/* Texte libre si Autre sélectionné */}
+                        {(isAutre || curVal === 'Autre') && (
+                          <div style={{ marginTop:8, display:'flex', gap:6 }}>
+                            <input
+                              autoFocus
+                              value={isAutre && curVal !== 'Autre' ? curVal : (autreTexts[q.id] || '')}
+                              onChange={e => setAutreTexts(t => ({ ...t, [q.id]: e.target.value }))}
+                              onBlur={e => { if (e.target.value.trim()) saveVisite({ [q.id]: e.target.value.trim() }); }}
+                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { saveVisite({ [q.id]: e.target.value.trim() }); e.target.blur(); } }}
+                              placeholder="Précisez…"
+                              style={{ flex:1, padding:'6px 10px', border:'1px solid #E0E4E8', borderRadius:8, fontSize:12.5, fontFamily:'inherit', outline:'none' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Superficie + observations */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background:`${BRAND}22`, color:BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>{allVisiteQs.length + 2}</span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Superficie totale à rénover</p>
+                    </div>
+                    <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:12 }}>
+                      <input type="number" placeholder="Ex. 1 200" className="input" style={{ maxWidth:130 }}
+                        value={visiteAnswers.area || ''} onChange={e => saveVisite({ area: e.target.value })}/>
+                      <div style={{ display:'inline-flex', background:'#F4F5F6', borderRadius:8, padding:2 }}>
+                        {[['sqft','pi²'],['sqm','m²']].map(([u,lbl]) => (
+                          <button key={u} onClick={() => saveVisite({ area_unit: u })}
+                            style={{ border:'none', borderRadius:6, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+                              background: (visiteAnswers.area_unit||'sqft')===u ? '#fff' : 'transparent',
+                              color: (visiteAnswers.area_unit||'sqft')===u ? '#15171C' : '#9CA3AF',
+                              boxShadow: (visiteAnswers.area_unit||'sqft')===u ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:'0 0 6px' }}>Observations sur place</p>
+                    <textarea className="input resize-none" rows={3} placeholder="Décrivez ce que vous observez…"
+                      value={visiteAnswers.notes || ''} onChange={e => saveVisite({ notes: e.target.value })}/>
+                  </div>
+
+                  {/* Photos & documents sur place — scroll horizontal */}
+                  <div style={{ background:'rgba(255,255,255,.9)', borderRadius:12, border:'1px solid #E8EAED', padding:'16px 20px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <span style={{ width:24, height:24, borderRadius:8, background: media.length ? '#DCFCE7' : `${BRAND}22`, color: media.length ? '#16a34a' : BRAND, fontWeight:900, fontSize:13, display:'grid', placeItems:'center', flexShrink:0 }}>
+                        {media.length ? '✓' : <Camera size={13}/>}
+                      </span>
+                      <p style={{ fontSize:14, fontWeight:700, color:'#15171C', margin:0 }}>Photos & documents sur place</p>
+                      <button onClick={() => setShowCapture(true)}
+                        style={{ marginLeft:'auto', fontSize:11.5, fontWeight:700, color:BRAND, background:'rgba(232,121,78,.08)', border:`1px solid rgba(232,121,78,.25)`, borderRadius:20, padding:'3px 11px', cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                        <Camera size={11}/> Ajouter
+                      </button>
+                    </div>
+                    <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch', scrollbarWidth:'thin' }}>
+                      {media.map(m => (
+                        <div key={m.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F4F5F6', cursor:'pointer', position:'relative' }}
+                          onClick={() => setLightboxItem(m)}>
+                          {m.type==='photo' && m.url
+                            ? <img src={m.url} alt={m.caption||''} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                            : <div style={{ width:'100%', height:'100%', display:'grid', placeItems:'center', fontSize:28 }}>{m.type==='video'?'▶':'📌'}</div>}
+                          {m.caption && <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,.55)', color:'#fff', fontSize:9.5, padding:'3px 6px', textOverflow:'ellipsis', overflow:'hidden', whiteSpace:'nowrap' }}>{m.caption}</div>}
+                        </div>
+                      ))}
+                      {(project.documents || []).map(d => (
+                        <div key={d.id} style={{ flexShrink:0, width:120, height:90, borderRadius:10, border:'1px solid #E8EAED', overflow:'hidden', background:'#F8FAFB', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', padding:8, boxSizing:'border-box' }}
+                          onClick={() => setLightboxItem({ ...d, type:'doc' })}>
+                          <span style={{ fontSize:28 }}>📄</span>
+                          <span style={{ fontSize:9.5, color:'#4B5563', textAlign:'center', lineHeight:1.3, overflow:'hidden', maxWidth:'100%', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name||d.filename||'Document'}</span>
+                        </div>
+                      ))}
+                      <div style={{ flexShrink:0, width:90, height:90, borderRadius:10, border:`2px dashed rgba(232,121,78,.35)`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, cursor:'pointer', color:BRAND, background:'rgba(232,121,78,.04)' }}
+                        onClick={() => setShowCapture(true)}>
+                        <span style={{ fontSize:22 }}>+</span>
+                        <span style={{ fontSize:10, fontWeight:700 }}>Ajouter</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barre de progression + action */}
+                  {visiteAnswered > 0 && (
+                    <div style={{ padding:'12px 16px', background:'#E9F8EE', borderRadius:10, display:'flex', alignItems:'center', gap:12 }}>
+                      <span style={{ fontSize:20 }}>✅</span>
+                      <div style={{ flex:1 }}>
+                        <p style={{ fontSize:13, fontWeight:700, color:'#15171C', margin:0 }}>{visiteAnswered} élément{visiteAnswered>1?'s':''} renseigné{visiteAnswered>1?'s':''}</p>
+                        <p style={{ fontSize:11.5, color:'#7C8089', margin:0 }}>Retournez à l'Étape 2 pour générer l'estimation avec ces données.</p>
+                      </div>
+                      <button className="btn-primary text-xs" onClick={() => setEstimTab('voieA')}>
+                        <Sparkles size={13}/> Générer l'estimation
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Envoyer l'estimation au client ── */}
+              <div style={{ marginTop: 28, background: 'rgba(255,255,255,.85)', borderRadius: 16, border: '1px solid rgba(0,0,0,.08)', padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${BRAND}18`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Send size={16} color={BRAND}/>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>Envoyer l'estimation au client</p>
+                    <p style={{ fontSize: 12.5, color: '#7C8089', margin: '2px 0 0' }}>Message personnalisé — se met à jour automatiquement avec les données du projet.</p>
+                  </div>
+                  <button onClick={() => { userEditedEstimMsg.current = false; setEstimMsg(buildEstimMsg(project, aiPriceResult)); }}
+                    style={{ fontSize: 11.5, fontWeight: 700, color: '#7C8089', background: '#F4F5F6', border: 'none', borderRadius: 8, padding: '5px 11px', cursor: 'pointer', flexShrink: 0 }}>
+                    ↺ Regénérer
+                  </button>
+                </div>
+
+                {/* Zone de message éditable */}
+                <textarea ref={estimMsgRef} value={estimMsg}
+                  onChange={e => { userEditedEstimMsg.current = true; setEstimMsg(e.target.value); }}
+                  placeholder="Le message se génère automatiquement dès que des informations sont disponibles sur le projet…"
+                  style={{ width: '100%', minHeight: 200, padding: '14px 16px', border: '1px solid #E0E4E8', borderRadius: 10, fontSize: 13.5, lineHeight: 1.75, fontFamily: 'inherit', resize: 'vertical', outline: 'none', color: '#15171C', background: '#FAFAFA', boxSizing: 'border-box', marginBottom: 14 }}/>
+
+                {/* Photos de projets similaires */}
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 8px' }}>Photos de projets similaires (optionnel)</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {estimInspoPhotos.map((url, i) => (
+                      <div key={i} style={{ position: 'relative', width: 80, height: 64, borderRadius: 8, overflow: 'hidden', border: '1px solid #E8EAED', flexShrink: 0, cursor: 'pointer' }}
+                        onClick={() => setLightboxItem({ type: 'photo', url, caption: `Photo inspiration ${i+1}` })}>
+                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        <button onClick={e => { e.stopPropagation(); setEstimInspoPhotos(p => p.filter((_,j) => j !== i)); }}
+                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,.65)', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                          <X size={10} color="#fff"/>
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input value={estimInspoInput} onChange={e => setEstimInspoInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        placeholder="URL d'une photo…"
+                        style={{ padding: '5px 10px', border: '1px solid #E0E4E8', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 200 }}/>
+                      <button onClick={() => { if (estimInspoInput.trim()) { setEstimInspoPhotos(p => [...p, estimInspoInput.trim()]); setEstimInspoInput(''); } }}
+                        style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        + Ajouter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3 boutons d'envoi */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText(estimMsg).then(() => { setEstimMsgCopied(true); setTimeout(() => setEstimMsgCopied(false), 2000); });
+                  }}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${estimMsgCopied ? '#16a34a' : '#E0E4E8'}`, background: estimMsgCopied ? '#DCFCE7' : '#fff', fontSize: 12.5, fontWeight: 700, color: estimMsgCopied ? '#16a34a' : '#3A3D44', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {estimMsgCopied ? '✓ Copié !' : '⎘ Copier le message'}
+                  </button>
+                  <button
+                    onClick={() => window.open(`mailto:${project.client_email || ''}?subject=${encodeURIComponent(`Estimation — ${project.name || ''}`)}&body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_email}
+                    title={!project.client_email ? 'Ajoute un courriel client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_email ? '#3A3D44' : '#B0B3BA', cursor: project.client_email ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✉️ Envoyer par courriel
+                  </button>
+                  <button
+                    onClick={() => window.open(`sms:${(project.client_phone||'').replace(/\D/g,'')}?body=${encodeURIComponent(estimMsg)}`,'_blank')}
+                    disabled={!project.client_phone}
+                    title={!project.client_phone ? 'Ajoute un numéro client pour envoyer' : ''}
+                    style={{ padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0E4E8', background: '#fff', fontSize: 12.5, fontWeight: 700, color: project.client_phone ? '#3A3D44' : '#B0B3BA', cursor: project.client_phone ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📱 Par SMS
+                  </button>
+                </div>
+
+                {/* Relances automatiques */}
+                <div style={{ borderTop: '1px solid rgba(0,0,0,.07)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: 0 }}>Relances automatiques</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+                    <div>
+                      <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Nombre de relances</p>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {[0,1,2,3,4,5,6,7].map(n => (
+                          <button key={n} onClick={() => { setRelanceCount(n); saveAssessmentField('relances_count', n); localStorage.setItem(`monflux-relances-count-${id}`, n); }}
+                            style={{ width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${relanceCount === n ? BRAND : '#E0E4E8'}`, background: relanceCount === n ? `${BRAND}12` : '#fff', fontSize: 13, fontWeight: 700, color: relanceCount === n ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Fréquence</p>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {[[2,'2 j'],[3,'3 j'],[5,'5 j'],[7,'1 sem.'],[14,'2 sem.'],[30,'1 mois']].map(([v,l]) => (
+                            <button key={v} onClick={() => { setRelanceFrequency(v); saveAssessmentField('relances_freq', v); localStorage.setItem(`monflux-relances-freq-${id}`, v); }}
+                              style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${relanceFrequency === v ? BRAND : '#E0E4E8'}`, background: relanceFrequency === v ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceFrequency === v ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {relanceCount > 0 && (
+                      <div>
+                        <p style={{ fontSize: 12, color: '#3A3D44', fontWeight: 600, margin: '0 0 7px' }}>Méthode(s)</p>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {[['email','✉️ Courriel'],['sms','📱 SMS'],['call','📞 Appel']].map(([k,l]) => (
+                            <button key={k} onClick={() => {
+                              const next = relanceMethods.includes(k) ? relanceMethods.filter(m => m !== k) : [...relanceMethods, k];
+                              setRelanceMethods(next);
+                              saveAssessmentField('relances_methods', next);
+                              localStorage.setItem(`monflux-relances-methods-${id}`, JSON.stringify(next));
+                            }}
+                              style={{ padding: '5px 13px', borderRadius: 8, border: `1.5px solid ${relanceMethods.includes(k) ? BRAND : '#E0E4E8'}`, background: relanceMethods.includes(k) ? `${BRAND}12` : '#fff', fontSize: 12.5, fontWeight: 700, color: relanceMethods.includes(k) ? BRAND : '#7C8089', cursor: 'pointer' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {relanceCount > 0 && relanceMethods.length > 0 && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 14px', borderRadius: 9, background: '#DCFCE7', border: '1px solid #16a34a33' }}>
+                      <CheckCircle size={13} color="#16a34a"/>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#16a34a' }}>
+                        {relanceCount} relance{relanceCount > 1 ? 's' : ''} · toutes les {relanceFrequency <= 6 ? `${relanceFrequency} jours` : relanceFrequency <= 13 ? '1 semaine' : relanceFrequency <= 27 ? '2 semaines' : '1 mois'} · {relanceMethods.map(m => m === 'email' ? 'courriel' : m === 'sms' ? 'SMS' : 'appel').join(' + ')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ProjectSection>
           );
         })()}
-
 
 
         <ProjectPipelineSection
@@ -8074,8 +8798,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           BRAND={BRAND}
           EXPENSE_TYPES={EXPENSE_TYPES}
           isExpenseReceiptRequired={isExpenseReceiptRequired}
-          showExpenseForm={showExpenseForm}
-          setShowExpenseForm={setShowExpenseForm}
           expenseForm={expenseForm}
           setExpenseForm={setExpenseForm}
           attachExpenseReceipt={attachExpenseReceipt}
@@ -8112,6 +8834,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           stopProjectPunch={stopProjectPunch}
           stoppingPunchId={stoppingPunchId}
           approveTs={approveTs}
+          removeTimesheetRow={removeTimesheetRow}
         />
 
         {/* ── Soumission détaillée ── (white) */}
@@ -8182,6 +8905,13 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           addInvoiceDraftItem={addInvoiceDraftItem}
           saveInvoiceDraft={saveInvoiceDraft}
           savingInvoiceId={savingInvoiceId}
+          removeInvoice={removeInvoice}
+          updateInvoiceStatus={updateInvoiceStatus}
+          updatingInvoiceId={updatingInvoiceId}
+          quoteBuilderItems={quoteBuilderItems}
+          quoteInvoiceSelection={quoteInvoiceSelection}
+          setQuoteInvoiceSelection={setQuoteInvoiceSelection}
+          createInvoiceFromQuoteSelection={createInvoiceFromQuoteSelection}
         />
 
         {/* ── Demandes de modification ── */}
@@ -8190,9 +8920,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           expanded={!!sectionExpanded['s-extras']}
           onToggle={() => toggleProjectSection('s-extras')}
           sectionGuard={sectionGuard}
-          setShowExtraForm={setShowExtraForm}
           changeOrdersList={changeOrdersList}
           money={money}
+          createChangeOrderRow={createChangeOrderRow}
+          saveChangeOrderRow={saveChangeOrderRow}
+          removeChangeOrderRow={removeChangeOrderRow}
         />
 
         <ProjectQuittancesSection

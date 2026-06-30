@@ -144,6 +144,7 @@ export const timesheets = {
   update:  (id, data)   => http.patch(`/timesheets/${id}`, data),
   stop:    (id, data)   => http.patch(`/timesheets/${id}/stop`, data),
   approve: (id)         => http.patch(`/timesheets/${id}/approve`),
+  delete:  (id)         => http.delete(`/timesheets/${id}`),
 };
 
 export const materialOrders = {

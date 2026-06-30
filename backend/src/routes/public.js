@@ -224,7 +224,7 @@ router.get('/portal/:token', async (req, res) => {
   try {
     const { rows: [project] } = await query(
       `SELECT p.id, p.name, p.status, p.address, p.city, p.start_date, p.end_date,
-              p.progress_pct, p.description,
+              p.progress_pct, p.description, p.field_assessment,
               co.name AS company_name, co.phone AS company_phone, co.email AS company_email,
               co.website AS company_website, co.logo_url AS company_logo
        FROM projects p
@@ -242,8 +242,37 @@ router.get('/portal/:token', async (req, res) => {
       [project.id]
     );
 
-    const { id, ...safeProject } = project;
-    res.json({ ...safeProject, phases });
+    const { rows: messages } = await query(
+      `SELECT author_name, content, created_at
+       FROM portal_messages
+       WHERE project_id = $1
+       ORDER BY created_at DESC
+       LIMIT 8`,
+      [project.id]
+    );
+
+    const { rows: [quote] } = await query(
+      `SELECT id, title, status, interactive_token, sent_at, signed_at
+       FROM quotes
+       WHERE project_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [project.id]
+    );
+
+    const { id, field_assessment, ...safeProject } = project;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    res.json({
+      ...safeProject,
+      phases,
+      messages,
+      portal_visibility: field_assessment?.portal_visibility || null,
+      quote_title: quote?.title || null,
+      quote_status: quote?.status || null,
+      quote_sent_at: quote?.sent_at || null,
+      quote_signed_at: quote?.signed_at || null,
+      quote_url: quote?.interactive_token ? `${frontendUrl}/soumission/${quote.interactive_token}` : null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -278,7 +307,7 @@ router.get('/portal/supplier/:token', async (req, res) => {
   try {
     const { rows: [project] } = await query(
       `SELECT p.id, p.name, p.status, p.address, p.city, p.start_date, p.end_date,
-              p.progress_pct, p.description,
+              p.progress_pct, p.description, p.field_assessment,
               co.name AS company_name, co.phone AS company_phone, co.email AS company_email
        FROM projects p
        JOIN companies co ON co.id = p.company_id
@@ -295,8 +324,8 @@ router.get('/portal/supplier/:token', async (req, res) => {
       [project.id]
     );
 
-    const { id, ...safeProject } = project;
-    res.json({ ...safeProject, phases });
+    const { id, field_assessment, ...safeProject } = project;
+    res.json({ ...safeProject, phases, portal_visibility: field_assessment?.portal_visibility || null });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
