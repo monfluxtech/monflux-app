@@ -33,6 +33,7 @@ export default function ProjectTeamSection(props) {
     scheduleQuoteSave,
     money,
   } = props;
+  const formatTeamDate = fmtDate || ((d) => (d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null));
 
   return (
         <ProjectSection
@@ -241,7 +242,6 @@ export default function ProjectTeamSection(props) {
               );
             };
 
-            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : null;
             // Grid partagé (en-têtes + lignes détail)
             const COLS = '215px 2fr 145px 1.4fr 1.4fr';
 
@@ -742,8 +742,8 @@ export default function ProjectTeamSection(props) {
                             )}
                             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginLeft: 2 }}>
                               {tradePhases.map(phase => {
-                                const phStart = phase.start_date ? fmtDate(phase.start_date) : null;
-                                const phEnd   = phase.end_date   ? fmtDate(phase.end_date)   : null;
+                                const phStart = phase.start_date ? formatTeamDate(phase.start_date) : null;
+                                const phEnd   = phase.end_date   ? formatTeamDate(phase.end_date)   : null;
                                 const phH     = phase.duration_hours ? `${Number(phase.duration_hours) % 1 === 0 ? Number(phase.duration_hours) : Number(phase.duration_hours).toFixed(1)} h` : null;
                                 const dateStr = phStart
                                   ? ` (${phStart}${phEnd && phEnd !== phStart ? ` → ${phEnd}` : ''}${phH ? ` · ${phH}` : ''})`
