@@ -22,13 +22,13 @@ export default function Chat() {
   const bottomRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const autoSent = useRef(false);
-  const [usage, setUsage] = useState(null);
   const [quotaHit, setQuotaHit] = useState(false);
   const [buying, setBuying] = useState(false);
   const [pendingImage, setPendingImage] = useState(null); // { media_type, data, url }
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
   const fileRef = useRef(null);
+  const [loadingConversations, setLoadingConversations] = useState(true);
 
   // Voice input via the browser Web Speech API (no backend, fr-CA)
   const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -70,16 +70,38 @@ export default function Chat() {
     e.target.value = '';
   };
 
-  const loadUsage = () => ai.usage().then(({ data }) => setUsage(data)).catch(() => {});
-  useEffect(() => { loadUsage(); }, []);
-
   const buyCredits = async () => {
     setBuying(true);
-    try { const { data } = await ai.buyCredits(100); setUsage(data); setQuotaHit(false); }
+    try { await ai.buyCredits(100); setQuotaHit(false); }
     catch {} finally { setBuying(false); }
   };
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+  const loadConversations = async (preferredId = null) => {
+    setLoadingConversations(true);
+    try {
+      const { data } = await ai.conversations();
+      setConversations(data || []);
+      const nextActiveId = preferredId || activeConvId || data?.[0]?.id || null;
+      if (nextActiveId) {
+        const { data: conversation } = await ai.getConversation(nextActiveId);
+        setActiveConvId(conversation.id);
+        setMessages(Array.isArray(conversation.messages) ? conversation.messages : []);
+      } else {
+        setActiveConvId(null);
+        setMessages([]);
+      }
+    } catch {
+      setConversations([]);
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
   // Auto-send a question passed via ?q= (e.g. from the dashboard AI ask-bar)
   useEffect(() => {
@@ -95,6 +117,7 @@ export default function Chat() {
     const { data } = await ai.newConversation({ context_type: 'general' });
     setActiveConvId(data.id);
     setMessages([]);
+    setConversations((current) => [{ id: data.id, title: data.title || 'Nouvelle conversation', preview: '', updated_at: data.updated_at }, ...current]);
   };
 
   const send = async (text) => {
@@ -114,6 +137,18 @@ export default function Chat() {
       content = typed;
     }
 
+    let conversationId = activeConvId;
+    if (!conversationId) {
+      try {
+        const { data } = await ai.newConversation({ context_type: 'general' });
+        conversationId = data.id;
+        setActiveConvId(data.id);
+        setConversations((current) => [{ id: data.id, title: data.title || 'Nouvelle conversation', preview: '', updated_at: data.updated_at }, ...current]);
+      } catch {
+        return;
+      }
+    }
+
     const userMsg = { role: 'user', content };
     const next = [...messages, userMsg];
     setMessages(next);
@@ -127,7 +162,7 @@ export default function Chat() {
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ messages: next, conversation_id: activeConvId }),
+        body: JSON.stringify({ messages: next, conversation_id: conversationId }),
       });
 
       // Quota exceeded (or other non-streaming error) → JSON body, not SSE
@@ -159,7 +194,7 @@ export default function Chat() {
           }
         }
       }
-      loadUsage();
+      loadConversations(conversationId);
     } catch {
       setMessages((m) => { const c=[...m]; c[c.length-1]={...c[c.length-1],content:"Erreur. Réessayez."}; return c; });
     } finally {
@@ -175,6 +210,34 @@ export default function Chat() {
           <button className="btn-primary w-full justify-center text-xs py-1.5" onClick={newConversation}>
             <Plus size={13} /> Nouvelle conversation
           </button>
+          <div className="mt-2 flex-1 overflow-y-auto space-y-1">
+            {loadingConversations ? (
+              <div className="text-xs text-gray-400 px-2 py-2">Chargement…</div>
+            ) : conversations.length === 0 ? (
+              <div className="text-xs text-gray-400 px-2 py-2">Aucune conversation enregistrée.</div>
+            ) : conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={async () => {
+                  if (conversation.id === activeConvId) return;
+                  setActiveConvId(conversation.id);
+                  try {
+                    const { data } = await ai.getConversation(conversation.id);
+                    setMessages(Array.isArray(data.messages) ? data.messages : []);
+                  } catch {}
+                }}
+                className="w-full text-left rounded-xl border px-2.5 py-2 transition-colors"
+                style={{
+                  borderColor: conversation.id === activeConvId ? '#F26522' : '#E5E7EB',
+                  background: conversation.id === activeConvId ? '#FFF1EB' : '#fff',
+                }}
+              >
+                <p className="text-xs font-semibold text-gray-800 truncate">{conversation.title || 'Nouvelle conversation'}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{conversation.preview || 'Conversation vide'}</p>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Chat area */}
@@ -183,18 +246,6 @@ export default function Chat() {
           <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
             <Sparkles size={15} className="text-brand" />
             <span className="text-sm font-semibold text-gray-900">Florence — assistante IA MONFLUX</span>
-            {usage && (
-              <span className="ml-auto flex items-center gap-2">
-                <span className={`text-xs ${usage.remaining <= 5 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                  {Math.max(0, usage.remaining)} requête{usage.remaining > 1 ? 's' : ''} restante{usage.remaining > 1 ? 's' : ''} ce mois
-                </span>
-                {usage.remaining <= 10 && (
-                  <button onClick={buyCredits} disabled={buying} className="text-xs px-2 py-1 rounded-lg bg-brand/10 text-brand font-medium hover:bg-brand/20">
-                    {buying ? '…' : '+100 crédits'}
-                  </button>
-                )}
-              </span>
-            )}
           </div>
 
           {/* Quota banner */}

@@ -14,6 +14,7 @@ export const SECTION_RULES = {
   's-expenses':     { minStatus: 'accepte',   requires: null },
   's-invoices':     { minStatus: 'accepte',   requires: null },
   's-extras':       { minStatus: 'accepte',   requires: null },
+  's-nonconformites': { minStatus: 'accepte', requires: null },
   's-quittances':   { minStatus: 'accepte',   requires: null },
   's-denonciations':{ minStatus: 'accepte',   requires: 'sous_traitants' },
   's-media':        { minStatus: null,        requires: null },

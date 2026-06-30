@@ -378,9 +378,21 @@ RÈGLE ACTIONS : pour update_project_field et add_sticky_note, utilise toujours 
     // Persist conversation
     if (conversation_id && fullText) {
       const allMessages = [...messages, { role: 'assistant', content: fullText }];
+      const firstUserMessage = messages.find((message) => message?.role === 'user');
+      const firstTextBlock = Array.isArray(firstUserMessage?.content)
+        ? firstUserMessage.content.find((block) => block?.type === 'text')?.text
+        : firstUserMessage?.content;
+      const computedTitle = String(firstTextBlock || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
       await query(
-        `UPDATE ai_conversations SET messages = $1, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(allMessages), conversation_id]
+        `UPDATE ai_conversations
+            SET messages = $1,
+                title = COALESCE(NULLIF(title, ''), NULLIF(title, 'Nouvelle conversation'), NULLIF($2, ''), title),
+                updated_at = NOW()
+          WHERE id = $3`,
+        [JSON.stringify(allMessages), computedTitle, conversation_id]
       ).catch(() => {});
     }
   } catch (err) {
@@ -390,12 +402,55 @@ RÈGLE ACTIONS : pour update_project_field et add_sticky_note, utilise toujours 
   }
 });
 
+// GET /api/chat/conversations
+router.get('/conversations', async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, context_type, project_id, title, messages, created_at, updated_at
+       FROM ai_conversations
+      WHERE company_id = $1
+        AND user_id = $2
+      ORDER BY updated_at DESC
+      LIMIT 50`,
+    [req.company_id, req.user.userId]
+  );
+  res.json(rows.map((conversation) => {
+    const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+    const firstUserMessage = messages.find((message) => message?.role === 'user');
+    const preview = Array.isArray(firstUserMessage?.content)
+      ? String(firstUserMessage.content.find((block) => block?.type === 'text')?.text || '')
+      : String(firstUserMessage?.content || '');
+    return {
+      id: conversation.id,
+      context_type: conversation.context_type,
+      project_id: conversation.project_id,
+      title: conversation.title || preview.slice(0, 60) || 'Nouvelle conversation',
+      preview: preview.replace(/\s+/g, ' ').trim().slice(0, 120),
+      message_count: messages.length,
+      created_at: conversation.created_at,
+      updated_at: conversation.updated_at,
+    };
+  }));
+});
+
+router.get('/conversations/:id', async (req, res) => {
+  const { rows: [conversation] } = await query(
+    `SELECT id, context_type, project_id, title, messages, created_at, updated_at
+       FROM ai_conversations
+      WHERE id = $1
+        AND company_id = $2
+        AND user_id = $3`,
+    [req.params.id, req.company_id, req.user.userId]
+  );
+  if (!conversation) return res.status(404).json({ error: 'Conversation introuvable' });
+  res.json(conversation);
+});
+
 // POST /api/chat/conversations
 router.post('/conversations', async (req, res) => {
   const { context_type = 'general', project_id } = req.body;
   const { rows: [conv] } = await query(
-    `INSERT INTO ai_conversations (company_id, user_id, context_type, project_id, messages)
-     VALUES ($1,$2,$3,$4,'[]') RETURNING id`,
+    `INSERT INTO ai_conversations (company_id, user_id, context_type, project_id, messages, title)
+     VALUES ($1,$2,$3,$4,'[]','Nouvelle conversation') RETURNING id, title, updated_at`,
     [req.company_id, req.user.userId, context_type, project_id||null]
   );
   res.status(201).json(conv);

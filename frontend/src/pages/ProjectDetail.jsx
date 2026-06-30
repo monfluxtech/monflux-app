@@ -14,6 +14,7 @@ import ProjectExpensesSection from '../components/project/project-detail/section
 import ProjectInvoicesSection from '../components/project/project-detail/sections/ProjectInvoicesSection';
 import ProjectMaterialsSection from '../components/project/project-detail/sections/ProjectMaterialsSection';
 import ProjectMediaSection from '../components/project/project-detail/sections/ProjectMediaSection';
+import ProjectNonConformitiesSection from '../components/project/project-detail/sections/ProjectNonConformitiesSection';
 import ProjectPipelineSection from '../components/project/project-detail/sections/ProjectPipelineSection';
 import ProjectPunchSection from '../components/project/project-detail/sections/ProjectPunchSection';
 import ProjectQuittancesSection from '../components/project/project-detail/sections/ProjectQuittancesSection';
@@ -86,6 +87,7 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
   { id: 's-invoices', icon: '🧾', label: 'Factures client' },
   { id: 's-extras', icon: '⚡', label: 'Demandes de modification' },
+  { id: 's-nonconformites', icon: '🚨', label: 'Non-conformités' },
   { id: 's-quittances', icon: '✅', label: 'Quittances', badge: 'QC' },
   { id: 's-denonciations', icon: '⚖️', label: 'Dénonciations', badge: 'QC' },
   { id: 's-media', icon: '📷', label: 'Notes et photos' },
@@ -178,6 +180,7 @@ const PROJECT_SECTION_DEFAULTS = {
   's-punch': false,
   's-invoices': false,
   's-extras': false,
+  's-nonconformites': false,
   's-quittances': false,
   's-denonciations': false,
 };
@@ -6421,6 +6424,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
   const supplierExpenseTotal = (profit?.actual?.cost_breakdown?.expenses || 0);
   const quittanceCount = quittance ? 1 : 0;
   const denunciationCount = (project.field_assessment?.denonciations || []).length;
+  const nonConformityCount = (project.field_assessment?.non_conformites || []).length;
   const sectionSummaries = {
     's-estimation': {
       summary: `${project.type || project.field_assessment?.work_type || 'Projet'} · ${project.address || 'Adresse à confirmer'}${project.start_date || project.end_date ? ` · ${[formatCompactDate(project.start_date), formatCompactDate(project.end_date)].filter(Boolean).join(' → ')}` : ''}`,
@@ -6505,6 +6509,12 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       stats: [
         changeOrdersList.length ? `${changeOrdersList.length} demande(s)` : 'Aucune demande',
         changeOrdersList.reduce((sum, co) => sum + Number(co.amount || 0), 0) ? `${formatSectionMoney(changeOrdersList.reduce((sum, co) => sum + Number(co.amount || 0), 0))}` : null,
+      ],
+    },
+    's-nonconformites': {
+      summary: `Corrections, réserves client et éléments à reprendre après exécution`,
+      stats: [
+        nonConformityCount ? `${nonConformityCount} non-conformité(s)` : 'Aucune non-conformité',
       ],
     },
     's-quittances': {
@@ -8925,6 +8935,17 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           createChangeOrderRow={createChangeOrderRow}
           saveChangeOrderRow={saveChangeOrderRow}
           removeChangeOrderRow={removeChangeOrderRow}
+        />
+
+        <ProjectNonConformitiesSection
+          sectionSummary={sectionSummaries['s-nonconformites']}
+          expanded={!!sectionExpanded['s-nonconformites']}
+          onToggle={() => toggleProjectSection('s-nonconformites')}
+          sectionGuard={sectionGuard}
+          project={project}
+          id={id}
+          projectsApi={projectsApi}
+          setProject={setProject}
         />
 
         <ProjectQuittancesSection

@@ -396,7 +396,7 @@ function ContractTemplatesTab() {
       <div style={{ background: '#F9FAFB', border: '1px solid #E8EAED', borderRadius: 12, padding: 16 }}>
         <p style={{ fontSize: 13, fontWeight: 700, color: '#15171C', margin: '0 0 6px' }}>Variables de fusion disponibles</p>
         <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
-          Utilisez par exemple `{{contract_title}}`, `{{project_title}}`, `{{client_name}}`, `{{project_address}}`, `{{quote_total}}`, `{{payment_terms_sentence}}`, `{{start_date}}`, `{{end_date}}`, `{{scope_summary}}`, `{{quote_items_html}}`.
+          Utilisez par exemple <code>{'{{contract_title}}'}</code>, <code>{'{{project_title}}'}</code>, <code>{'{{client_name}}'}</code>, <code>{'{{project_address}}'}</code>, <code>{'{{quote_total}}'}</code>, <code>{'{{payment_terms_sentence}}'}</code>, <code>{'{{start_date}}'}</code>, <code>{'{{end_date}}'}</code>, <code>{'{{scope_summary}}'}</code>, <code>{'{{quote_items_html}}'}</code>.
         </p>
       </div>
 
