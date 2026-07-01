@@ -41,7 +41,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { project_id, milestone_id, client_name, client_email, due_date, notes, items = [], tps_pct = 5, tvq_pct = 9.975 } = req.body;
+  const { project_id, milestone_id, client_name, client_email, due_date, notes, category_notes, detail_level, items = [], tps_pct = 5, tvq_pct = 9.975 } = req.body;
   const client = await (await import('../db.js')).getClient();
   try {
     await client.query('BEGIN');
@@ -52,16 +52,17 @@ router.post('/', async (req, res) => {
     const { rows: [count] } = await client.query(`SELECT COUNT(*)+1 AS n FROM invoices WHERE company_id = $1`, [req.company_id]);
     const number = `INV-${String(count.n).padStart(4,'0')}`;
     const { rows: [inv] } = await client.query(
-      `INSERT INTO invoices (company_id,project_id,milestone_id,number,client_name,client_email,due_date,notes,
+      `INSERT INTO invoices (company_id,project_id,milestone_id,number,client_name,client_email,due_date,notes,category_notes,detail_level,
          subtotal,tps_pct,tvq_pct,tps_amount,tvq_amount,total,amount_due)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
       [req.company_id, project_id||null, milestone_id||null, number, client_name, client_email, due_date||null, notes||null,
+       category_notes ? JSON.stringify(category_notes) : '{}', detail_level || 'detailed',
        subtotal, tps_pct, tvq_pct, tps, tvq, total, total]
     );
     for (const [i, item] of items.entries()) {
       await client.query(
-        `INSERT INTO invoice_items (invoice_id,description,qty,unit_price,total,order_idx) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [inv.id, item.description, item.qty||1, item.unit_price||0, (item.qty||1)*(item.unit_price||0), i]
+        `INSERT INTO invoice_items (invoice_id,description,qty,unit_price,total,order_idx,type) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [inv.id, item.description, item.qty||1, item.unit_price||0, (item.qty||1)*(item.unit_price||0), i, item.type || 'other']
       );
     }
     await client.query('COMMIT');
@@ -83,8 +84,9 @@ router.patch('/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { items, ...incoming } = req.body || {};
-    const allowed = ['status','due_date','notes','next_reminder_at','amount_due','amount_paid','paid_at','payment_method','client_name','client_email','client_address','tps_pct','tvq_pct'];
+    const allowed = ['status','due_date','notes','next_reminder_at','amount_due','amount_paid','paid_at','payment_method','client_name','client_email','client_address','tps_pct','tvq_pct','category_notes','detail_level'];
     const updates = Object.fromEntries(Object.entries(incoming).filter(([k]) => allowed.includes(k)));
+    if (updates.category_notes) updates.category_notes = JSON.stringify(updates.category_notes);
 
     const { rows: [current] } = await client.query(
       `SELECT * FROM invoices WHERE id = $1 AND company_id = $2`,
@@ -108,6 +110,7 @@ router.patch('/:id', async (req, res) => {
           unit_price,
           total: qty * unit_price,
           order_idx: index,
+          type: item.type || 'other',
         };
       });
       const subtotal = safeItems.reduce((sum, item) => sum + item.total, 0);
@@ -140,8 +143,8 @@ router.patch('/:id', async (req, res) => {
       await client.query(`DELETE FROM invoice_items WHERE invoice_id = $1`, [req.params.id]);
       for (const item of safeItems) {
         await client.query(
-          `INSERT INTO invoice_items (invoice_id,description,qty,unit_price,total,order_idx) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [req.params.id, item.description, item.qty, item.unit_price, item.total, item.order_idx]
+          `INSERT INTO invoice_items (invoice_id,description,qty,unit_price,total,order_idx,type) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [req.params.id, item.description, item.qty, item.unit_price, item.total, item.order_idx, item.type]
         );
       }
     }

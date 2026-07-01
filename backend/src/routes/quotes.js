@@ -118,8 +118,9 @@ router.post('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const allowed = ['status','title','valid_until','format','notes','followup_config','subtotal','total'];
+  const allowed = ['status','title','valid_until','format','notes','followup_config','subtotal','total','category_notes','detail_level'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (updates.category_notes) updates.category_notes = JSON.stringify(updates.category_notes);
   const hasItems = Array.isArray(req.body.items);
 
   // If line items are provided, replace them and recompute totals inside a transaction.

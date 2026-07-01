@@ -59,6 +59,10 @@ export default function ProjectQuoteSection(props) {
     sendContract,
     deleteContract,
     normalizeContractHtml,
+    floCategoryAssist,
+    updateQuoteCategoryNote,
+    setQuoteDetailLevel,
+    floCategoryLoading,
   } = props;
 
   return (
@@ -158,6 +162,26 @@ export default function ProjectQuoteSection(props) {
             </div>
           )}
 
+          {/* Niveau de détail — contrôle ce qui apparaît sur le PDF client */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: '#8B919A' }}>Niveau de détail</span>
+            <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 7, padding: 2 }}>
+              {['detailed', 'summary'].map(level => (
+                <button key={level} type="button" disabled={salesLocked}
+                  onClick={() => setQuoteDetailLevel(level)}
+                  style={{ padding: '4px 10px', borderRadius: 5, border: 'none', cursor: salesLocked ? 'not-allowed' : 'pointer',
+                    background: (quoteBuilderQuote?.detail_level || 'detailed') === level ? '#fff' : 'transparent',
+                    color: (quoteBuilderQuote?.detail_level || 'detailed') === level ? '#15171C' : '#9CA3AF',
+                    fontSize: 11, fontWeight: 700, boxShadow: (quoteBuilderQuote?.detail_level || 'detailed') === level ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>
+                  {level === 'detailed' ? 'Détaillé' : 'Résumé'}
+                </button>
+              ))}
+            </div>
+            <span style={{ fontSize: 10.5, color: '#B0B3BA' }}>
+              {(quoteBuilderQuote?.detail_level || 'detailed') === 'summary' ? 'Le client ne voit que les catégories, leur description et leur total.' : 'Le client voit chaque poste en détail.'}
+            </span>
+          </div>
+
           {/* Tableau devis unifié — style Excel avec groupes repliables */}
           {(() => {
             const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitants', other: 'Autres' };
@@ -166,20 +190,21 @@ export default function ProjectQuoteSection(props) {
             const iS = { border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '3px 2px' };
             const TH = { padding: '5px 6px', fontSize: 9.5, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', background: '#F9FAFB', whiteSpace: 'nowrap' };
             const allItems = quoteBuilderItems.map((it, i) => ({ ...it, _i: i }));
+            const categoryNotes = quoteBuilderQuote?.category_notes || {};
             return (
               <div style={{ border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                     <colgroup>
                       <col style={{ width: 28 }}/>{/* checkbox */}
-                      <col style={{ minWidth: 180 }}/>{/* description */}
+                      <col style={{ width: 26 }}/>{/* numéro */}
+                      <col style={{ minWidth: 160 }}/>{/* description */}
                       <col style={{ width: 60 }}/>{/* qty */}
                       <col style={{ width: 54 }}/>{/* unit */}
                       <col style={{ width: 90 }}/>{/* prix unit */}
                       <col style={{ width: 72 }}/>{/* markup */}
                       <col style={{ width: 100 }}/>{/* total */}
                       <col style={{ width: 84 }}/>{/* source */}
-                      <col style={{ width: 24 }}/>{/* delete */}
                     </colgroup>
                     <thead>
                       <tr>
@@ -194,6 +219,7 @@ export default function ProjectQuoteSection(props) {
                             })}
                             style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
                         </th>
+                        <th style={{ ...TH }}>N°</th>
                         <th style={{ ...TH, textAlign: 'left' }}>Description</th>
                         {/* Colonnes PDF — œil cliquable pour inclure/exclure du PDF client */}
                         <th style={{ ...TH, textAlign: 'right', cursor: 'pointer', userSelect: 'none' }} title="Afficher Qté sur le PDF" onClick={() => togglePdfCol('qty')}>
@@ -208,7 +234,6 @@ export default function ProjectQuoteSection(props) {
                         <th style={{ ...TH, textAlign: 'right', color: BRAND }}>Markup%</th>
                         <th style={{ ...TH, textAlign: 'right' }}>Total</th>
                         <th style={{ ...TH, textAlign: 'left' }}>Source</th>
-                        <th style={{ ...TH }}/>
                       </tr>
                     </thead>
                     <tbody>
@@ -220,28 +245,68 @@ export default function ProjectQuoteSection(props) {
                           const base = (Number(it.qty) || 1) * (Number(it.unit_price) || 0);
                           return s + base * (1 + (Number(it.markup) || 0) / 100);
                         }, 0);
+                        const categoryKeys = typeItems.map(it => it._i);
+                        const categoryAllSelected = categoryKeys.length > 0 && categoryKeys.every(k => quoteSelected.has(k));
+                        const isFloBusy = floCategoryLoading === type;
                         return (
                           <React.Fragment key={type}>
                             {/* Ligne-groupe repliable */}
-                            <tr onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}
-                              style={{ background: '#F3F4F6', cursor: 'pointer', userSelect: 'none' }}>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                            <tr style={{ background: '#F3F4F6', userSelect: 'none' }}>
+                              <td style={{ padding: '6px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                <input type="checkbox"
+                                  disabled={salesLocked || categoryKeys.length === 0}
+                                  checked={categoryAllSelected}
+                                  onChange={e => setQuoteSelected(prev => {
+                                    const n = new Set(prev);
+                                    if (e.target.checked) categoryKeys.forEach(k => n.add(k));
+                                    else categoryKeys.forEach(k => n.delete(k));
+                                    return n;
+                                  })}
+                                  style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
+                              </td>
+                              <td style={{ padding: '6px 4px', textAlign: 'center', cursor: 'pointer' }} onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}>
                                 <span style={{ fontSize: 8, color: '#9CA3AF', display: 'inline-block', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                               </td>
                               <td colSpan={7} style={{ padding: '6px 6px' }}>
-                                <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em', marginRight: 8 }}>
-                                  {typeIcons[type]} {typeLabels[type]}
-                                </span>
-                                <span style={{ fontSize: 10, color: '#9CA3AF' }}>{typeItems.length} poste{typeItems.length !== 1 ? 's' : ''}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }} onClick={() => setQuoteCollapsed(m => ({ ...m, [type]: !m[type] }))}>
+                                  <span style={{ fontSize: 11, fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '.07em', cursor: 'pointer' }}>
+                                    {typeIcons[type]} {typeLabels[type]}
+                                  </span>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
+                                    {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
+                                  </span>
+                                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{typeItems.length} poste{typeItems.length !== 1 ? 's' : ''}</span>
+                                  <button type="button" disabled={salesLocked || isFloBusy || !typeItems.length}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const desc = await floCategoryAssist(type, typeItems, 'quote');
+                                      if (desc) updateQuoteCategoryNote(type, desc);
+                                    }}
+                                    style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 999, border: `1px solid ${BRAND}55`, background: '#fff', color: BRAND, fontSize: 10.5, fontWeight: 700, cursor: salesLocked || !typeItems.length ? 'not-allowed' : 'pointer', opacity: salesLocked || !typeItems.length ? 0.5 : 1 }}>
+                                    {isFloBusy ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>} Flo
+                                  </button>
+                                </div>
                               </td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap' }}>
-                                {sectionTotal.toLocaleString('fr-CA', { minimumFractionDigits: 2 })} $
-                              </td>
-                              <td/>
                             </tr>
 
+                            {/* Description libre de la catégorie — apparaît sur le PDF client */}
+                            {!isCollapsed && (
+                              <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F0F1F2' }}>
+                                <td/><td/>
+                                <td colSpan={7} style={{ padding: '4px 6px 8px' }}>
+                                  <textarea
+                                    value={categoryNotes[type] || ''}
+                                    disabled={salesLocked}
+                                    onChange={e => updateQuoteCategoryNote(type, e.target.value)}
+                                    placeholder={`Description libre de ${typeLabels[type].toLowerCase()} pour le client (apparaît sur le PDF)…`}
+                                    rows={2}
+                                    style={{ width: '100%', fontSize: 11.5, border: '1px solid #E5E7EB', borderRadius: 7, padding: '5px 8px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', color: '#374151', boxSizing: 'border-box', background: '#fff' }}/>
+                                </td>
+                              </tr>
+                            )}
+
                             {/* Lignes d'articles */}
-                            {!isCollapsed && typeItems.map(it => {
+                            {!isCollapsed && typeItems.map((it, itemIndex) => {
                               const isSel = quoteSelected.has(it._i);
                               const mu = Number(it.markup) || 0;
                               const lineTotal = (Number(it.qty) || 1) * (Number(it.unit_price) || 0) * (1 + mu / 100);
@@ -252,6 +317,9 @@ export default function ProjectQuoteSection(props) {
                                       disabled={salesLocked}
                                       onChange={() => setQuoteSelected(prev => { const n = new Set(prev); n.has(it._i) ? n.delete(it._i) : n.add(it._i); return n; })}
                                       style={{ accentColor: BRAND, cursor: salesLocked ? 'not-allowed' : 'pointer' }}/>
+                                  </td>
+                                  <td style={{ padding: '1px 4px', verticalAlign: 'middle', textAlign: 'center', fontSize: 10.5, color: '#9CA3AF' }}>
+                                    {itemIndex + 1}
                                   </td>
                                   <td style={{ padding: '1px 6px', verticalAlign: 'middle' }}>
                                     <input value={it.name} readOnly={salesLocked} onChange={e => updateQuoteItem(it._i, { name: e.target.value })}
@@ -294,10 +362,6 @@ export default function ProjectQuoteSection(props) {
                                         style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
                                     )}
                                   </td>
-                                  <td style={{ padding: '1px 2px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                    <button onClick={() => removeQuoteItem(it._i)} disabled={salesLocked}
-                                      style={{ background: 'none', border: 'none', cursor: salesLocked ? 'not-allowed' : 'pointer', color: '#D1D5DB', fontSize: 14, lineHeight: 1, padding: '0 3px', opacity: salesLocked ? 0.5 : 1 }}>×</button>
-                                  </td>
                                 </tr>
                               );
                             })}
@@ -305,7 +369,7 @@ export default function ProjectQuoteSection(props) {
                             {/* Ligne d'ajout rapide */}
                             {!isCollapsed && (
                               <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #E5E7EB' }}>
-                                <td/>
+                                <td/><td/>
                                 <td style={{ padding: '4px 6px' }}>
                                   <input value={nd.name || ''} placeholder={`+ Ajouter ${typeLabels[type].toLowerCase()}…`}
                                     readOnly={salesLocked}
@@ -338,7 +402,6 @@ export default function ProjectQuoteSection(props) {
                                     onChange={e => setQuoteNewRow(m => ({ ...m, [type]: { ...m[type], url: e.target.value } }))}
                                     style={{ ...iS, fontSize: 10, color: '#9CA3AF' }}/>
                                 </td>
-                                <td/>
                               </tr>
                             )}
                           </React.Fragment>
@@ -350,6 +413,7 @@ export default function ProjectQuoteSection(props) {
               </div>
             );
           })()}
+
 
           {/* Totaux */}
           {quoteBuilderItems.length > 0 && (() => {

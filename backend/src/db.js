@@ -580,6 +580,29 @@ async function applyMigrations() {
   // author_name est déjà lu par ProjectMediaSection.jsx côté frontend mais n'existait pas en DB.
   await run('site_media: author_name',
     `ALTER TABLE site_media ADD COLUMN IF NOT EXISTS author_name TEXT`);
+
+  // ── Devis/Facture — catégories, descriptions et niveau de détail (2026-07) ──
+  await run('quotes: category_notes',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS category_notes JSONB DEFAULT '{}'::jsonb`);
+  await run('quotes: detail_level',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS detail_level TEXT NOT NULL DEFAULT 'detailed'`);
+  await run('invoices: category_notes',
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS category_notes JSONB DEFAULT '{}'::jsonb`);
+  await run('invoices: detail_level',
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS detail_level TEXT NOT NULL DEFAULT 'detailed'`);
+  // type des lignes de facture — permet de regrouper par catégorie côté édition de facture,
+  // comme le devis (matériaux/main d'œuvre/sous-traitance/autre). Backfill depuis le préfixe
+  // de description existant ("Matériaux · ...") pour les factures déjà créées.
+  await run('invoice_items: type',
+    `ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'other'`);
+  await run('invoice_items: backfill type from description prefix',
+    `UPDATE invoice_items SET type = CASE
+       WHEN description LIKE 'Matériaux ·%' THEN 'material'
+       WHEN description LIKE 'Main d''œuvre ·%' THEN 'labor'
+       WHEN description LIKE 'Sous-traitance ·%' THEN 'subcontractor'
+       ELSE 'other'
+     END
+     WHERE type = 'other'`);
 }
 
 export async function initializeDatabase() {

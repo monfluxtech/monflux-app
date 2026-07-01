@@ -3302,6 +3302,19 @@ export default function ProjectDetail() {
     });
   };
   const isPdfColOn = (col) => quotePdfCols[col] !== false;
+  const [invoicePdfCols, setInvoicePdfCols] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('monflux-invoice-pdf-cols') || '{}'); } catch { return {}; }
+  });
+  const toggleInvoicePdfCol = (col) => {
+    setInvoicePdfCols(prev => {
+      const next = { ...prev, [col]: prev[col] === false ? true : false };
+      localStorage.setItem('monflux-invoice-pdf-cols', JSON.stringify(next));
+      setUiPref('invoice_pdf_cols', next);
+      return next;
+    });
+  };
+  const isInvoicePdfColOn = (col) => invoicePdfCols[col] !== false;
+  const invoicePdfColsParam = () => ['qty', 'unit', 'unit_price'].filter((c) => isInvoicePdfColOn(c)).join(',') || 'qty,unit,unit_price';
   const [projectRfqs, setProjectRfqs] = useState([]);
   const [showRfqForm, setShowRfqForm] = useState(false);
   const [rfqForm, setRfqForm] = useState({ title: '', specialty: '', description: '', deadline: '' });
@@ -3317,6 +3330,8 @@ export default function ProjectDetail() {
   const [contractSavingId, setContractSavingId] = useState(null);
   const [contractEnrichingId, setContractEnrichingId] = useState(null);
   const quoteTimer = useRef(null);
+  const quoteCategoryNotesTimer = useRef(null);
+  const [floCategoryLoading, setFloCategoryLoading] = useState(null);
   // B6 — Chantier
   const [materialOrders, setMaterialOrders] = useState([]);
   const [showOrderForm, setShowOrderForm] = useState(false);
@@ -3487,7 +3502,8 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (uiPrefs.quote_markup !== undefined) setQuoteMarkup(Number(uiPrefs.quote_markup));
     if (uiPrefs.quote_pdf_cols !== undefined) setQuotePdfCols(uiPrefs.quote_pdf_cols);
-  }, [uiPrefs.quote_markup, uiPrefs.quote_pdf_cols]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (uiPrefs.invoice_pdf_cols !== undefined) setInvoicePdfCols(uiPrefs.invoice_pdf_cols);
+  }, [uiPrefs.quote_markup, uiPrefs.quote_pdf_cols, uiPrefs.invoice_pdf_cols]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     setLoading(true);
@@ -5437,7 +5453,10 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
           description: item.description || '',
           qty: item.qty ?? 1,
           unit_price: item.unit_price ?? '',
+          type: item.type || 'other',
         })),
+        category_notes: payload.category_notes || {},
+        detail_level: payload.detail_level || 'detailed',
       },
     }));
   };
@@ -5486,7 +5505,8 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     });
   };
 
-  const addInvoiceDraftItem = (invoiceId) => {
+  const addInvoiceDraftItem = (invoiceId, typeOrOptions = 'other') => {
+    const opts = typeof typeOrOptions === 'string' ? { type: typeOrOptions } : (typeOrOptions || {});
     setInvoiceDrafts((prev) => {
       const draft = prev[invoiceId];
       if (!draft) return prev;
@@ -5494,7 +5514,13 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         ...prev,
         [invoiceId]: {
           ...draft,
-          items: [...(draft.items || []), { id: null, description: '', qty: 1, unit_price: '' }],
+          items: [...(draft.items || []), {
+            id: null,
+            description: opts.description || '',
+            qty: opts.qty ?? 1,
+            unit_price: opts.unit_price ?? '',
+            type: opts.type || 'other',
+          }],
         },
       };
     });
@@ -5524,12 +5550,15 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         client_email: draft.client_email,
         due_date: draft.due_date || null,
         status: draft.status || 'draft',
+        category_notes: draft.category_notes || {},
+        detail_level: draft.detail_level || 'detailed',
         items: (draft.items || [])
           .filter((item) => String(item.description || '').trim())
           .map((item) => ({
             description: item.description,
             qty: Number(item.qty) || 0,
             unit_price: Number(item.unit_price) || 0,
+            type: item.type || 'other',
           })),
       };
       const { data } = await invoicesApi.update(invoiceId, payload);
@@ -5602,16 +5631,16 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         unit_price: Number(item.unit_price) || 0,
         total: (Number(item.qty) || 1) * (Number(item.unit_price) || 0),
         order_idx: index,
+        type: item.type || 'other',
       }))
       .filter((item) => item.description && (item.qty > 0 || item.unit_price > 0));
     if (!items.length) {
       alert('Aucune ligne de devis sélectionnée.');
       return;
     }
-    const notes = Object.entries(invoiceCategoryNotes)
-      .filter(([, text]) => String(text || '').trim())
-      .map(([type, text]) => `${({ material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' }[type] || 'Autre')} — ${text.trim()}`)
-      .join('\n\n');
+    const categoryNotes = Object.fromEntries(
+      Object.entries(invoiceCategoryNotes).filter(([, text]) => String(text || '').trim())
+    );
     setSavingInvoice(true);
     try {
       const { data } = await invoicesApi.create({
@@ -5620,7 +5649,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         client_name: newInvoice.client_name || project.client_name || '',
         client_email: newInvoice.client_email || project.client_email || '',
         due_date: newInvoice.due_date || undefined,
-        notes: notes || undefined,
+        category_notes: Object.keys(categoryNotes).length ? categoryNotes : undefined,
         items,
       });
       setProjectInvoices((prev) => [data, ...prev]);
@@ -5746,6 +5775,53 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
   const scheduleQuoteSave = (items) => {
     clearTimeout(quoteTimer.current);
     quoteTimer.current = setTimeout(() => saveQuoteItems(items), 900);
+  };
+
+  const updateQuoteCategoryNote = (type, text) => {
+    if (!quoteBuilderQuote) return;
+    const next = { ...(quoteBuilderQuote.category_notes || {}), [type]: text };
+    setQuoteBuilderQuote((q) => ({ ...q, category_notes: next }));
+    clearTimeout(quoteCategoryNotesTimer.current);
+    quoteCategoryNotesTimer.current = setTimeout(async () => {
+      try { await quotesApi.update(quoteBuilderQuote.id, { category_notes: next }); } catch {}
+    }, 900);
+  };
+
+  const setQuoteDetailLevel = async (level) => {
+    if (!quoteBuilderQuote) return;
+    setQuoteBuilderQuote((q) => ({ ...q, detail_level: level }));
+    try { await quotesApi.update(quoteBuilderQuote.id, { detail_level: level }); } catch {}
+  };
+
+  // Assist IA partagé devis/facture — rédige une description de catégorie à partir de ses postes.
+  // Ne touche pas l'état lui-même : retourne le texte, l'appelant décide où l'enregistrer
+  // (devis vs. panneau de création de facture vs. facture déjà créée).
+  const floCategoryAssist = async (type, items, mode = 'quote') => {
+    const typeLabels = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' };
+    if (!items?.length) return null;
+    setFloCategoryLoading(type);
+    try {
+      const itemsList = items.map((it) => `- ${it.name || it.description || 'Poste'} (${Number(it.qty) || 1} ${it.unit || ''} × ${Number(it.unit_price) || 0}$)`).join('\n');
+      const prompt = `Tu es Florence, assistante IA MONFLUX. Rédige une description ${mode === 'invoice' ? 'de facturation' : 'de devis'} claire et professionnelle en français québécois pour la catégorie "${typeLabels[type] || type}" d'un projet de construction, à partir des postes suivants :\n${itemsList}\n\nRéponds UNIQUEMENT avec un objet JSON strict : {"description": "..."} — 1 à 2 phrases concrètes, sans jargon inutile.`;
+      const token = localStorage.getItem('token');
+      const BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
+      const res = await fetch(`${BASE}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) return null;
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let txt = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        for (const line of dec.decode(value).split('\n').filter((l) => l.startsWith('data: '))) {
+          try { const evt = JSON.parse(line.slice(6)); if (evt.type === 'text') txt += evt.text; } catch {}
+        }
+      }
+      const jsonMatch = txt.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+      const parsed = JSON.parse(jsonMatch[0]);
+      return parsed.description || null;
+    } catch (e) { console.error(e); return null; } finally { setFloCategoryLoading(null); }
   };
 
   const syncDraftContractForQuote = async (quote, options = {}) => {
@@ -8818,6 +8894,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           sendContract={sendContract}
           deleteContract={deleteContract}
           normalizeContractHtml={normalizeContractHtml}
+          floCategoryAssist={floCategoryAssist}
+          updateQuoteCategoryNote={updateQuoteCategoryNote}
+          setQuoteDetailLevel={setQuoteDetailLevel}
+          floCategoryLoading={floCategoryLoading}
         />
 
 
@@ -8976,6 +9056,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           describeQuoteItem={describeQuoteItem}
           invoiceCategoryNotes={invoiceCategoryNotes}
           setInvoiceCategoryNotes={setInvoiceCategoryNotes}
+          floCategoryAssist={floCategoryAssist}
+          floCategoryLoading={floCategoryLoading}
+          toggleInvoicePdfCol={toggleInvoicePdfCol}
+          isInvoicePdfColOn={isInvoicePdfColOn}
+          invoicePdfColsParam={invoicePdfColsParam}
         />
 
         {/* ── Demandes de modification ── */}

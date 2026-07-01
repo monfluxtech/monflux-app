@@ -34,51 +34,105 @@ function clientBlock(doc, y, clientName, clientEmail) {
   return y + 50;
 }
 
-// cols: Set of column keys to show — 'qty', 'unit', 'unit_price'
-// TOTAL always shown, DESCRIPTION always shown
-function itemsTable(doc, y, items, cols = new Set(['qty', 'unit', 'unit_price'])) {
-  const PAGE_BOTTOM = doc.page.height - doc.page.margins.bottom - 100;
-  const showQty   = cols.has('qty');
-  const showUnit  = cols.has('unit');
-  const showPrice = cols.has('unit_price');
+const TYPE_LABELS = { material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' };
+const TYPE_ORDER = ['material', 'labor', 'subcontractor', 'other'];
 
-  // Layout: desc takes remaining space, right columns are fixed
-  const xDesc  = 58;
-  const wDesc  = showPrice ? 260 : (showQty ? 300 : 370);
-  const xQty   = xDesc + wDesc + 4;
-  const wQty   = 44;
-  const xUnit  = xQty + (showQty ? wQty + 4 : 0);
-  const wUnit  = 44;
-  const xPrice = xUnit + (showUnit ? wUnit + 4 : 0);
-  const wPrice = 70;
-  const xTotal = showPrice ? xPrice + wPrice + 4 : showQty ? xQty + (showUnit ? wUnit + 4 : 0) : xDesc + wDesc + 4;
-  const wTotal = 68;
+// Colonnes calculées de droite à gauche à partir du bord droit du tableau (545), pour garantir
+// qu'aucune colonne ne dépasse jamais la largeur du tableau — quelle que soit la combinaison de
+// colonnes affichées. (L'ancien calcul gauche→droite pouvait dépasser de ~15pt et couper le TOTAL.)
+function computeColumns(cols) {
+  const TABLE_LEFT = 50, TABLE_RIGHT = 545, PAD = 8, GAP = 6;
+  const showQty = cols.has('qty'), showUnit = cols.has('unit'), showPrice = cols.has('unit_price');
+  const wQty = 40, wUnit = 42, wPrice = 66, wTotal = 66;
+
+  let cursor = TABLE_RIGHT;
+  cursor -= wTotal;
+  const xTotal = cursor;
+  let xPrice, xUnit, xQty;
+  if (showPrice) { cursor -= (GAP + wPrice); xPrice = cursor; }
+  if (showUnit)  { cursor -= (GAP + wUnit);  xUnit  = cursor; }
+  if (showQty)   { cursor -= (GAP + wQty);   xQty   = cursor; }
+  const xDesc = TABLE_LEFT + PAD;
+  const wDesc = cursor - GAP - xDesc;
+
+  return { showQty, showUnit, showPrice, xDesc, wDesc, xQty, wQty, xUnit, wUnit, xPrice, wPrice, xTotal, wTotal };
+}
+
+// items: liste plate avec un champ `type` (material|labor|subcontractor|other).
+// categoryNotes: { [type]: description libre }.
+// detailLevel: 'summary' (catégorie + description + total seulement) | 'detailed' (+ chaque ligne numérotée).
+function itemsTable(doc, y, items, cols = new Set(['qty', 'unit', 'unit_price']), categoryNotes = {}, detailLevel = 'detailed') {
+  const PAGE_BOTTOM = doc.page.height - doc.page.margins.bottom - 100;
+  const C = computeColumns(cols);
 
   const drawHeader = (atY) => {
     doc.rect(50, atY, 495, 20).fill(DARK);
     doc.fontSize(8).font('Helvetica-Bold').fillColor('white');
-    doc.text('DESCRIPTION', xDesc, atY + 6, { width: wDesc, lineBreak: false });
-    if (showQty)   doc.text('QTÉ',       xQty,   atY + 6, { width: wQty,   align: 'right', lineBreak: false });
-    if (showUnit)  doc.text('UNITÉ',     xUnit,  atY + 6, { width: wUnit,  align: 'left',  lineBreak: false });
-    if (showPrice) doc.text('PRIX UNIT.',xPrice, atY + 6, { width: wPrice, align: 'right', lineBreak: false });
-    doc.text('TOTAL', xTotal, atY + 6, { width: wTotal, align: 'right', lineBreak: false });
+    doc.text('DESCRIPTION', C.xDesc, atY + 6, { width: C.wDesc, lineBreak: false });
+    if (C.showQty)   doc.text('QTÉ',        C.xQty,   atY + 6, { width: C.wQty,   align: 'right', lineBreak: false });
+    if (C.showUnit)  doc.text('UNITÉ',      C.xUnit,  atY + 6, { width: C.wUnit,  align: 'left',  lineBreak: false });
+    if (C.showPrice) doc.text('PRIX UNIT.', C.xPrice, atY + 6, { width: C.wPrice, align: 'right', lineBreak: false });
+    doc.text('TOTAL', C.xTotal, atY + 6, { width: C.wTotal, align: 'right', lineBreak: false });
     return atY + 20;
   };
+  const ensureRoom = (needed, atY) => {
+    if (atY + needed > PAGE_BOTTOM) { doc.addPage(); return drawHeader(50); }
+    return atY;
+  };
+
   y = drawHeader(y);
   let subtotal = 0;
-  items.forEach((item, i) => {
-    if (y + 18 > PAGE_BOTTOM) { doc.addPage(); y = drawHeader(50); }
-    const lineTotal = (Number(item.qty) || 1) * (Number(item.unit_price) || Number(item.total) || 0);
-    subtotal += lineTotal;
-    if (i % 2 === 1) doc.rect(50, y, 495, 18).fill('#fafafa');
-    doc.fontSize(9).font('Helvetica').fillColor(DARK);
-    doc.text(item.description || item.name || '', xDesc, y + 4, { width: wDesc, lineBreak: false });
-    if (showQty)   doc.text(String(item.qty || 1),                    xQty,   y + 4, { width: wQty,   align: 'right', lineBreak: false });
-    if (showUnit)  doc.text(item.unit || '',                           xUnit,  y + 4, { width: wUnit,  align: 'left',  lineBreak: false });
-    if (showPrice) doc.text(`${Number(item.unit_price||0).toFixed(2)} $`, xPrice, y + 4, { width: wPrice, align: 'right', lineBreak: false });
-    doc.text(`${lineTotal.toFixed(2)} $`, xTotal, y + 4, { width: wTotal, align: 'right', lineBreak: false });
+  let zebra = 0;
+
+  const groups = TYPE_ORDER
+    .map((type) => ({ type, items: items.filter((it) => (it.type || 'other') === type) }))
+    .filter((g) => g.items.length > 0);
+  // Items dont le type ne matche aucun des types connus (ne devrait pas arriver, filet de sécurité)
+  const knownIds = new Set(groups.flatMap((g) => g.items));
+  const orphans = items.filter((it) => !knownIds.has(it));
+  if (orphans.length) groups.push({ type: 'other', items: orphans });
+
+  groups.forEach((group) => {
+    const groupTotal = group.items.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.unit_price) || Number(it.total) || 0), 0);
+    const note = categoryNotes?.[group.type];
+    const noteHeight = note ? doc.fontSize(8).font('Helvetica').heightOfString(note, { width: 495 - 16 }) : 0;
+    const headerHeight = 18 + (note ? noteHeight + 6 : 0);
+    y = ensureRoom(headerHeight, y);
+
+    doc.rect(50, y, 495, 18).fill('#EFEFEF');
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(DARK)
+      .text(TYPE_LABELS[group.type] || 'Autre', 58, y + 5, { width: 300, lineBreak: false });
+    doc.text(`${groupTotal.toFixed(2)} $`, C.xTotal, y + 5, { width: C.wTotal, align: 'right', lineBreak: false });
     y += 18;
+    if (note) {
+      doc.fontSize(8).font('Helvetica-Oblique').fillColor(GRAY).text(note, 58, y + 3, { width: 495 - 16 });
+      y = doc.y + 6;
+    }
+
+    if (detailLevel !== 'summary') {
+      group.items.forEach((item, i) => {
+        const desc = item.description || item.name || '';
+        const descHeight = doc.fontSize(9).font('Helvetica').heightOfString(desc, { width: C.wDesc });
+        const rowHeight = Math.max(16, descHeight + 6);
+        y = ensureRoom(rowHeight, y);
+
+        if (zebra % 2 === 1) doc.rect(50, y, 495, rowHeight).fill('#fafafa');
+        zebra += 1;
+        doc.fontSize(9).font('Helvetica').fillColor(GRAY).text(String(i + 1), C.xDesc, y + 4, { width: 16, lineBreak: false });
+        doc.fillColor(DARK).text(desc, C.xDesc + 16, y + 4, { width: C.wDesc - 16 });
+        const lineTotal = (Number(item.qty) || 1) * (Number(item.unit_price) || Number(item.total) || 0);
+        subtotal += lineTotal;
+        if (C.showQty)   doc.text(String(item.qty || 1), C.xQty, y + 4, { width: C.wQty, align: 'right', lineBreak: false });
+        if (C.showUnit)  doc.text(item.unit || '', C.xUnit, y + 4, { width: C.wUnit, align: 'left', lineBreak: false });
+        if (C.showPrice) doc.text(`${Number(item.unit_price || 0).toFixed(2)} $`, C.xPrice, y + 4, { width: C.wPrice, align: 'right', lineBreak: false });
+        doc.text(`${lineTotal.toFixed(2)} $`, C.xTotal, y + 4, { width: C.wTotal, align: 'right', lineBreak: false });
+        y += rowHeight;
+      });
+    } else {
+      subtotal += groupTotal;
+    }
   });
+
   return { y, subtotal };
 }
 
@@ -139,7 +193,7 @@ export async function generateQuotePDF(q, colsParam) {
     y = clientBlock(doc, y, q.client_name, q.client_email);
     if (q.title) { doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(q.title, 50, y, { lineBreak: false }); y += 20; }
     if (items.length > 0) {
-      const { y: y2, subtotal } = itemsTable(doc, y, items, cols);
+      const { y: y2, subtotal } = itemsTable(doc, y, items, cols, q.category_notes || {}, q.detail_level || 'detailed');
       totalsBlock(doc, y2, subtotal, q.tps_pct || 5, q.tvq_pct || 9.975);
     } else if (q.budget_min || q.budget_max) {
       doc.fontSize(11).font('Helvetica').fillColor(GRAY).text('Estimation de prix :', 50, y, { lineBreak: false });
@@ -150,10 +204,14 @@ export async function generateQuotePDF(q, colsParam) {
   });
 }
 
-export async function generateInvoicePDF(inv) {
+export async function generateInvoicePDF(inv, colsParam) {
   const { rows: items } = await query(
     `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY order_idx`, [inv.id]
   );
+  const DEFAULT_COLS = new Set(['qty', 'unit', 'unit_price']);
+  const cols = colsParam
+    ? new Set(String(colsParam).split(',').map(s => s.trim()).filter(Boolean))
+    : DEFAULT_COLS;
   return pdfToBuffer((doc) => {
     const co = { name: inv.co_name || inv.company_name, phone: inv.co_phone || inv.company_phone, email: inv.co_email || inv.company_email };
     let y = header(doc, co, 'FACTURE', inv.number, inv.created_at);
@@ -162,7 +220,7 @@ export async function generateInvoicePDF(inv) {
       doc.fontSize(9).font('Helvetica').fillColor(GRAY)
         .text(`Échéance : ${new Date(inv.due_date).toLocaleDateString('fr-CA', { year:'numeric', month:'long', day:'numeric' })}`, 50, y - 30, { align: 'right', width: 495 });
     }
-    const { y: y2, subtotal } = itemsTable(doc, y, items);
+    const { y: y2, subtotal } = itemsTable(doc, y, items, cols, inv.category_notes || {}, inv.detail_level || 'detailed');
     totalsBlock(doc, y2, subtotal, inv.tps_pct || 5, inv.tvq_pct || 9.975);
     pdfFooter(doc);
   });
@@ -203,7 +261,7 @@ router.get('/invoice/:id', async (req, res) => {
   );
   if (!inv) return res.status(404).json({ error: 'Facture non trouvée' });
   try {
-    const buf = await generateInvoicePDF(inv);
+    const buf = await generateInvoicePDF(inv, req.query.cols);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="facture-${inv.number}.pdf"`);
     res.send(buf);
