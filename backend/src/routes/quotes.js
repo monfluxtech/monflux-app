@@ -42,7 +42,49 @@ router.get('/:id', async (req, res) => {
   const { rows: [q] } = await query(`SELECT * FROM quotes WHERE id = $1 AND company_id = $2`, [req.params.id, req.company_id]);
   if (!q) return res.status(404).json({ error: 'Soumission non trouvée' });
   const { rows: items } = await query(`SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`, [req.params.id]);
-  res.json({ ...q, items });
+  // signature_data peut être chiffré (opaque, base64) — utiliser GET /:id/signature pour la valeur en clair.
+  const { signature_data, ...safeQuote } = q;
+  res.json({ ...safeQuote, items });
+});
+
+// GET /api/quotes/:id/signature — déchiffre et retourne la signature (image ou nom tapé), usage interne authentifié
+router.get('/:id/signature', async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      `SELECT signature_data, signature_encrypted, signature_type, signer_name, signed_at, signed_ip, signed_document_hash
+       FROM quotes WHERE id = $1 AND company_id = $2`,
+      [req.params.id, req.company_id]
+    );
+    if (!q) return res.status(404).json({ error: 'Soumission non trouvée' });
+    if (!q.signature_data) return res.status(404).json({ error: 'Aucune signature enregistrée' });
+
+    let signatureData = q.signature_data;
+    if (q.signature_encrypted) {
+      const encryptionKey = process.env.SIGNATURE_ENCRYPTION_KEY || process.env.JWT_SECRET;
+      try {
+        const { rows: [dec] } = await query(
+          `SELECT pgp_sym_decrypt(decode($1, 'base64'), $2) AS dec`,
+          [q.signature_data, encryptionKey]
+        );
+        signatureData = dec.dec;
+      } catch (decErr) {
+        console.error('Signature decryption failed:', decErr.message);
+        return res.status(500).json({ error: 'Erreur de déchiffrement de la signature' });
+      }
+    }
+
+    res.json({
+      signature_data: signatureData,
+      signature_type: q.signature_type,
+      signer_name: q.signer_name,
+      signed_at: q.signed_at,
+      signed_ip: q.signed_ip,
+      signed_document_hash: q.signed_document_hash,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 router.post('/', async (req, res) => {

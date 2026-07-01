@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
 
 const STATUS_OPTIONS = {
@@ -67,6 +67,18 @@ export default function ProjectChangeOrdersSection({
     }
   };
 
+  const handleCommit = (changeOrderId) => {
+    if (savingId === changeOrderId) return;
+    saveRow(changeOrderId);
+  };
+
+  const handleCreatorKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      createRow();
+    }
+  };
+
   return (
     <ProjectSection
       sectionId="s-extras"
@@ -104,13 +116,13 @@ export default function ProjectChangeOrdersSection({
             <tbody>
               <tr style={{ background: '#FFFBF5', borderBottom: '2px solid #FED7AA' }}>
                 <td style={{ padding: '6px 8px' }}>
-                  <input className="input" value={creator.title} onChange={(e) => setCreator((row) => ({ ...row, title: e.target.value }))} placeholder="Première ligne éditable" />
+                  <input className="input" value={creator.title} onChange={(e) => setCreator((row) => ({ ...row, title: e.target.value }))} onKeyDown={handleCreatorKeyDown} placeholder="Première ligne éditable" />
                 </td>
                 <td style={{ padding: '6px 8px' }}>
-                  <input className="input" value={creator.description} onChange={(e) => setCreator((row) => ({ ...row, description: e.target.value }))} placeholder="Description du changement" />
+                  <input className="input" value={creator.description} onChange={(e) => setCreator((row) => ({ ...row, description: e.target.value }))} onKeyDown={handleCreatorKeyDown} placeholder="Description du changement" />
                 </td>
                 <td style={{ padding: '6px 8px' }}>
-                  <input className="input text-right" type="number" min="0" step="0.01" value={creator.amount} onChange={(e) => setCreator((row) => ({ ...row, amount: e.target.value }))} placeholder="0.00" />
+                  <input className="input text-right" type="number" min="0" step="0.01" value={creator.amount} onChange={(e) => setCreator((row) => ({ ...row, amount: e.target.value }))} onKeyDown={handleCreatorKeyDown} placeholder="0.00" />
                 </td>
                 <td style={{ padding: '6px 8px' }}>
                   <select className="input" value={creator.status} onChange={(e) => setCreator((row) => ({ ...row, status: e.target.value }))}>
@@ -118,7 +130,7 @@ export default function ProjectChangeOrdersSection({
                   </select>
                 </td>
                 <td style={{ padding: '6px 8px' }}>
-                  <input className="input" value={creator.notes} onChange={(e) => setCreator((row) => ({ ...row, notes: e.target.value }))} placeholder="Notes internes / portail" />
+                  <input className="input" value={creator.notes} onChange={(e) => setCreator((row) => ({ ...row, notes: e.target.value }))} onKeyDown={handleCreatorKeyDown} placeholder="Notes internes / portail" />
                 </td>
                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                   <div className="flex items-center justify-center gap-2">
@@ -138,17 +150,17 @@ export default function ProjectChangeOrdersSection({
                 return (
                   <tr key={changeOrder.id} style={{ borderBottom: '1px solid #FFF7ED', background: '#fff' }}>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={draft.title} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, title: e.target.value } }))} />
+                      <input className="input" value={draft.title} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, title: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)} />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={draft.description} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, description: e.target.value } }))} />
+                      <input className="input" value={draft.description} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, description: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)} />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input text-right" type="number" min="0" step="0.01" value={draft.amount} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, amount: e.target.value } }))} />
+                      <input className="input text-right" type="number" min="0" step="0.01" value={draft.amount} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, amount: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)} />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
                       <div style={{ display: 'grid', gap: 6 }}>
-                        <select className="input" value={draft.status} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, status: e.target.value } }))}>
+                        <select className="input" value={draft.status} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, status: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)}>
                           {Object.entries(STATUS_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                         </select>
                         <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}15`, border: `1px solid ${color}35`, borderRadius: 999, padding: '2px 8px', justifySelf: 'start' }}>
@@ -157,13 +169,11 @@ export default function ProjectChangeOrdersSection({
                       </div>
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={draft.notes} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, notes: e.target.value } }))} />
+                      <input className="input" value={draft.notes} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, notes: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)} />
                     </td>
                     <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                       <div className="flex items-center justify-center gap-2">
-                        <button type="button" className="btn-secondary text-xs" onClick={() => saveRow(changeOrder.id)} disabled={savingId === changeOrder.id}>
-                          {savingId === changeOrder.id ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Enregistrer
-                        </button>
+                        {savingId === changeOrder.id && <Loader2 size={13} className="animate-spin text-orange-500" />}
                         <button type="button" className="btn-ghost p-2 text-gray-400 hover:text-red-500" title="Supprimer" onClick={() => removeChangeOrderRow(changeOrder.id)}>
                           <Trash2 size={14} />
                         </button>

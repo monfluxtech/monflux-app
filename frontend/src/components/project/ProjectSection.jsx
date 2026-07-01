@@ -24,7 +24,7 @@ export default function ProjectSection({
           width: '100%',
           border: 'none',
           background: 'transparent',
-          padding: '22px 56px 20px',
+          padding: '22px 32px 18px',
           display: 'flex',
           alignItems: 'flex-start',
           gap: 14,
@@ -106,7 +106,7 @@ export default function ProjectSection({
       </button>
 
       {expanded && (
-        <div style={{ padding: '0 56px 44px', ...bodyStyle }}>
+        <div style={{ padding: '0 32px 36px', ...bodyStyle }}>
           {children}
         </div>
       )}

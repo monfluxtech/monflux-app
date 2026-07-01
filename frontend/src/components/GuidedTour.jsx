@@ -1,97 +1,259 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { X, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../store';
 
-const TOUR_VERSION = 1;
+const TOUR_CONTEXTS = {
+  global: {
+    version: 2,
+    steps: [
+      {
+        target: null,
+        title: 'Salut, moi c\'est Flo 👋',
+        desc: 'Je suis ton assistante IA intégrée à MONFLUX. Je vais te faire faire le tour rapidement — ensuite je reste disponible partout dans l’app pour analyser, résumer et générer pour toi.',
+        position: 'center',
+      },
+      {
+        target: '.app-sidebar',
+        title: 'Navigation simple et claire',
+        desc: 'Le menu regroupe les modules utiles à ton métier. L’objectif est que tu trouves tout sans chercher et avec le moins de clics possible.',
+        position: 'right',
+      },
+      {
+        target: '[href="/dashboard"]',
+        title: 'Tableau de bord',
+        desc: 'Ta vue cockpit: alertes, projets actifs, finances et priorités du jour.',
+        position: 'right',
+      },
+      {
+        target: '[href="/projets"]',
+        title: 'Projets',
+        desc: 'Chaque chantier se pilote dans une fiche unique: phases, équipe, devis, dépenses, factures, conformité et portails.',
+        position: 'right',
+      },
+      {
+        target: '[href="/chat"]',
+        title: 'Florence — Flo',
+        desc: 'Tu peux me parler ici en tout temps pour résumer, rédiger, planifier ou trouver les prochaines actions.',
+        position: 'right',
+      },
+      {
+        target: '[href="/parametres"]',
+        title: 'Paramètres',
+        desc: 'Tu règles ici les modèles, l’équipe, Flo, les modules et les automatisations de l’entreprise.',
+        position: 'right',
+      },
+      {
+        target: null,
+        title: 'C’est parti 🚀',
+        desc: 'Tu peux relancer un tour contextuel à tout moment depuis le menu. MONFLUX est pensé pour défiler, éditer directement et cliquer le moins possible.',
+        position: 'center',
+      },
+    ],
+  },
+  project: {
+    version: 1,
+    steps: [
+      {
+        target: '#s-hero',
+        title: 'La fiche projet en un coup d’œil',
+        desc: 'Le hero résume l’essentiel: état du chantier, dates, santé, accès rapides, punch et portails.',
+        position: 'center',
+      },
+      {
+        target: '.ai-float-btn',
+        title: 'Flo dans le projet',
+        desc: 'Le bouton Flo suit la fiche projet. Utilise-le pour générer, résumer, analyser ou remplir des éléments sans quitter le chantier.',
+        position: 'left',
+      },
+      {
+        target: '#s-pipeline',
+        title: 'Phases du projet',
+        desc: 'Le Gantt et les phases servent de colonne vertébrale: statut, ressources, dépendances et dates réelles.',
+        position: 'center',
+      },
+      {
+        target: '#s-equipe',
+        title: 'Équipe et conformité',
+        desc: 'Tu gères ici les ressources, les affectations, la conformité et les recommandations de Flo par métier.',
+        position: 'center',
+      },
+      {
+        target: '#s-soumission',
+        title: 'Devis & contrat',
+        desc: 'Le devis est éditable directement dans les cellules. Tu ajustes rapidement les postes, montants, sélections et documents liés.',
+        position: 'center',
+      },
+      {
+        target: '#s-punch',
+        title: 'Punch et dépenses',
+        desc: 'Le punch suit le réel terrain, avec saisie rapide, chronos en cours et vue semaine pour comparer prévu vs réalisé.',
+        position: 'center',
+      },
+      {
+        target: '#s-expenses',
+        title: 'Factures fournisseurs',
+        desc: 'Même logique: première ligne éditable, pièces jointes reçus et mise à jour directe sans ouvrir de formulaire séparé.',
+        position: 'center',
+      },
+      {
+        target: '#s-invoices',
+        title: 'Factures client',
+        desc: 'Tu peux créer à partir du devis, facturer partiellement, suivre le statut et éditer les lignes directement dans la section.',
+        position: 'center',
+      },
+      {
+        target: '#s-extras',
+        title: 'Demandes de modification',
+        desc: 'Les changements client ou chantier se suivent ici comme un tableau vivant, relié au devis et aux portails.',
+        position: 'center',
+      },
+      {
+        target: '#s-nonconformites',
+        title: 'Non-conformités, quittances et dénonciations',
+        desc: 'Toute la conformité terrain et légale reste visible dans la fiche projet, en édition directe et sans navigation lourde.',
+        position: 'center',
+      },
+      {
+        target: null,
+        title: 'Une fiche projet pensée pour défiler',
+        desc: 'L’idée générale: glisser verticalement dans un seul flux, éditer dans place et réduire au maximum les allers-retours et les clics.',
+        position: 'center',
+      },
+    ],
+  },
+  settings: {
+    version: 1,
+    steps: [
+      {
+        target: null,
+        title: 'Paramètres MONFLUX',
+        desc: 'Cette section centralise les réglages d’entreprise: profils, équipe, modèles, Flo et modules.',
+        position: 'center',
+      },
+      {
+        target: '[href="/parametres"]',
+        title: 'Réglages structurants',
+        desc: 'On configure ici ce qui doit être standardisé: modèles, processus et logique partagée entre tous les projets.',
+        position: 'right',
+      },
+      {
+        target: null,
+        title: 'Modèles et automatisations',
+        desc: 'Les modèles de contrats, de documents et les préférences de Flo servent à accélérer toute l’opération sans surpersonnaliser.',
+        position: 'center',
+      },
+    ],
+  },
+  chat: {
+    version: 1,
+    steps: [
+      {
+        target: null,
+        title: 'Florence — Flo',
+        desc: 'Ici, tu centralises les conversations avec l’assistante IA: mémoire, brouillons, résumés et aides opérationnelles.',
+        position: 'center',
+      },
+      {
+        target: null,
+        title: 'Conversations conservées',
+        desc: 'Les conversations utiles restent visibles à gauche pour reprendre un échange sans repartir de zéro.',
+        position: 'center',
+      },
+    ],
+  },
+};
 
-const STEPS = [
+// Routes internes protégées par <Guard> dans App.jsx — seules celles-ci peuvent déclencher l'onboarding Flo.
+// Liste blanche volontaire (plutôt qu'une exclusion des routes publiques) : toute nouvelle route publique/portail
+// ajoutée plus tard est exclue par défaut, sans avoir à penser à la blacklister explicitement.
+const INTERNAL_EXACT_ROUTES = ['/dashboard', '/leads', '/soumissions', '/factures', '/sous-traitants', '/contacts', '/rapport', '/contrats', '/commandes', '/factures-achat', '/punch', '/chat', '/parametres'];
+const INTERNAL_PREFIX_ROUTES = ['/projets'];
+
+function isInternalAppRoute(pathname) {
+  if (INTERNAL_EXACT_ROUTES.includes(pathname)) return true;
+  return INTERNAL_PREFIX_ROUTES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function getTourContext(pathname) {
+  if (pathname.startsWith('/projets/')) return 'project';
+  if (pathname.startsWith('/parametres')) return 'settings';
+  if (pathname.startsWith('/chat')) return 'chat';
+  return 'global';
+}
+
+function shouldAutoLaunch(contextKey) {
+  const savedVersion = parseInt(localStorage.getItem(`mf_tour_v_${contextKey}`) || '0', 10);
+  const targetVersion = TOUR_CONTEXTS[contextKey]?.version || 1;
+  if (contextKey === 'global' && localStorage.getItem('mf_tour_pending') === '1') return true;
+  if (savedVersion < targetVersion) return true;
+  return false;
+}
+
+const FALLBACK_STEPS = [
   {
     target: null,
     title: 'Salut, moi c\'est Flo 👋',
-    desc: 'Je suis ton assistante IA intégrée à MONFLUX. Je vais te faire faire le tour en 2 minutes — tu pourras me retrouver en tout temps dans l\'application pour analyser tes projets ou générer des documents.',
-    position: 'center',
-  },
-  {
-    target: '.app-sidebar',
-    title: 'Ton espace de navigation',
-    desc: 'Ce panneau te donne accès à toutes les sections de l\'app. Il s\'adapte à ton métier et à ce qu\'on a configuré ensemble lors de l\'onboarding — tu ne vois que ce qui est pertinent pour toi.',
-    position: 'right',
-  },
-  {
-    target: '[href="/projets"]',
-    title: 'Tes chantiers',
-    desc: 'Tous tes projets en cours et à venir, en un seul endroit. Tu peux les voir en liste, Kanban, Gantt, Calendrier ou sur une carte — comme tu préfères travailler.',
-    position: 'right',
-  },
-  {
-    target: '[href="/dashboard"]',
-    title: 'Ton tableau de bord',
-    desc: 'Une vue centralisée de ce qui compte pour toi — projets actifs, alertes et indicateurs clés. Son contenu s\'adapte à ton rôle dans l\'équipe, tout le monde ne voit pas la même chose.',
-    position: 'right',
-  },
-  {
-    target: '[href="/chat"]',
-    title: 'Comment je travaille avec toi',
-    desc: 'Tu me parles ici directement — je lis tes projets, génère des soumissions, trouve des sous-traitants et rédige tes courriels. Essaie : « Résume mes chantiers actifs ».',
-    position: 'right',
-  },
-  {
-    target: null,
-    title: 'C\'est parti ! 🚀',
-    desc: 'Tu peux relancer ce tour en tout temps depuis le bas du menu. Et si tu as une question, tu sais où me trouver. Bonne gestion !',
+    desc: 'Je suis ton assistante IA intégrée à MONFLUX.',
     position: 'center',
   },
 ];
 
-function shouldAutoLaunch() {
-  const savedVersion = parseInt(localStorage.getItem('mf_tour_v') || '0', 10);
-  if (localStorage.getItem('mf_tour_pending') === '1') return true;
-  if (savedVersion < TOUR_VERSION) return true;
-  return false;
-}
-
 export default function GuidedTour() {
   const { user } = useAuthStore();
+  const { pathname } = useLocation();
   const [step, setStep] = useState(-1);
   const [targetRect, setTargetRect] = useState(null);
+  const contextKey = getTourContext(pathname);
+  const steps = useMemo(() => TOUR_CONTEXTS[contextKey]?.steps || FALLBACK_STEPS, [contextKey]);
+  const versionKey = `mf_tour_v_${contextKey}`;
+  const isInternal = isInternalAppRoute(pathname);
 
   const start = () => setStep(0);
 
   const stop = () => {
     setStep(-1);
-    localStorage.setItem('mf_tour_v', String(TOUR_VERSION));
-    localStorage.removeItem('mf_tour_pending');
-    localStorage.removeItem('mf_tour_done');
+    localStorage.setItem(versionKey, String(TOUR_CONTEXTS[contextKey]?.version || 1));
+    if (contextKey === 'global') localStorage.removeItem('mf_tour_pending');
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isInternal) return;
     const handler = () => start();
     window.addEventListener('mf:start-tour', handler);
-    if (shouldAutoLaunch()) {
+    if (shouldAutoLaunch(contextKey)) {
       const timer = setTimeout(() => start(), 1400);
       return () => { clearTimeout(timer); window.removeEventListener('mf:start-tour', handler); };
     }
     return () => window.removeEventListener('mf:start-tour', handler);
-  }, [user]);
+  }, [user, isInternal, contextKey]);
 
   useEffect(() => {
-    if (step < 0 || step >= STEPS.length) return;
-    const s = STEPS[step];
-    if (!s.target) { setTargetRect(null); return; }
-    const el = document.querySelector(s.target);
-    if (!el) { setTargetRect(null); return; }
-    const rect = el.getBoundingClientRect();
-    setTargetRect(rect);
-    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [step]);
+    if (step < 0 || step >= steps.length) return;
+    const s = steps[step];
+    const syncTarget = () => {
+      if (!s.target) { setTargetRect(null); return; }
+      const el = document.querySelector(s.target);
+      if (!el) { setTargetRect(null); return; }
+      const rect = el.getBoundingClientRect();
+      setTargetRect(rect);
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    syncTarget();
+    window.addEventListener('resize', syncTarget);
+    window.addEventListener('scroll', syncTarget, true);
+    return () => {
+      window.removeEventListener('resize', syncTarget);
+      window.removeEventListener('scroll', syncTarget, true);
+    };
+  }, [step, steps]);
 
-  if (step < 0 || step >= STEPS.length) return null;
+  if (!isInternal || step < 0 || step >= steps.length) return null;
 
-  const s = STEPS[step];
+  const s = steps[step];
   const isCentered = s.position === 'center' || !targetRect;
-  const isLast = step === STEPS.length - 1;
-  const total = STEPS.length;
+  const isLast = step === steps.length - 1;
+  const total = steps.length;
 
   const popupStyle = isCentered
     ? { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 9999 }

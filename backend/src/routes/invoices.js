@@ -23,6 +23,16 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+router.get('/project/:projectId/invoiced-descriptions', async (req, res) => {
+  const { rows } = await query(
+    `SELECT DISTINCT ii.description FROM invoice_items ii
+     JOIN invoices i ON i.id = ii.invoice_id
+     WHERE i.project_id = $1 AND i.company_id = $2 AND i.status != 'cancelled'`,
+    [req.params.projectId, req.company_id]
+  );
+  res.json(rows.map((r) => r.description));
+});
+
 router.get('/:id', async (req, res) => {
   const { rows: [inv] } = await query(`SELECT * FROM invoices WHERE id = $1 AND company_id = $2`, [req.params.id, req.company_id]);
   if (!inv) return res.status(404).json({ error: 'Facture non trouvée' });
@@ -31,7 +41,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { project_id, milestone_id, client_name, client_email, due_date, items = [], tps_pct = 5, tvq_pct = 9.975 } = req.body;
+  const { project_id, milestone_id, client_name, client_email, due_date, notes, items = [], tps_pct = 5, tvq_pct = 9.975 } = req.body;
   const client = await (await import('../db.js')).getClient();
   try {
     await client.query('BEGIN');
@@ -42,10 +52,10 @@ router.post('/', async (req, res) => {
     const { rows: [count] } = await client.query(`SELECT COUNT(*)+1 AS n FROM invoices WHERE company_id = $1`, [req.company_id]);
     const number = `INV-${String(count.n).padStart(4,'0')}`;
     const { rows: [inv] } = await client.query(
-      `INSERT INTO invoices (company_id,project_id,milestone_id,number,client_name,client_email,due_date,
+      `INSERT INTO invoices (company_id,project_id,milestone_id,number,client_name,client_email,due_date,notes,
          subtotal,tps_pct,tvq_pct,tps_amount,tvq_amount,total,amount_due)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-      [req.company_id, project_id||null, milestone_id||null, number, client_name, client_email, due_date||null,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [req.company_id, project_id||null, milestone_id||null, number, client_name, client_email, due_date||null, notes||null,
        subtotal, tps_pct, tvq_pct, tps, tvq, total, total]
     );
     for (const [i, item] of items.entries()) {

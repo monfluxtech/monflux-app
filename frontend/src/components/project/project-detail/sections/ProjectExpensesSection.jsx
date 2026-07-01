@@ -34,6 +34,11 @@ export default function ProjectExpensesSection({
     receipt_name: '',
   });
 
+  const handleDraftCommit = (expenseId) => {
+    if (savingExpenseId === expenseId) return;
+    saveExpenseRow(expenseId);
+  };
+
   return (
     <ProjectSection
       sectionId="s-expenses"
@@ -163,22 +168,22 @@ export default function ProjectExpensesSection({
                 return (
                   <tr key={expense.id} style={{ background: 'white', borderBottom: '1px solid #F3F4F6' }}>
                     <td style={{ padding: '6px 8px' }}>
-                      <select className="input" value={draft.type} onChange={(e) => updateExpenseDraftField(expense.id, 'type', e.target.value)}>
+                      <select className="input" value={draft.type} onChange={(e) => updateExpenseDraftField(expense.id, 'type', e.target.value)} onBlur={() => handleDraftCommit(expense.id)}>
                         {Object.entries(EXPENSE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                       </select>
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={draft.description} onChange={(e) => updateExpenseDraftField(expense.id, 'description', e.target.value)} placeholder="Description" />
+                      <input className="input" value={draft.description} onChange={(e) => updateExpenseDraftField(expense.id, 'description', e.target.value)} onBlur={() => handleDraftCommit(expense.id)} placeholder="Description" />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" type="date" value={draft.expense_date} onChange={(e) => updateExpenseDraftField(expense.id, 'expense_date', e.target.value)} />
+                      <input className="input" type="date" value={draft.expense_date} onChange={(e) => updateExpenseDraftField(expense.id, 'expense_date', e.target.value)} onBlur={() => handleDraftCommit(expense.id)} />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input" value={draft.po_number} onChange={(e) => updateExpenseDraftField(expense.id, 'po_number', e.target.value)} placeholder="BC-001" />
+                      <input className="input" value={draft.po_number} onChange={(e) => updateExpenseDraftField(expense.id, 'po_number', e.target.value)} onBlur={() => handleDraftCommit(expense.id)} placeholder="BC-001" />
                     </td>
                     <td style={{ padding: '6px 8px' }}>
                       <div className="flex items-center gap-2">
-                        <input className="input" value={draft.supplier_invoice_number} onChange={(e) => updateExpenseDraftField(expense.id, 'supplier_invoice_number', e.target.value)} placeholder="INV-2026-001" />
+                        <input className="input" value={draft.supplier_invoice_number} onChange={(e) => updateExpenseDraftField(expense.id, 'supplier_invoice_number', e.target.value)} onBlur={() => handleDraftCommit(expense.id)} placeholder="INV-2026-001" />
                         {isSupplierInvoice && !draft.po_number && <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" title="Sans bon de commande" />}
                       </div>
                     </td>
@@ -209,13 +214,11 @@ export default function ProjectExpensesSection({
                       )}
                     </td>
                     <td style={{ padding: '6px 8px' }}>
-                      <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} />
+                      <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} onBlur={() => handleDraftCommit(expense.id)} />
                     </td>
                     <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                       <div className="flex items-center justify-center gap-2">
-                        <button className="text-[11px] font-medium text-gray-500 hover:text-brand border border-gray-200 rounded-md px-2 py-1 transition-colors" onClick={() => saveExpenseRow(expense.id)} disabled={savingExpenseId === expense.id}>
-                          {savingExpenseId === expense.id ? 'Enregistrement…' : 'Enregistrer'}
-                        </button>
+                        {savingExpenseId === expense.id && <span className="text-[10px] font-semibold text-orange-500">Auto…</span>}
                         <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(expense.id)}><Trash2 size={13} /></button>
                       </div>
                     </td>

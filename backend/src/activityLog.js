@@ -14,6 +14,8 @@ const ACTION_LABELS = {
   flo_recommendation:     ()  => 'Recommandation Flo',
   change_order_created:   (p) => `Avenant : ${p?.title || ''}`,
   expense_added:          (p) => `Dépense : ${p?.description || ''}`,
+  quote_signed:           (p) => `Devis signé électroniquement par ${p?.signer_name || 'le client'}`,
+  non_conformity_reported: (p) => `Non-conformité signalée par le client : ${p?.titre || ''}`,
 };
 
 export async function logActivity({ companyId, projectId = null, actorType = 'user', userId = null, action, payload = {} }) {

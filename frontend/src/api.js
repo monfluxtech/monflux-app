@@ -114,6 +114,7 @@ export const invoices = {
   create: (data)        => http.post('/invoices', data),
   update: (id, data)    => http.patch(`/invoices/${id}`, data),
   delete: (id)          => http.delete(`/invoices/${id}`),
+  invoicedDescriptions: (projectId) => http.get(`/invoices/project/${projectId}/invoiced-descriptions`),
 };
 
 export const subcontractors = {

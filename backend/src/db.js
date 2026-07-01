@@ -549,6 +549,37 @@ async function applyMigrations() {
     `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS template_key TEXT`);
   await run('contracts: meta',
     `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS meta JSONB DEFAULT '{}'::jsonb`);
+
+  // ── Devis — signature électronique non-répudiable (2026-07) ──────────────
+  // signature_data existe déjà dans schema.sql ; on ajoute le reste des preuves techniques.
+  await run('quotes: signer_name',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signer_name TEXT`);
+  await run('quotes: signature_type',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signature_type TEXT`); // 'drawn' | 'typed'
+  await run('quotes: signed_user_agent',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signed_user_agent TEXT`);
+  await run('quotes: signed_document_hash',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signed_document_hash TEXT`);
+  await run('quotes: signed_consent',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signed_consent BOOLEAN DEFAULT FALSE`);
+  // Chiffrement au repos de signature_data (pgcrypto, si l'extension est disponible sur l'hébergeur).
+  // signature_encrypted indique si CETTE ligne est chiffrée — utile pour rester rétrocompatible avec
+  // les signatures déjà enregistrées en clair avant l'activation du chiffrement, et si pgcrypto
+  // devient indisponible plus tard (dégradation en clair plutôt que de bloquer la signature).
+  await run('pgcrypto extension',
+    `CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+  await run('quotes: signature_encrypted',
+    `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS signature_encrypted BOOLEAN DEFAULT FALSE`);
+  // Permettre à activity_log de journaliser des actions posées par un client (portail public), pas seulement user/flo.
+  await run('activity_log: drop old actor_type check',
+    `ALTER TABLE activity_log DROP CONSTRAINT IF EXISTS activity_log_actor_type_check`);
+  await run('activity_log: actor_type incl. client',
+    `ALTER TABLE activity_log ADD CONSTRAINT activity_log_actor_type_check CHECK (actor_type IN ('user','flo','client'))`);
+
+  // ── Portail client enrichi (2026-07) — notes/photos soumises par le client ──
+  // author_name est déjà lu par ProjectMediaSection.jsx côté frontend mais n'existait pas en DB.
+  await run('site_media: author_name',
+    `ALTER TABLE site_media ADD COLUMN IF NOT EXISTS author_name TEXT`);
 }
 
 export async function initializeDatabase() {

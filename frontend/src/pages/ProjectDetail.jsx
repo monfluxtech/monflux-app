@@ -100,6 +100,11 @@ const DEFAULT_PORTAL_VISIBILITY = {
     timeline: true,
     messages: true,
     quote_signing: true,
+    invoices: true,
+    documents: true,
+    change_orders: true,
+    non_conformities: true,
+    media: true,
   },
   supplier: {
     overview: true,
@@ -190,6 +195,13 @@ const formatCompactDate = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+};
+
+const fmtDate = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' });
 };
 
 const formatSectionMoney = (value) => `${(Number(value) || 0).toLocaleString('fr-CA', { maximumFractionDigits: 0 })}$`;
@@ -1123,7 +1135,6 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const todayPx = px(new Date());
   todayPxRef.current = todayPx;
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }) : '';
   // Affiche une durée en heures sous forme "Xj Yh" (journée de travail = 8h)
   const fmtDur = (h) => {
     if (!h) return '—';
@@ -3193,6 +3204,8 @@ export default function ProjectDetail() {
   const [generatingPhases, setGeneratingPhases] = useState(false);
   const [addingTemplatePhase, setAddingTemplatePhase] = useState(null);
   const [projectInvoices, setProjectInvoices] = useState([]);
+  const [invoicedDescriptions, setInvoicedDescriptions] = useState([]);
+  const [invoiceCategoryNotes, setInvoiceCategoryNotes] = useState({});
   const [invoiceDetails, setInvoiceDetails] = useState({});
   const [invoiceDrafts, setInvoiceDrafts] = useState({});
   const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
@@ -3479,10 +3492,11 @@ export default function ProjectDetail() {
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: proj }, { data: ts }, { data: invs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }, { data: companyData }] = await Promise.all([
+      const [{ data: proj }, { data: ts }, { data: invs }, { data: invoicedDescs }, { data: qs }, { data: quits }, { data: cos }, { data: msgs }, { data: prof }, { data: subList }, { data: projQuotes }, { data: rfqList }, { data: contractList }, { data: orderList }, { data: mediaList }, { data: companyData }] = await Promise.all([
         projectsApi.get(id),
         tsApi.list({ project_id: id }),
         invoicesApi.list({ project_id: id }),
+        invoicesApi.invoicedDescriptions(id).catch(() => ({ data: [] })),
         quotesApi.list(),
         quittancesApi.list({ project_id: id }),
         changeOrdersApi.list({ project_id: id }),
@@ -3499,6 +3513,7 @@ export default function ProjectDetail() {
       setProject(proj);
       setTimesheets(ts);
       setProjectInvoices(invs);
+      setInvoicedDescriptions(invoicedDescs || []);
       setProjectQuotes(qs.filter(q => q.project_id === id));
       setQuittance(quits?.[0] || null);
       setChangeOrdersList(cos || []);
@@ -4166,6 +4181,30 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
       setQuittance(data);
       setShowQuittanceForm(false);
     } catch {} finally { setSavingQuittance(false); }
+  };
+
+  const saveQuittance = async (payload) => {
+    if (!payload?.id) return;
+    try {
+      const { data } = await quittancesApi.update(payload.id, {
+        client_name: payload.client_name || project.client_name || '',
+        client_email: payload.client_email || '',
+        project_description: payload.project_description || project.name,
+        amount_paid: payload.amount_paid ? Number(payload.amount_paid) : (project.contract_value || 0),
+        notes: payload.notes || '',
+      });
+      setQuittance(data);
+    } catch {}
+  };
+
+  const deleteQuittance = async (quittanceId) => {
+    if (!quittanceId) return;
+    if (!confirm('Supprimer cette quittance ?')) return;
+    try {
+      await quittancesApi.delete(quittanceId);
+      setQuittance(null);
+      setQuittanceForm({ client_name:'', client_email:'', project_description:'', amount_paid:'', notes:'' });
+    } catch {}
   };
 
   // ── Sticky notes — chargement initial
@@ -5548,6 +5587,8 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     }
   };
 
+  const describeQuoteItem = (item) => `${({ material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' }[item.type] || 'Autre')} · ${item.name || item.description || 'Poste'}`;
+
   const createInvoiceFromQuoteSelection = async (selectedKeys = []) => {
     const sourceItems = (quoteBuilderItems || []).filter((item, index) => {
       const key = item.id || `${item.type || 'other'}-${index}`;
@@ -5556,7 +5597,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     const items = sourceItems
       .filter((item) => String(item.name || item.description || '').trim())
       .map((item, index) => ({
-        description: `${({ material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' }[item.type] || 'Autre')} · ${item.name || item.description || 'Poste'}`,
+        description: describeQuoteItem(item),
         qty: Number(item.qty) || 1,
         unit_price: Number(item.unit_price) || 0,
         total: (Number(item.qty) || 1) * (Number(item.unit_price) || 0),
@@ -5567,6 +5608,10 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       alert('Aucune ligne de devis sélectionnée.');
       return;
     }
+    const notes = Object.entries(invoiceCategoryNotes)
+      .filter(([, text]) => String(text || '').trim())
+      .map(([type, text]) => `${({ material: 'Matériaux', labor: "Main d'œuvre", subcontractor: 'Sous-traitance', other: 'Autre' }[type] || 'Autre')} — ${text.trim()}`)
+      .join('\n\n');
     setSavingInvoice(true);
     try {
       const { data } = await invoicesApi.create({
@@ -5575,14 +5620,18 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
         client_name: newInvoice.client_name || project.client_name || '',
         client_email: newInvoice.client_email || project.client_email || '',
         due_date: newInvoice.due_date || undefined,
+        notes: notes || undefined,
         items,
       });
       setProjectInvoices((prev) => [data, ...prev]);
       setExpandedInvoiceId(data.id);
       setQuoteInvoiceSelection([]);
+      setInvoiceCategoryNotes({});
+      setShowNewInvoice(false);
       const detail = await invoicesApi.get(data.id);
       setInvoiceDetails((prev) => ({ ...prev, [data.id]: detail.data }));
       ensureInvoiceDraft(data.id, detail.data);
+      invoicesApi.invoicedDescriptions(id).then(({ data: descs }) => setInvoicedDescriptions(descs || [])).catch(() => {});
     } catch (err) {
       console.error(err);
       alert(err?.response?.data?.error || 'Erreur lors de la création de la facture à partir du devis.');
@@ -7147,6 +7196,11 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 ['timeline', 'Dates et progression'],
                 ['messages', 'Messages portail'],
                 ['quote_signing', 'Lien de signature du devis'],
+                ['invoices', 'Factures'],
+                ['documents', 'Documents'],
+                ['change_orders', 'Demandes de modification'],
+                ['non_conformities', 'Signaler une non-conformité'],
+                ['media', 'Notes et photos'],
               ]
             : [
                 ['overview', 'Résumé du projet'],
@@ -7261,7 +7315,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       >
 
       {/* ── Capture IA — bouton d'appel à l'action multimodal (tout en haut) ── */}
-      <div className="proj-cta-wrap" style={{ padding: '20px 56px', borderBottom: '1px solid #E8EAED', background: '#fff', display: activeTab === 'detail' ? undefined : 'none' }}>
+      <div className="proj-cta-wrap" style={{ padding: '18px 32px', borderBottom: '1px solid #E8EAED', background: '#fff', display: activeTab === 'detail' ? undefined : 'none' }}>
         <button onClick={() => setShowCapture(true)}
           style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', borderRadius: 16, padding: '20px 24px',
             background: `linear-gradient(135deg,#F0A884 0%,${BRAND} 52%,${BRAND_DARK} 100%)`, color: '#fff',
@@ -7344,7 +7398,7 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
         ].filter(Boolean);
 
         return (
-          <div id="s-hero" style={{ padding: '36px 56px 32px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED', display: activeTab !== 'detail' ? 'none' : undefined }}>
+          <div id="s-hero" style={{ padding: '32px 32px 28px', background: '#E7EFF4', borderBottom: '1px solid #E8EAED', display: activeTab !== 'detail' ? 'none' : undefined }}>
 
             {/* Statut */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', background: BRAND, borderRadius: 999, padding: '4px 14px', marginBottom: 16 }}>
@@ -8648,15 +8702,30 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           project={project}
           fmtDate={fmtDate}
           setEditPhase={setEditPhase}
-          addInternalPerson={addInternalPerson}
-          addExternalPerson={addExternalPerson}
-          removePerson={removePerson}
-          updatePerson={updatePerson}
-          saveResourceRows={saveResourceRows}
           openConformiteBadge={openConformiteBadge}
           setOpenConformiteBadge={setOpenConformiteBadge}
-          availableEmployeeOptions={availableEmployeeOptions}
-          availableSubcontractorOptions={availableSubcontractorOptions}
+          tradeConformite={tradeConformite}
+          tradeResInput={tradeResInput}
+          loadingFloPersonCheck={loadingFloPersonCheck}
+          tradePersonMsgs={tradePersonMsgs}
+          tradeStatusFilter={tradeStatusFilter}
+          setTradeStatusFilter={setTradeStatusFilter}
+          tradeTypeFilter={tradeTypeFilter}
+          setTradeTypeFilter={setTradeTypeFilter}
+          tradeDateFilter={tradeDateFilter}
+          setTradeDateFilter={setTradeDateFilter}
+          tradePersonExpanded={tradePersonExpanded}
+          setTradePersonExpanded={setTradePersonExpanded}
+          tradePersonSelected={tradePersonSelected}
+          setTradePersonSelected={setTradePersonSelected}
+          setTradeResInput={setTradeResInput}
+          setTradePersonMsgs={setTradePersonMsgs}
+          saveTradeResources={saveTradeResources}
+          saveTradeConformite={saveTradeConformite}
+          floCheckPersonConformite={floCheckPersonConformite}
+          generateContactMessage={generateContactMessage}
+          generatePO={generatePO}
+          openPOWindow={openPOWindow}
           quoteBuilderItems={quoteBuilderItems}
           setQuoteBuilderItems={setQuoteBuilderItems}
           scheduleQuoteSave={scheduleQuoteSave}
@@ -8716,60 +8785,39 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           quoteBuilderItems={quoteBuilderItems}
           setQuoteBuilderItems={setQuoteBuilderItems}
           scheduleQuoteSave={scheduleQuoteSave}
-          showHideExtraItems={showHideExtraItems}
-          setShowHideExtraItems={setShowHideExtraItems}
           setQuoteSelected={setQuoteSelected}
-          quoteSections={quoteSections}
-          setQuoteSections={setQuoteSections}
-          quoteStatusBusy={quoteStatusBusy}
-          quotePdfPreview={quotePdfPreview}
-          setQuotePdfPreview={setQuotePdfPreview}
           pdf={pdf}
-          downloadQuotePdf={downloadQuotePdf}
-          createOrRefreshContractDraft={createOrRefreshContractDraft}
           contractTemplateConfig={contractTemplateConfig}
-          selectedContractTemplateKey={selectedContractTemplateKey}
-          setSelectedContractTemplateKey={setSelectedContractTemplateKey}
-          saveContractTemplateConfig={saveContractTemplateConfig}
           project={project}
-          quoteForm={quoteForm}
-          setQuoteForm={setQuoteForm}
-          saveQuoteForm={saveQuoteForm}
-          showContractEditor={showContractEditor}
-          setShowContractEditor={setShowContractEditor}
-          contractDraft={contractDraft}
-          setContractDraft={setContractDraft}
-          saveContractDraft={saveContractDraft}
-          contractSaving={contractSaving}
-          quoteSendBusy={quoteSendBusy}
-          sendQuoteByEmail={sendQuoteByEmail}
-          quoteCopied={quoteCopied}
-          copyQuoteLink={copyQuoteLink}
           money={money}
           preview={preview}
           setPreview={setPreview}
-          contractBusy={contractBusy}
-          quoteBuilderStats={quoteBuilderStats}
-          quoteLineTotal={quoteLineTotal}
-          toggleQuoteItemSelection={toggleQuoteItemSelection}
-          updateQuoteItemField={updateQuoteItemField}
           removeQuoteItem={removeQuoteItem}
-          duplicateQuoteItem={duplicateQuoteItem}
           addQuoteItem={addQuoteItem}
-          updateQuoteSectionName={updateQuoteSectionName}
-          toggleQuoteSectionCollapsed={toggleQuoteSectionCollapsed}
-          addQuoteSection={addQuoteSection}
-          moveQuoteItemToSection={moveQuoteItemToSection}
-          quoteSectionOptions={quoteSectionOptions}
-          toggleQuoteItemOptional={toggleQuoteItemOptional}
-          toggleQuoteItemVisible={toggleQuoteItemVisible}
-          quoteVisibleItems={quoteVisibleItems}
-          quoteHiddenItems={quoteHiddenItems}
-          quoteContractData={quoteContractData}
-          saveContractHtml={saveContractHtml}
-          shareContractWhatsapp={shareContractWhatsapp}
-          quotePublicUrl={quotePublicUrl}
-          setQuotePublicUrl={setQuotePublicUrl}
+          quoteSending={quoteSending}
+          quoteNewRow={quoteNewRow}
+          setQuoteNewRow={setQuoteNewRow}
+          quoteCollapsed={quoteCollapsed}
+          setQuoteCollapsed={setQuoteCollapsed}
+          togglePdfCol={togglePdfCol}
+          isPdfColOn={isPdfColOn}
+          projectContracts={projectContracts}
+          selectedContractTemplate={selectedContractTemplate}
+          contractDrafts={contractDrafts}
+          contractSavingId={contractSavingId}
+          contractEnrichingId={contractEnrichingId}
+          contractSendingId={contractSendingId}
+          showContractContent={showContractContent}
+          setShowContractContent={setShowContractContent}
+          updateQuoteItem={updateQuoteItem}
+          commitNewRow={commitNewRow}
+          sendQuoteToClient={sendQuoteToClient}
+          updateContractDraft={updateContractDraft}
+          saveContractDraft={saveContractDraft}
+          enrichContractWithFlo={enrichContractWithFlo}
+          sendContract={sendContract}
+          deleteContract={deleteContract}
+          normalizeContractHtml={normalizeContractHtml}
         />
 
 
@@ -8922,6 +8970,12 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           quoteInvoiceSelection={quoteInvoiceSelection}
           setQuoteInvoiceSelection={setQuoteInvoiceSelection}
           createInvoiceFromQuoteSelection={createInvoiceFromQuoteSelection}
+          commitNewRow={commitNewRow}
+          salesLocked={salesLocked}
+          invoicedDescriptions={invoicedDescriptions}
+          describeQuoteItem={describeQuoteItem}
+          invoiceCategoryNotes={invoiceCategoryNotes}
+          setInvoiceCategoryNotes={setInvoiceCategoryNotes}
         />
 
         {/* ── Demandes de modification ── */}
@@ -8953,8 +9007,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           expanded={!!sectionExpanded['s-quittances']}
           onToggle={() => toggleProjectSection('s-quittances')}
           quittance={quittance}
-          showQuittanceForm={showQuittanceForm}
-          setShowQuittanceForm={setShowQuittanceForm}
           quittanceForm={quittanceForm}
           setQuittanceForm={setQuittanceForm}
           project={project}
@@ -8962,6 +9014,8 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           savingQuittance={savingQuittance}
           FRONTEND_URL={FRONTEND_URL}
           pdf={pdf}
+          saveQuittance={saveQuittance}
+          deleteQuittance={deleteQuittance}
         />
 
         <ProjectDenonciationsSection

@@ -1,5 +1,7 @@
 import express from 'express';
+import crypto from 'crypto';
 import { query } from '../db.js';
+import { logActivity } from '../activityLog.js';
 
 const router = express.Router();
 
@@ -27,8 +29,9 @@ router.get('/quote/:token', async (req, res) => {
       [q.id]
     );
 
-    // Strip internal fields
-    const { company_id, ...safe } = q;
+    // Strip internal fields — signature_data (raw canvas/typed blob) never needs to round-trip
+    // back over the public link once captured; it stays reserved for the internal app + audit log.
+    const { company_id, signature_data, ...safe } = q;
     res.json({ ...safe, items });
   } catch (err) {
     console.error(err);
@@ -37,21 +40,79 @@ router.get('/quote/:token', async (req, res) => {
 });
 
 // POST /api/public/quote/:token/sign
+// Capture les preuves de non-répudiation : nom, type/données de signature, IP, user-agent,
+// hash du document signé (calculé côté serveur à partir de l'état réel en DB, pas fourni par le client),
+// consentement explicite. Le tout est aussi journalisé dans activity_log (insert-only = immuable en pratique).
 router.post('/quote/:token/sign', async (req, res) => {
   try {
+    const { signer_name, signature_type, signature_data, consent } = req.body || {};
+    if (!signer_name || !String(signer_name).trim()) return res.status(400).json({ error: 'Nom du signataire requis' });
+    if (!['drawn', 'typed'].includes(signature_type)) return res.status(400).json({ error: 'Type de signature invalide' });
+    if (!signature_data) return res.status(400).json({ error: 'Signature requise' });
+    if (consent !== true) return res.status(400).json({ error: 'Consentement requis pour signer électroniquement' });
+
     const { rows: [q] } = await query(
-      `SELECT id, status, signed_at FROM quotes WHERE interactive_token = $1`,
+      `SELECT id, company_id, project_id, status, signed_at FROM quotes WHERE interactive_token = $1`,
       [req.params.token]
     );
     if (!q) return res.status(404).json({ error: 'Soumission introuvable' });
     if (q.signed_at) return res.status(409).json({ error: 'Déjà signée' });
 
+    const { rows: items } = await query(`SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY display_order`, [q.id]);
+    const { rows: [full] } = await query(`SELECT * FROM quotes WHERE id = $1`, [q.id]);
+    const documentSnapshot = {
+      quote: {
+        id: full.id, title: full.title, subtotal: full.subtotal,
+        tps_amount: full.tps_amount, tvq_amount: full.tvq_amount, total: full.total,
+        valid_until: full.valid_until, description: full.description,
+      },
+      items: items.map((i) => ({ id: i.id, name: i.name, qty: i.qty, unit_price: i.unit_price, type: i.type })),
+    };
+    const documentHash = crypto.createHash('sha256').update(JSON.stringify(documentSnapshot)).digest('hex');
+
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'] || null;
+    const signerNameTrimmed = String(signer_name).trim();
+
+    // Chiffrement au repos si pgcrypto est disponible sur cet hébergeur — sinon on stocke en clair
+    // plutôt que de bloquer la signature (dégradation gracieuse, jamais de perte de preuve).
+    let storedSignatureData = signature_data;
+    let signatureEncrypted = false;
+    const encryptionKey = process.env.SIGNATURE_ENCRYPTION_KEY || process.env.JWT_SECRET;
+    if (encryptionKey) {
+      try {
+        const { rows: [enc] } = await query(
+          `SELECT encode(pgp_sym_encrypt($1, $2), 'base64') AS enc`,
+          [signature_data, encryptionKey]
+        );
+        storedSignatureData = enc.enc;
+        signatureEncrypted = true;
+      } catch (encErr) {
+        console.warn('Signature encryption unavailable (pgcrypto missing?) — storing signature in plaintext:', encErr.message);
+      }
+    }
+
     const { rows: [updated] } = await query(
-      `UPDATE quotes SET status = 'signed', signed_at = NOW(), signed_ip = $1 WHERE interactive_token = $2 RETURNING *`,
-      [ip, req.params.token]
+      `UPDATE quotes SET status = 'signed', signed_at = NOW(), signed_ip = $1, signer_name = $2,
+         signature_type = $3, signature_data = $4, signed_user_agent = $5, signed_document_hash = $6,
+         signed_consent = TRUE, signature_encrypted = $7
+       WHERE interactive_token = $8 RETURNING id, signed_at, signer_name`,
+      [ip, signerNameTrimmed, signature_type, storedSignatureData, userAgent, documentHash, signatureEncrypted, req.params.token]
     );
-    res.json({ success: true, signed_at: updated.signed_at });
+
+    logActivity({
+      companyId: q.company_id,
+      projectId: q.project_id,
+      actorType: 'client',
+      action: 'quote_signed',
+      payload: {
+        quote_id: q.id, signer_name: signerNameTrimmed, signature_type,
+        ip, user_agent: userAgent, document_hash: documentHash, consent: true,
+        actor: 'client_portal',
+      },
+    });
+
+    res.json({ success: true, signed_at: updated.signed_at, signer_name: updated.signer_name });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -273,6 +334,169 @@ router.get('/portal/:token', async (req, res) => {
       quote_signed_at: quote?.signed_at || null,
       quote_url: quote?.interactive_token ? `${frontendUrl}/soumission/${quote.interactive_token}` : null,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Résout le projet + company_id à partir d'un portal_token client — utilisé par toutes les routes
+// de soumission/consultation ci-dessous. Ne retourne jamais field_assessment complet (données internes).
+async function resolveClientProject(token) {
+  const { rows: [project] } = await query(
+    `SELECT id, company_id FROM projects WHERE portal_token = $1`,
+    [token]
+  );
+  return project || null;
+}
+
+// GET /api/public/portal/:token/invoices — factures client (statut + montants, aucune donnée de coût/marge)
+router.get('/portal/:token/invoices', async (req, res) => {
+  try {
+    const project = await resolveClientProject(req.params.token);
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const { rows } = await query(
+      `SELECT number, status, total, due_date, sent_at, paid_at, public_token
+       FROM invoices
+       WHERE project_id = $1 AND company_id = $2 AND status != 'draft'
+       ORDER BY created_at DESC`,
+      [project.id, project.company_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/public/portal/:token/documents — tous les documents destinés au client, en un seul endroit
+router.get('/portal/:token/documents', async (req, res) => {
+  try {
+    const project = await resolveClientProject(req.params.token);
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const [{ rows: quotes }, { rows: contracts }, { rows: invoices }, { rows: quittances }] = await Promise.all([
+      query(`SELECT id, title, status, interactive_token, sent_at, signed_at, created_at FROM quotes
+             WHERE project_id = $1 AND company_id = $2 AND status != 'draft' ORDER BY created_at DESC`,
+        [project.id, project.company_id]),
+      query(`SELECT id, title, status, public_token, created_at FROM contracts
+             WHERE project_id = $1 AND company_id = $2 AND status != 'draft' ORDER BY created_at DESC`,
+        [project.id, project.company_id]),
+      query(`SELECT id, number, status, public_token, created_at FROM invoices
+             WHERE project_id = $1 AND company_id = $2 AND status != 'draft' ORDER BY created_at DESC`,
+        [project.id, project.company_id]),
+      query(`SELECT id, status, public_token, created_at FROM quittances
+             WHERE project_id = $1 AND company_id = $2 AND status != 'draft' ORDER BY created_at DESC`,
+        [project.id, project.company_id]).catch(() => ({ rows: [] })),
+    ]);
+
+    const documents = [
+      ...quotes.map((q) => ({ type: 'quote', label: q.title || 'Soumission', status: q.status, created_at: q.created_at, url: `${frontendUrl}/soumission/${q.interactive_token}` })),
+      ...contracts.map((c) => ({ type: 'contract', label: c.title || 'Contrat', status: c.status, created_at: c.created_at, url: `${frontendUrl}/contrat/${c.public_token}` })),
+      ...invoices.map((i) => ({ type: 'invoice', label: `Facture #${i.number}`, status: i.status, created_at: i.created_at, url: `${frontendUrl}/facture/${i.public_token}` })),
+      ...quittances.map((q) => ({ type: 'quittance', label: 'Quittance', status: q.status, created_at: q.created_at, url: `${frontendUrl}/quittance/${q.public_token}` })),
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json(documents);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/portal/:token/change-orders — le client soumet une demande de modification
+router.post('/portal/:token/change-orders', async (req, res) => {
+  try {
+    const { title, description } = req.body || {};
+    if (!title || !String(title).trim()) return res.status(400).json({ error: 'Titre requis' });
+    const project = await resolveClientProject(req.params.token);
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const { rows: [numRow] } = await query(
+      `SELECT COALESCE(MAX(number), 0) + 1 AS next_num FROM change_orders WHERE company_id = $1`,
+      [project.company_id]
+    );
+    const { rows: [co] } = await query(
+      `INSERT INTO change_orders (company_id, project_id, title, description, amount, notes, number, status)
+       VALUES ($1,$2,$3,$4,0,$5,$6,'pending_approval') RETURNING id`,
+      [project.company_id, project.id, String(title).trim(), description || null, 'Soumise par le client depuis le portail.', numRow.next_num]
+    );
+
+    logActivity({
+      companyId: project.company_id, projectId: project.id, actorType: 'client',
+      action: 'change_order_created',
+      payload: { change_order_id: co.id, title: String(title).trim(), actor: 'client_portal' },
+    });
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/portal/:token/non-conformites — le client signale une non-conformité
+router.post('/portal/:token/non-conformites', async (req, res) => {
+  try {
+    const { titre, description } = req.body || {};
+    if (!titre || !String(titre).trim()) return res.status(400).json({ error: 'Titre requis' });
+    const { rows: [project] } = await query(
+      `SELECT id, company_id, field_assessment FROM projects WHERE portal_token = $1`,
+      [req.params.token]
+    );
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const fa = project.field_assessment || {};
+    const entry = {
+      id: `nc-${Date.now()}`,
+      titre: String(titre).trim(),
+      description: description || '',
+      source: 'client',
+      statut: 'ouverte',
+      date_signalement: new Date().toISOString().slice(0, 10),
+      responsable: '',
+      date_correction: '',
+      notes: '',
+    };
+    const nextFa = { ...fa, non_conformites: [entry, ...(fa.non_conformites || [])] };
+    await query(`UPDATE projects SET field_assessment = $1, updated_at = NOW() WHERE id = $2`, [nextFa, project.id]);
+
+    logActivity({
+      companyId: project.company_id, projectId: project.id, actorType: 'client',
+      action: 'non_conformity_reported',
+      payload: { titre: entry.titre, actor: 'client_portal' },
+    });
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/public/portal/:token/media — le client ajoute une note / photo / vidéo
+router.post('/portal/:token/media', async (req, res) => {
+  try {
+    const { caption, url, mime_type, author_name } = req.body || {};
+    if (!caption?.trim() && !url?.trim()) return res.status(400).json({ error: 'Note ou photo/vidéo requise' });
+    const project = await resolveClientProject(req.params.token);
+    if (!project) return res.status(404).json({ error: 'Portail introuvable ou lien invalide' });
+
+    const { rows: [m] } = await query(
+      `INSERT INTO site_media (company_id, project_id, type, url, mime_type, caption, author_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [project.company_id, project.id, url ? 'photo' : 'note', url || null, mime_type || null, caption || null, author_name?.trim() || 'Client']
+    );
+
+    logActivity({
+      companyId: project.company_id, projectId: project.id, actorType: 'client',
+      action: 'note_added',
+      payload: { media_id: m.id, actor: 'client_portal' },
+    });
+
+    res.status(201).json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
