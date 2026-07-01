@@ -3199,6 +3199,7 @@ export default function ProjectDetail() {
   const stickyContainerRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressPosRef = useRef(null);
+  const longPressStartRef = useRef(null);
   const stickyLoadedRef = useRef(false);
   const [tradePersonExpanded, setTradePersonExpanded] = useState({});
   const [tradePersonSelected, setTradePersonSelected] = useState(new Set());
@@ -4232,6 +4233,16 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
     }
   }, [project?.id]);
 
+  // Filet de sécurité : si le bouton est relâché hors de la zone (ex. sur la sidebar), annule quand même le post-it en attente.
+  useEffect(() => {
+    const onWindowMouseUp = () => {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    };
+    window.addEventListener('mouseup', onWindowMouseUp);
+    return () => window.removeEventListener('mouseup', onWindowMouseUp);
+  }, []);
+
   const saveStickyNotes = async (notes) => {
     setStickyNotes(notes);
     const nextFa = { ...(project.field_assessment || {}), sticky_notes: notes };
@@ -4241,23 +4252,31 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
 
   const handleDetailMouseDown = (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('button, input, textarea, select, a, label, [role="button"], [contenteditable]')) return;
+    if (e.target.closest('button, input, textarea, select, a, label, [role="button"], [contenteditable], table, thead, tbody, tr, td, th')) return;
     const container = stickyContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
     longPressPosRef.current = { top: e.clientY - rect.top, left: e.clientX - rect.left };
+    longPressStartRef.current = { clientX: e.clientX, clientY: e.clientY };
     longPressTimerRef.current = setTimeout(() => {
       setStickyDraft({ ...longPressPosRef.current, color: 'yellow', text: '' });
+      longPressTimerRef.current = null;
     }, 650);
   };
 
-  const handleDetailMouseUp = () => clearTimeout(longPressTimerRef.current);
+  const handleDetailMouseUp = () => {
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
 
   const handleDetailMouseMove = (e) => {
-    if (longPressTimerRef.current && longPressPosRef.current) {
-      const dx = e.clientX - (longPressPosRef.current.left + (stickyContainerRef.current?.getBoundingClientRect().left || 0));
-      const dy = e.clientY - (longPressPosRef.current.top + (stickyContainerRef.current?.getBoundingClientRect().top || 0) - window.scrollY);
-      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) clearTimeout(longPressTimerRef.current);
+    if (longPressTimerRef.current && longPressStartRef.current) {
+      const dx = e.clientX - longPressStartRef.current.clientX;
+      const dy = e.clientY - longPressStartRef.current.clientY;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
     }
     if (stickyDragging) {
       const container = stickyContainerRef.current;
@@ -4273,6 +4292,7 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
 
   const handleDetailMouseUpGlobal = (e) => {
     clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
     if (stickyDragging) {
       setStickyNotes(prev => {
         saveStickyNotes(prev);
