@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/change-orders
 router.post('/', async (req, res) => {
-  const { project_id, title, description, amount, notes } = req.body;
+  const { project_id, title, description, amount, notes, attachments } = req.body;
   if (!title) return res.status(400).json({ error: 'Titre requis' });
   try {
     // Generate next number per company (handles both old INT column and new nullable)
@@ -31,9 +31,9 @@ router.post('/', async (req, res) => {
       [req.company_id]
     );
     const { rows: [co] } = await query(
-      `INSERT INTO change_orders (company_id, project_id, title, description, amount, notes, number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.company_id, project_id || null, title, description || null, amount || 0, notes || null, numRow.next_num]
+      `INSERT INTO change_orders (company_id, project_id, title, description, amount, notes, number, attachments)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [req.company_id, project_id || null, title, description || null, amount || 0, notes || null, numRow.next_num, JSON.stringify(attachments || [])]
     );
     res.status(201).json(co);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
@@ -41,8 +41,9 @@ router.post('/', async (req, res) => {
 
 // PATCH /api/change-orders/:id
 router.patch('/:id', async (req, res) => {
-  const allowed = ['title', 'description', 'amount', 'status', 'notes'];
+  const allowed = ['title', 'description', 'amount', 'status', 'notes', 'attachments'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (updates.attachments) updates.attachments = JSON.stringify(updates.attachments);
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'Aucun champ valide' });
 
   // Map frontend 'sent' → valid DB enum value 'pending_approval'

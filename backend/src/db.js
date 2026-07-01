@@ -581,6 +581,11 @@ async function applyMigrations() {
   await run('site_media: author_name',
     `ALTER TABLE site_media ADD COLUMN IF NOT EXISTS author_name TEXT`);
 
+  // ── Pièces jointes (photos/vidéos) sur demandes de modification (2026-07) ──
+  // Les non-conformités vivent dans field_assessment (JSON) — attachments s'y ajoute sans migration.
+  await run('change_orders: attachments',
+    `ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb`);
+
   // ── Devis/Facture — catégories, descriptions et niveau de détail (2026-07) ──
   await run('quotes: category_notes',
     `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS category_notes JSONB DEFAULT '{}'::jsonb`);

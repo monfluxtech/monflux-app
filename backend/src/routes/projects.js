@@ -1,4 +1,6 @@
 import express from 'express';
+import multer from 'multer';
+import { put } from '@vercel/blob';
 import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db.js';
 import { authenticateToken, resolveCompany, enforceAiQuota } from '../middleware/auth.js';
@@ -6,6 +8,10 @@ import { logActivity } from '../activityLog.js';
 
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
+
+// Stockage en mémoire — le buffer part directement vers Vercel Blob, jamais écrit sur disque local
+// (Railway n'a pas de disque persistant entre déploiements).
+const uploadReceipt = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 let _anthropic = null;
 const anthropic = () => {
@@ -680,6 +686,74 @@ router.delete('/:id/expenses/:expenseId', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ── Glisser-déposer une facture fournisseur : upload + extraction IA + création directe de la dépense ──
+// POST /api/projects/:id/expenses/extract
+router.post('/:id/expenses/extract', uploadReceipt.single('file'), enforceAiQuota, async (req, res) => {
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(503).json({
+        error: 'Stockage de fichiers non configuré sur le serveur (BLOB_READ_WRITE_TOKEN manquant).',
+        code: 'blob_not_configured',
+      });
+    }
+    const isImage = req.file.mimetype.startsWith('image/');
+    const isPdf = req.file.mimetype === 'application/pdf';
+    if (!isImage && !isPdf) return res.status(400).json({ error: 'Format non supporté — utilisez une image ou un PDF.' });
+
+    const blob = await put(
+      `expenses/${req.params.id}/${Date.now()}-${req.file.originalname}`,
+      req.file.buffer,
+      { access: 'public', contentType: req.file.mimetype, token: process.env.BLOB_READ_WRITE_TOKEN }
+    );
+
+    const instructions = `Tu analyses une facture fournisseur de construction au Québec. Extrait les informations suivantes.
+Retourne UNIQUEMENT un JSON strict, sans texte autour :
+{"description":"nom du fournisseur / résumé court","amount":0,"expense_date":"YYYY-MM-DD ou null","supplier_invoice_number":"ou null","po_number":"ou null"}
+Si une information est absente ou illisible, mets null (n'invente rien). "amount" est le montant total TTC en dollars, en nombre.`;
+
+    const content = isImage
+      ? [
+          { type: 'image', source: { type: 'base64', media_type: req.file.mimetype, data: req.file.buffer.toString('base64') } },
+          { type: 'text', text: instructions },
+        ]
+      : [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: req.file.buffer.toString('base64') } },
+          { type: 'text', text: instructions },
+        ];
+
+    const msg = await anthropic().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content }],
+    });
+    const raw = msg.content[0]?.text || '{}';
+    const extracted = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+
+    const { rows: [row] } = await query(
+      `INSERT INTO project_expenses (company_id, project_id, type, description, amount, expense_date, created_by, supplier_invoice_number, po_number, receipt_url, receipt_name)
+       VALUES ($1,$2,'supplier_invoice',$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [
+        req.company_id, req.params.id,
+        extracted.description || req.file.originalname,
+        Number(extracted.amount) || 0,
+        extracted.expense_date || null,
+        req.user.userId,
+        extracted.supplier_invoice_number || null,
+        extracted.po_number || null,
+        blob.url,
+        req.file.originalname,
+      ]
+    );
+    res.status(201).json({ expense: row, extracted });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur lors de l'extraction de la facture" });
   }
 });
 

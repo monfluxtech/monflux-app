@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, Minus, Plus, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, Loader2, Minus, Plus, Trash2, UploadCloud } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
 
 export default function ProjectExpensesSection({
@@ -22,7 +22,18 @@ export default function ProjectExpensesSection({
   saveExpenseRow,
   savingExpenseId,
   removeExpense,
+  extractExpenseFile,
+  extractingExpense,
 }) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) extractExpenseFile(file);
+  };
+
   const clearCreatorRow = () => setExpenseForm({
     type: 'supplier_invoice',
     description: '',
@@ -54,6 +65,33 @@ export default function ProjectExpensesSection({
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <span className="badge badge-gray text-xs">{project.expenses?.length || 0} entrée(s)</span>
         <span className="badge badge-gray text-xs">Total {money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</span>
+      </div>
+
+      {/* Glisser-déposer une facture — extraction IA automatique (description, montant, date, n° facture/BC) */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        style={{
+          border: `1.5px dashed ${isDragging ? BRAND : '#D1D5DB'}`,
+          background: isDragging ? `${BRAND}0D` : '#FAFAFA',
+          borderRadius: 14, padding: '16px 18px', marginBottom: 14,
+          display: 'flex', alignItems: 'center', gap: 10, transition: 'all .12s',
+        }}
+      >
+        {extractingExpense ? <Loader2 size={18} className="animate-spin" style={{ color: BRAND, flexShrink: 0 }} /> : <UploadCloud size={18} style={{ color: isDragging ? BRAND : '#9CA3AF', flexShrink: 0 }} />}
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#374151' }}>
+            {extractingExpense ? 'Extraction en cours…' : 'Glissez une facture fournisseur ici (PDF ou photo)'}
+          </p>
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>
+            Flo extrait automatiquement fournisseur, montant, date et numéro de facture, et l'ajoute directement en pièce jointe.
+          </p>
+        </div>
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: BRAND, border: `1px solid ${BRAND}55`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', flexShrink: 0, background: '#fff' }}>
+          Parcourir…
+          <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) extractExpenseFile(file); e.target.value = ''; }} />
+        </label>
       </div>
 
       <div style={{ border: '1px solid #E5E7EB', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>

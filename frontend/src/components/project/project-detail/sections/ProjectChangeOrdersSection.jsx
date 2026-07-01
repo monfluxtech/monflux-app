@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Paperclip, Plus, Trash2, X } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
 
 const STATUS_OPTIONS = {
@@ -18,7 +18,41 @@ const STATUS_COLORS = {
   completed: '#3B82F6',
 };
 
-const EMPTY_ROW = { title: '', description: '', amount: '', notes: '', status: 'draft' };
+const EMPTY_ROW = { title: '', description: '', amount: '', notes: '', status: 'draft', attachments: [] };
+
+// Pièces jointes (photos/vidéos) — même convention URL que le reste de l'app (pas d'upload fichier).
+function AttachmentsCell({ attachments, onChange }) {
+  const [pending, setPending] = useState('');
+  const list = attachments || [];
+  const add = () => {
+    const url = pending.trim();
+    if (!url) return;
+    onChange([...list, { url }]);
+    setPending('');
+  };
+  return (
+    <div style={{ display: 'grid', gap: 4, minWidth: 160 }}>
+      {list.map((att, index) => (
+        <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <a href={att.url} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, color: '#EA580C', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130, display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Paperclip size={10} /> {att.url.replace(/^https?:\/\//, '').slice(0, 24)}
+          </a>
+          <button type="button" onClick={() => onChange(list.filter((_, i) => i !== index))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', padding: 0 }}>
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+      <input
+        value={pending}
+        onChange={(e) => setPending(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+        onBlur={add}
+        placeholder="+ Lien photo/vidéo/pj…"
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '2px', fontSize: 10.5, color: '#9CA3AF' }}
+      />
+    </div>
+  );
+}
 
 export default function ProjectChangeOrdersSection({
   sectionSummary,
@@ -42,6 +76,7 @@ export default function ProjectChangeOrdersSection({
       amount: item.amount ?? '',
       notes: item.notes || '',
       status: item.status || 'draft',
+      attachments: item.attachments || [],
     }])));
   }, [changeOrdersList]);
 
@@ -101,12 +136,13 @@ export default function ProjectChangeOrdersSection({
               <col style={{ minWidth: 240 }} />
               <col style={{ width: 120 }} />
               <col style={{ width: 160 }} />
-              <col style={{ minWidth: 220 }} />
+              <col style={{ minWidth: 200 }} />
+              <col style={{ width: 170 }} />
               <col style={{ width: 120 }} />
             </colgroup>
             <thead>
               <tr style={{ background: '#FFF7ED' }}>
-                {['Titre', 'Description', 'Montant', 'Statut', 'Notes', 'Actions'].map((label, index) => (
+                {['Titre', 'Description', 'Montant', 'Statut', 'Notes', 'Pièces jointes', 'Actions'].map((label, index) => (
                   <th key={label} style={{ padding: '10px 12px', textAlign: index === 2 ? 'right' : 'left', fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FED7AA' }}>
                     {label}
                   </th>
@@ -131,6 +167,9 @@ export default function ProjectChangeOrdersSection({
                 </td>
                 <td style={{ padding: '6px 8px' }}>
                   <input className="input" value={creator.notes} onChange={(e) => setCreator((row) => ({ ...row, notes: e.target.value }))} onKeyDown={handleCreatorKeyDown} placeholder="Notes internes / portail" />
+                </td>
+                <td style={{ padding: '6px 8px' }}>
+                  <AttachmentsCell attachments={creator.attachments} onChange={(next) => setCreator((row) => ({ ...row, attachments: next }))} />
                 </td>
                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                   <div className="flex items-center justify-center gap-2">
@@ -170,6 +209,15 @@ export default function ProjectChangeOrdersSection({
                     </td>
                     <td style={{ padding: '6px 8px' }}>
                       <input className="input" value={draft.notes} onChange={(e) => setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, notes: e.target.value } }))} onBlur={() => handleCommit(changeOrder.id)} />
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <AttachmentsCell
+                        attachments={draft.attachments}
+                        onChange={(next) => {
+                          setDrafts((rows) => ({ ...rows, [changeOrder.id]: { ...draft, attachments: next } }));
+                          saveChangeOrderRow(changeOrder.id, { ...draft, attachments: next });
+                        }}
+                      />
                     </td>
                     <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                       <div className="flex items-center justify-center gap-2">

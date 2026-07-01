@@ -3239,6 +3239,7 @@ export default function ProjectDetail() {
   const [expenseForm, setExpenseForm] = useState({ type: 'supplier_invoice', description: '', amount: '', expense_date: '', po_number: '', supplier_invoice_number: '', receipt_url: '', receipt_name: '' });
   const [expenseDrafts, setExpenseDrafts] = useState({});
   const [savingExpenseId, setSavingExpenseId] = useState(null);
+  const [extractingExpense, setExtractingExpense] = useState(false);
   const [laborRate, setLaborRate] = useState('');
   const [savingRate, setSavingRate] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -3376,6 +3377,7 @@ export default function ProjectDetail() {
   const [allOperationalAlerts, setAllOperationalAlerts] = useState([]); // toutes les alertes calculées
   const [manualPunchForm, setManualPunchForm] = useState({ worker_name: '', phase_name: '', work_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '', duration_hours: '', notes: '' });
   const [stoppingPunchId, setStoppingPunchId] = useState(null);
+  const [startingMyPunch, setStartingMyPunch] = useState(false);
   const [timesheetDrafts, setTimesheetDrafts] = useState({});
   const manualPunchWorkerRef = React.useRef(null);
   const [savingTimesheetId, setSavingTimesheetId] = useState(null);
@@ -5365,6 +5367,23 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
     } catch {}
   };
 
+  const extractExpenseFile = async (file) => {
+    if (!file) return;
+    setExtractingExpense(true);
+    try {
+      const { data } = await projectsApi.extractExpense(id, file);
+      setProject((p) => ({ ...p, expenses: [data.expense, ...(p.expenses || [])] }));
+      refreshProfit();
+    } catch (err) {
+      const msg = err?.response?.data?.code === 'blob_not_configured'
+        ? "Stockage de fichiers non configuré côté serveur — configure BLOB_READ_WRITE_TOKEN."
+        : (err?.response?.data?.error || "Erreur lors de l'extraction de la facture.");
+      alert(msg);
+    } finally {
+      setExtractingExpense(false);
+    }
+  };
+
   const updateExpenseDraftField = (expenseId, key, value) => {
     setExpenseDrafts((prev) => ({
       ...prev,
@@ -5715,6 +5734,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       amount: Number(payload.amount) || 0,
       notes: payload.notes || undefined,
       status: payload.status || 'draft',
+      attachments: payload.attachments || undefined,
     });
     setChangeOrdersList((list) => [data, ...list]);
     return data;
@@ -5727,6 +5747,7 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       amount: Number(payload.amount) || 0,
       notes: payload.notes || '',
       status: payload.status || 'draft',
+      attachments: payload.attachments || [],
     });
     setChangeOrdersList((list) => list.map((item) => item.id === changeOrderId ? data : item));
     return data;
@@ -6269,6 +6290,14 @@ Règles :
       });
     } catch {}
     finally { setSavingTimesheetId(null); }
+  };
+
+  const startMyPunch = async () => {
+    setStartingMyPunch(true);
+    try {
+      const { data } = await tsApi.start({ project_id: id });
+      setTimesheets((prev) => [data, ...prev]);
+    } catch {} finally { setStartingMyPunch(false); }
   };
 
   const stopProjectPunch = async (timesheet) => {
@@ -7654,9 +7683,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                             stopProjectPunch(myActiveTimesheet);
                             return;
                           }
-                          openPunchSection();
+                          startMyPunch();
                         }}
-                        title={myActiveTimesheet ? 'Arrêter mon punch en cours' : 'Démarrer mon punch'}
+                        disabled={startingMyPunch}
+                        title={myActiveTimesheet ? 'Arrêter mon punch en cours' : 'Démarrer mon punch — comme scanner le QR code'}
                         style={{
                           width: 56,
                           minHeight: 56,
@@ -8944,6 +8974,8 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           saveExpenseRow={saveExpenseRow}
           savingExpenseId={savingExpenseId}
           removeExpense={removeExpense}
+          extractExpenseFile={extractExpenseFile}
+          extractingExpense={extractingExpense}
         />
 
         {/* ── Feuilles de temps ── (mint) */}
@@ -8971,6 +9003,20 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           stoppingPunchId={stoppingPunchId}
           approveTs={approveTs}
           removeTimesheetRow={removeTimesheetRow}
+          BRAND={BRAND}
+          money={money}
+          EXPENSE_TYPES={EXPENSE_TYPES}
+          isExpenseReceiptRequired={isExpenseReceiptRequired}
+          expenseForm={expenseForm}
+          setExpenseForm={setExpenseForm}
+          attachExpenseReceipt={attachExpenseReceipt}
+          setLightboxItem={setLightboxItem}
+          addExpense={addExpense}
+          expenseDrafts={expenseDrafts}
+          updateExpenseDraftField={updateExpenseDraftField}
+          saveExpenseRow={saveExpenseRow}
+          savingExpenseId={savingExpenseId}
+          removeExpense={removeExpense}
         />
 
         {/* ── Soumission détaillée ── (white) */}

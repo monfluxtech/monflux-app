@@ -432,8 +432,8 @@ export default function ProjectInvoicesSection({
                                         <thead>
                                           <tr style={{ borderBottom: '2px solid #E5E7EB' }}>
                                             <th style={{ textAlign: 'left', padding: '6px 4px', fontWeight: 700 }}>Description</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>Qté</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>Prix unit.</th>
+                                            {isInvoicePdfColOn('qty') && <th style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>Qté</th>}
+                                            {isInvoicePdfColOn('unit_price') && <th style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>Prix unit.</th>}
                                             <th style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>Total</th>
                                           </tr>
                                         </thead>
@@ -441,8 +441,8 @@ export default function ProjectInvoicesSection({
                                           {draftItems.filter((item) => String(item.description || '').trim()).map((item, index) => (
                                             <tr key={`preview-${invoice.id}-${index}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
                                               <td style={{ padding: '8px 4px' }}>{item.description}</td>
-                                              <td style={{ padding: '8px 4px', textAlign: 'right' }}>{Number(item.qty) || 0}</td>
-                                              <td style={{ padding: '8px 4px', textAlign: 'right' }}>{money(Number(item.unit_price) || 0)}</td>
+                                              {isInvoicePdfColOn('qty') && <td style={{ padding: '8px 4px', textAlign: 'right' }}>{Number(item.qty) || 0}</td>}
+                                              {isInvoicePdfColOn('unit_price') && <td style={{ padding: '8px 4px', textAlign: 'right' }}>{money(Number(item.unit_price) || 0)}</td>}
                                               <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700 }}>{money((Number(item.qty) || 0) * (Number(item.unit_price) || 0))}</td>
                                             </tr>
                                           ))}

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Minus, Paperclip, Plus, Trash2, X } from 'lucide-react';
 import ProjectSection from '../../ProjectSection';
 
 const EMPTY_ROW = {
@@ -11,7 +11,42 @@ const EMPTY_ROW = {
   responsable: '',
   date_correction: '',
   notes: '',
+  attachments: [],
 };
+
+// Pièces jointes (photos/vidéos) — même convention URL que le reste de l'app (pas d'upload fichier).
+function AttachmentsCell({ attachments, onChange }) {
+  const [pending, setPending] = useState('');
+  const list = attachments || [];
+  const add = () => {
+    const url = pending.trim();
+    if (!url) return;
+    onChange([...list, { url }]);
+    setPending('');
+  };
+  return (
+    <div style={{ display: 'grid', gap: 4, minWidth: 150 }}>
+      {list.map((att, index) => (
+        <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <a href={att.url} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, color: '#DC2626', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120, display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Paperclip size={10} /> {att.url.replace(/^https?:\/\//, '').slice(0, 22)}
+          </a>
+          <button type="button" onClick={() => onChange(list.filter((_, i) => i !== index))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', padding: 0 }}>
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+      <input
+        value={pending}
+        onChange={(e) => setPending(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+        onBlur={add}
+        placeholder="+ Lien photo/vidéo/pj…"
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', width: '100%', padding: '2px', fontSize: 10.5, color: '#9CA3AF' }}
+      />
+    </div>
+  );
+}
 
 const STATUS_OPTIONS = [
   { key: 'ouverte', label: 'Ouverte', color: '#DC2626', bg: '#FEF2F2' },
@@ -106,7 +141,7 @@ export default function ProjectNonConformitiesSection({
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
             <thead>
               <tr style={{ background: '#FFF5F5' }}>
-                {['Titre', 'Description', 'Source', 'Statut', 'Signalée le', 'Responsable', 'Correction visée', 'Notes', 'Actions'].map((label) => (
+                {['Titre', 'Description', 'Source', 'Statut', 'Signalée le', 'Responsable', 'Correction visée', 'Notes', 'Pièces jointes', 'Actions'].map((label) => (
                   <th key={label} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #FECACA' }}>
                     {label}
                   </th>
@@ -131,6 +166,9 @@ export default function ProjectNonConformitiesSection({
                 <td style={{ padding: '6px 8px' }}><input className="input" value={creator.responsable} onChange={(e) => updateCreator({ responsable: e.target.value })} placeholder="Responsable" /></td>
                 <td style={{ padding: '6px 8px' }}><input className="input" type="date" value={creator.date_correction} onChange={(e) => updateCreator({ date_correction: e.target.value })} /></td>
                 <td style={{ padding: '6px 8px' }}><input className="input" value={creator.notes} onChange={(e) => updateCreator({ notes: e.target.value })} placeholder="Notes" /></td>
+                <td style={{ padding: '6px 8px' }}>
+                  <AttachmentsCell attachments={creator.attachments} onChange={(next) => updateCreator({ attachments: next })} />
+                </td>
                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                   <div className="flex items-center justify-center gap-2">
                     <button type="button" className="btn-ghost p-2 text-green-700 hover:text-green-800" title="Ajouter" onClick={addRow}><Plus size={16} /></button>
@@ -141,7 +179,7 @@ export default function ProjectNonConformitiesSection({
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ padding: '22px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                  <td colSpan={10} style={{ padding: '22px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
                     Aucune non-conformité enregistrée.
                   </td>
                 </tr>
@@ -167,6 +205,9 @@ export default function ProjectNonConformitiesSection({
                     <td style={{ padding: '6px 8px' }}><input className="input" value={row.responsable || ''} onChange={(e) => updateRow(row.id, { responsable: e.target.value })} /></td>
                     <td style={{ padding: '6px 8px' }}><input className="input" type="date" value={row.date_correction || ''} onChange={(e) => updateRow(row.id, { date_correction: e.target.value })} /></td>
                     <td style={{ padding: '6px 8px' }}><input className="input" value={row.notes || ''} onChange={(e) => updateRow(row.id, { notes: e.target.value })} /></td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <AttachmentsCell attachments={row.attachments} onChange={(next) => updateRow(row.id, { attachments: next })} />
+                    </td>
                     <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                       <button type="button" className="btn-ghost p-2 text-gray-400 hover:text-red-500" title="Supprimer" onClick={() => removeRow(row.id)}>
                         <Trash2 size={14} />

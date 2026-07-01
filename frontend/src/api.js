@@ -63,6 +63,11 @@ export const projects = {
   addExpense:  (id, data)         => http.post(`/projects/${id}/expenses`, data),
   updateExpense: (id, eid, data)  => http.patch(`/projects/${id}/expenses/${eid}`, data),
   deleteExpense: (id, eid)        => http.delete(`/projects/${id}/expenses/${eid}`),
+  extractExpense: (id, file)      => {
+    const form = new FormData();
+    form.append('file', file);
+    return http.post(`/projects/${id}/expenses/extract`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   // Batch 3 — estimation terrain
   estimateField:     (id, data)   => http.post(`/projects/${id}/estimate-field`, data),
   sendPrice:         (id, data)   => http.post(`/projects/${id}/send-price`, data),
