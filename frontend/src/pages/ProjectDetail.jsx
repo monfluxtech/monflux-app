@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useT } from '../hooks/useT';
 import { useUiPrefs } from '../hooks/useUiPrefs';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -3284,9 +3285,7 @@ export default function ProjectDetail() {
   const [quoteSending, setQuoteSending] = useState(false);
   const [quoteSelected, setQuoteSelected] = useState(new Set());
   const [quoteMarkup, setQuoteMarkup] = useState(() => Number(localStorage.getItem('monflux-quote-markup') || 0)); // synced to uiPrefs below
-  const [showFloQuotePanel, setShowFloQuotePanel] = useState(false);
   const [floQuoteLoading, setFloQuoteLoading] = useState(false);
-  const [floInspirationInput, setFloInspirationInput] = useState('');
   const [quoteNewRow, setQuoteNewRow] = useState({ material: {}, labor: {}, subcontractor: {}, other: {} });
   const [quoteCollapsed, setQuoteCollapsed] = useState({ material: false, labor: false, subcontractor: false, other: false });
   const [quoteMassMarkup, setQuoteMassMarkup] = useState('');
@@ -5908,11 +5907,21 @@ h1{font-size:30px;font-weight:900;letter-spacing:-.02em;margin-bottom:24px}
       const laborLines = (project.phases || [])
         .filter(ph => ph.duration_hours > 0)
         .map(ph => `${ph.name}: ${ph.duration_hours}h${ph.trade_name ? ` (${ph.trade_name})` : ''}`);
+      // Contexte rassemblé automatiquement depuis le projet — aucune saisie manuelle requise :
+      // description du projet + URLs des photos/notes de chantier déjà déposées (section Notes et photos).
+      const mediaLines = (media || [])
+        .flatMap((item) => {
+          const urls = item.photos?.length ? item.photos.map((p) => p.url).filter(Boolean) : (item.url ? [item.url] : []);
+          return urls.map((url) => `${url}${item.caption ? ` — ${item.caption}` : ''}`);
+        })
+        .filter(Boolean)
+        .slice(0, 15);
       const prompt = `Tu es Florence, assistante IA MONFLUX. Génère un devis de construction réaliste pour le marché québécois.
 
 PROJET: ${project.name || project.description || 'Projet de construction'}
 ADRESSE: ${project.address || 'À préciser'}
-${floInspirationInput ? `\nIMAGES / INSPIRATIONS:\n${floInspirationInput}` : ''}
+${project.description ? `\nDESCRIPTION DU PROJET:\n${project.description}` : ''}
+${mediaLines.length ? `\nPHOTOS DE CHANTIER / INSPIRATION (URLs):\n${mediaLines.join('\n')}` : ''}
 ${subLines.length ? `\nSOUS-TRAITANTS CONFIRMÉS:\n${subLines.join('\n')}` : ''}
 ${laborLines.length ? `\nPHASES / MAIN D'ŒUVRE:\n${laborLines.join('\n')}` : ''}
 
@@ -5954,7 +5963,6 @@ JSON seulement, pas de texte autour.`;
       });
       setQuoteBuilderItems(newItems);
       scheduleQuoteSave(newItems);
-      setShowFloQuotePanel(false);
     } catch (e) { console.error(e); } finally { setFloQuoteLoading(false); }
   };
 
@@ -7215,10 +7223,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
             {project.field_assessment?.work_type || WORK_TYPE_LABELS[project.type] || project.name}
             {project.address ? ` · ${project.address}` : ''}
           </span>
-          {/* Fermer modal portail au clic à l'extérieur */}
-          {portalCopyTarget && (
-            <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setPortalCopyTarget(null)} />
-          )}
           {/* ── Menu "..." ── */}
           <div ref={topMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
             {showTopMenu && <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setShowTopMenu(false)} />}
@@ -7283,22 +7287,19 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                 ['phases', 'Phases du projet'],
                 ['timeline', 'Dates et progression'],
               ];
-          return (
-            <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-              <div style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 18, border: '1px solid #E8EAED', boxShadow: '0 24px 64px rgba(0,0,0,.18)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid #F0F2F4' }}>
-                  <button type="button" onClick={() => setPortalCopyTarget(null)} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                    <ArrowLeft size={15} />
-                  </button>
+          return createPortal(
+            <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(15,23,42,.45)' }} onClick={() => setPortalCopyTarget(null)}>
+              <div style={{ width: '100%', maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, border: '1px solid #E8EAED', boxShadow: '0 24px 64px rgba(0,0,0,.28)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid #F0F2F4', flexShrink: 0 }}>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: 15, fontWeight: 800, color: '#15171C', margin: 0 }}>{isClient ? 'Portail client' : 'Portail fournisseur'}</p>
                     <p style={{ fontSize: 11.5, color: '#7C8089', margin: '2px 0 0' }}>Lien, partage et visibilité des sections</p>
                   </div>
-                  <button type="button" onClick={() => setPortalCopyTarget(null)} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                  <button type="button" onClick={() => setPortalCopyTarget(null)} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #E8EAED', background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                     <X size={15} />
                   </button>
                 </div>
-                <div style={{ padding: 18, display: 'grid', gap: 16 }}>
+                <div style={{ padding: 18, display: 'grid', gap: 16, overflowY: 'auto' }}>
                   <div style={{ background: '#F9FAFB', borderRadius: 12, border: '1px solid #E5E7EB', padding: 14 }}>
                     <p style={{ fontSize: 10.5, fontWeight: 800, color: '#9CA3AF', letterSpacing: '.08em', textTransform: 'uppercase', margin: '0 0 8px' }}>Lien public</p>
                     <p style={{ fontSize: 12, color: '#374151', margin: 0, fontFamily: 'monospace', wordBreak: 'break-all' }}>
@@ -7356,7 +7357,8 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
                   </div>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body
           );
         })()}
         {/* Ligne 2 : onglets */}
@@ -8846,14 +8848,10 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           quoteMarkup={quoteMarkup}
           setQuoteMarkup={setQuoteMarkup}
           setUiPref={setUiPref}
-          showFloQuotePanel={showFloQuotePanel}
-          setShowFloQuotePanel={setShowFloQuotePanel}
           BRAND={BRAND}
           floQuoteLoading={floQuoteLoading}
           quoteBuilderQuote={quoteBuilderQuote}
           quoteSaving={quoteSaving}
-          floInspirationInput={floInspirationInput}
-          setFloInspirationInput={setFloInspirationInput}
           fetchQuoteRecos={fetchQuoteRecos}
           quoteSelected={quoteSelected}
           quoteMassMarkup={quoteMassMarkup}

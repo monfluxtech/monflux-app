@@ -1,11 +1,89 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { auth as authApi, companies, members as membersApi } from '../api';
 import { useAuthStore, useDevStore, useConfigStore } from '../store';
 import { useUiPrefs } from '../hooks/useUiPrefs';
 import { SECONDARY_MODULES } from '../config/modules';
-import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot, FileSignature, Plus } from 'lucide-react';
+import { Settings, User, Zap, ToggleLeft, ToggleRight, Loader2, Check, Save, Building2, Users, UserPlus, Trash2, Shield, Sparkles, Lock, Layers, Bot, FileSignature, Plus, Code2 } from 'lucide-react';
+
+const MERGE_FIELDS = [
+  ['contract_title', 'Titre du contrat'],
+  ['project_title', 'Titre du projet'],
+  ['client_name', 'Nom du client'],
+  ['project_address', 'Adresse du projet'],
+  ['quote_total', 'Montant du devis'],
+  ['payment_terms_sentence', 'Modalités de paiement'],
+  ['start_date', 'Date de début'],
+  ['end_date', 'Date de fin'],
+  ['scope_summary', 'Résumé de la portée'],
+  ['quote_items_html', 'Tableau des postes du devis'],
+];
+
+// Éditeur de modèle "low-code" : document formaté (comme le Contrat dans une fiche projet)
+// avec des jetons de fusion cliquables à insérer au curseur, plutôt qu'un textarea de code brut.
+function TemplateDocumentEditor({ template, onChangeContent }) {
+  const editorRef = useRef(null);
+  const [showCode, setShowCode] = useState(false);
+
+  const insertField = (key) => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    const token = document.createTextNode(`{{${key}}}`);
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(token);
+      range.setStartAfter(token);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      el.appendChild(token);
+    }
+    onChangeContent(el.innerHTML);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        {MERGE_FIELDS.map(([key, label]) => (
+          <button key={key} type="button" onClick={() => insertField(key)}
+            style={{ fontSize: 11, padding: '4px 9px', borderRadius: 999, border: '1px solid #E5E7EB', background: '#F9FAFB', color: '#374151', cursor: 'pointer', fontWeight: 600 }}>
+            + {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '24px 28px', boxShadow: '0 8px 24px rgba(15,23,42,.04)' }}>
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={(e) => onChangeContent(e.currentTarget.innerHTML)}
+          dangerouslySetInnerHTML={{ __html: template.content || '' }}
+          style={{ minHeight: 220, outline: 'none', fontSize: 13, color: '#374151', lineHeight: 1.8, fontFamily: "'Georgia', serif" }}
+        />
+      </div>
+
+      <button type="button" onClick={() => setShowCode((v) => !v)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#9CA3AF', fontWeight: 600, padding: 0 }}>
+        <Code2 size={12} /> {showCode ? 'Masquer le code source' : 'Voir le code source'}
+      </button>
+      {showCode && (
+        <textarea
+          className="input mt-2"
+          rows={8}
+          value={template.content || ''}
+          onChange={(e) => onChangeContent(e.target.value)}
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, lineHeight: 1.6 }}
+        />
+      )}
+    </div>
+  );
+}
 
 const Row = ({ label, value, mono }) => (
   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -432,12 +510,9 @@ function ContractTemplatesTab() {
                 </button>
               )}
             </div>
-            <textarea
-              className="input"
-              rows={12}
-              value={template.content || ''}
-              onChange={(e) => updateTemplate(template.key, 'content', e.target.value)}
-              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, lineHeight: 1.6 }}
+            <TemplateDocumentEditor
+              template={template}
+              onChangeContent={(html) => updateTemplate(template.key, 'content', html)}
             />
           </div>
         ))}
@@ -1121,11 +1196,6 @@ function FloTab() {
     setUiPref('flo_settings', next);
   };
 
-  const MODELS = [
-    { key: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (défaut)' },
-    { key: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (rapide)' },
-    { key: 'claude-opus-4-8', label: 'Opus 4.8 (puissant)' },
-  ];
   const INTERVENTION_LEVELS = [
     { key: 'proactive', label: 'Proactif — Flo propose spontanément des suggestions' },
     { key: 'on_demand', label: 'Sur demande — Flo répond seulement quand on la consulte' },
@@ -1138,15 +1208,8 @@ function FloTab() {
         <Bot size={18} style={{ color: '#E8794E' }}/>
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Configuration de Flo</h2>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Personnalisez la persona, le modèle et le niveau d'intervention.</p>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Personnalisez la persona et le niveau d'intervention.</p>
         </div>
-      </div>
-
-      <div>
-        <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Modèle IA</label>
-        <select className="input" value={settings.model || 'claude-sonnet-4-6'} onChange={e => save({ model: e.target.value })}>
-          {MODELS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-        </select>
       </div>
 
       <div>

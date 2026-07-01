@@ -11,14 +11,10 @@ export default function ProjectQuoteSection(props) {
     quoteMarkup,
     setQuoteMarkup,
     setUiPref,
-    showFloQuotePanel,
-    setShowFloQuotePanel,
     BRAND,
     floQuoteLoading,
     quoteBuilderQuote,
     quoteSaving,
-    floInspirationInput,
-    setFloInspirationInput,
     fetchQuoteRecos,
     quoteSelected,
     quoteMassMarkup,
@@ -92,39 +88,17 @@ export default function ProjectQuoteSection(props) {
                   style={{ width: 42, fontSize: 13, fontWeight: 700, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right', color: '#15171C', fontFamily: 'inherit' }}/>
                 <span style={{ fontSize: 11, color: '#8B919A' }}>%</span>
               </div>
-              {/* Flo button */}
-              <button disabled={salesLocked} onClick={() => setShowFloQuotePanel(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: showFloQuotePanel ? `${BRAND}15` : '#fff', color: BRAND, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                <Sparkles size={12}/>{floQuoteLoading ? 'Analyse…' : 'Flo complète le devis'}
+              {/* Flo button — un seul clic : Flo rassemble automatiquement description + photos de chantier du projet */}
+              <button disabled={salesLocked || floQuoteLoading} onClick={fetchQuoteRecos}
+                title="Flo analyse la description et les photos déjà déposées dans le projet, puis ajoute les lignes manquantes au devis."
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: `1.5px solid ${BRAND}`, background: '#fff', color: BRAND, fontSize: 12, fontWeight: 700, cursor: floQuoteLoading ? 'wait' : 'pointer' }}>
+                {floQuoteLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                {floQuoteLoading ? 'Analyse en cours…' : 'Flo complète le devis'}
               </button>
               {quoteBuilderQuote?.status === 'sent' && <span className="badge badge-blue text-xs">Envoyée</span>}
               {quoteBuilderQuote?.status === 'signed' && <span className="badge badge-green text-xs">Signée</span>}
               {quoteSaving && <span style={{ fontSize: 11, color: '#9CA3AF' }}>Enreg…</span>}
           </div>
-
-          {/* Panneau Flo */}
-          {showFloQuotePanel && (
-            <div style={{ background: '#F5F3FF', borderRadius: 12, padding: '16px 20px', marginBottom: 20, border: '1px solid #DDD6FE' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Sparkles size={13} style={{ color: BRAND }}/><span style={{ fontSize: 13, fontWeight: 700, color: BRAND }}>Flo complète le devis</span>
-              </div>
-              <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 10px', lineHeight: 1.5 }}>
-                Collez des URLs d'images d'inspiration (Pinterest, Houzz…) ou décrivez le style. Flo identifie les matériaux, propose des produits disponibles au Québec avec prix et sources, importe les prix convenus avec les sous-traitants de la section Équipe, et ajoute la main d'œuvre basée sur les phases.
-              </p>
-              <textarea value={floInspirationInput} onChange={e => setFloInspirationInput(e.target.value)}
-                placeholder={"https://pinterest.com/pin/…\nhttps://houzz.com/…\nOu décrivez : planchers de bois naturel, comptoirs de quartz blanc, robinetterie matte noire…"}
-                rows={3}
-                style={{ width: '100%', fontSize: 12, border: '1px solid #DDD6FE', borderRadius: 8, padding: '8px 10px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: '#fff', color: '#15171C', boxSizing: 'border-box' }}/>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                <button onClick={fetchQuoteRecos} disabled={floQuoteLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none', background: BRAND, color: '#fff', fontSize: 12, fontWeight: 700, cursor: floQuoteLoading ? 'wait' : 'pointer' }}>
-                  {floQuoteLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }}/> : <Sparkles size={12}/>}
-                  {floQuoteLoading ? 'Analyse en cours…' : 'Analyser et compléter le devis'}
-                </button>
-                <span style={{ fontSize: 11, color: '#9CA3AF' }}>Les postes existants sont conservés — Flo ajoute uniquement les nouvelles lignes.</span>
-              </div>
-            </div>
-          )}
 
           {/* Barre multi-select + mass-markup */}
           {quoteSelected.size > 0 && (
