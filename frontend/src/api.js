@@ -72,6 +72,7 @@ export const projects = {
   estimateField:     (id, data)   => http.post(`/projects/${id}/estimate-field`, data),
   sendPrice:         (id, data)   => http.post(`/projects/${id}/send-price`, data),
   requestClientMedia:(id, data)   => http.post(`/projects/${id}/request-client-media`, data),
+  visionPreview:     (id, data)   => http.post(`/projects/${id}/vision-preview`, data, { timeout: 60000 }),
 };
 
 export const leads = {
@@ -166,6 +167,7 @@ export const siteMedia = {
   create:    (data)          => http.post('/site-media', data),
   delete:    (id)            => http.delete(`/site-media/${id}`),
   analyze:   (id)            => http.post(`/site-media/${id}/analyze`),
+  uploadDataUrl: (data_url)  => http.post('/site-media/upload-data-url', { data_url }),
 };
 
 export const documents = {

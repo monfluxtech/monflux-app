@@ -174,6 +174,31 @@ export default function ProjectDescriptionSection({
           </div>
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 6px' }}>Style souhaité <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(si le client en a un)</span></p>
+          <select
+            value={vision.style || ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              setProject((currentProject) => ({ ...currentProject, field_assessment: { ...(currentProject.field_assessment || {}), vision: { ...(currentProject.field_assessment?.vision || {}), style: value } } }));
+              saveVisionField({ style: value });
+            }}
+            style={{ padding: '8px 12px', border: '1.5px solid #E0E4E8', borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', outline: 'none', color: vision.style ? '#15171C' : '#9CA3AF', background: '#fff', minWidth: 220 }}
+          >
+            <option value="">Non précisé</option>
+            <option value="Moderne">Moderne</option>
+            <option value="Contemporain">Contemporain</option>
+            <option value="Traditionnel">Traditionnel</option>
+            <option value="Transitionnel">Transitionnel</option>
+            <option value="Rustique / Chalet">Rustique / Chalet</option>
+            <option value="Champêtre / Farmhouse">Champêtre / Farmhouse</option>
+            <option value="Scandinave">Scandinave</option>
+            <option value="Industriel">Industriel</option>
+            <option value="Minimaliste">Minimaliste</option>
+            <option value="Autre">Autre</option>
+          </select>
+        </div>
+
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
           <textarea
             value={vision.text || ''}
@@ -241,8 +266,13 @@ export default function ProjectDescriptionSection({
             <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#9CA3AF', margin: '0 0 10px' }}>Prévisualisations générées</p>
             <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 6, WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}>
               {generatedPreviews.map((preview) => (
-                <div key={preview.id} style={{ flexShrink: 0, width: 240, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA' }}>
+                <div key={preview.id} style={{ flexShrink: 0, width: 240, borderRadius: 12, overflow: 'hidden', border: '1px solid #E8EAED', background: '#F8F9FA', position: 'relative' }}>
                   <img src={preview.url} alt={preview.prompt} loading="lazy" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }}/>
+                  {preview.based_on_photo != null && (
+                    <span style={{ position: 'absolute', top: 6, left: 6, fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: '#fff', background: preview.based_on_photo ? 'rgba(22,163,74,.85)' : 'rgba(107,114,128,.75)' }}>
+                      {preview.based_on_photo ? 'Basé sur ta photo' : 'Sans photo de référence'}
+                    </span>
+                  )}
                   <div style={{ padding: '8px 10px 9px' }}>
                     <p style={{ fontSize: 10.5, color: '#6B7280', margin: 0, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{preview.prompt}</p>
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>

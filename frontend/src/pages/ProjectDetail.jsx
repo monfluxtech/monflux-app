@@ -3899,22 +3899,40 @@ Pour chaque item : element = nom de l'élément, detail = description précise, 
     } catch (e) { console.error('analyzePlan', e); } finally { setPlanAnalysisLoading(false); }
   };
 
-  // ── Descriptif : générer prévisualisation IA via Pollinations ──
+  // ── Descriptif : générer prévisualisation IA ──
+  // Repart d'une photo pré-chantier réelle (édition d'image via Gemini) pour que le rendu
+  // respecte la pièce et ses dimensions, au lieu de générer une scène de toutes pièces. La
+  // photo part en base64 directement vers l'API Gemini (backend), jamais sur une URL publique.
+  // Sans photo disponible, repli sur la génération texte→image (Pollinations) d'avant.
   const generatePreview = async (textOverride) => {
     const visionText = (textOverride || floGenPrompt || (project.field_assessment?.vision?.text) || '').trim();
     if (!visionText) return;
     setFloGenLoading(true);
     try {
+      const fa = project.field_assessment || {};
+      const refPhoto = (media || []).find((item) => item.type === 'photo' && item.url);
+
+      if (refPhoto) {
+        const instructions = `Edit this photo of a room under renovation. Keep the exact room structure, dimensions, camera angle, perspective and layout unchanged — this is a targeted edit of the existing photo, not a new scene. Apply ONLY these changes: ${visionText}.${fa.vision?.style ? ` Overall style: ${fa.vision.style}.` : ''} Make the result photorealistic, as if the renovation described is now complete.`;
+        const { data } = await projectsApi.visionPreview(id, { photo_url: refPhoto.url, instructions });
+        const newPrev = { id: Date.now(), prompt: visionText, img_prompt: instructions, url: data.url, based_on_photo: true };
+        const nextPreviews = [newPrev, ...generatedPreviews];
+        setGeneratedPreviews(nextPreviews);
+        localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(nextPreviews));
+        setFloGenPrompt('');
+        return;
+      }
+
+      // Repli sans photo de référence — génération texte→image via Pollinations.
       const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000/api').replace(/\/api$/, '') + '/api';
       const token = localStorage.getItem('token');
-      const fa = project.field_assessment || {};
       const visionCtx = [
         project.description && `Projet: ${project.description}`,
         fa.work_type && `Type: ${fa.work_type}`,
         fa.vision?.text && `Vision du client: ${fa.vision.text}`,
+        fa.vision?.style && `Style souhaité: ${fa.vision.style}`,
         (fa.vision?.inspirations || []).length && `Inspirations: ${fa.vision.inspirations.join(', ')}`,
       ].filter(Boolean).join('\n');
-      // Flo génère un prompt d'image optimisé
       const promptRes = await fetch(`${API_BASE}/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messages: [{ role: 'user', content: `Tu es Florence, IA MONFLUX. Génère un prompt d'image en anglais (max 200 mots) pour prévisualiser le résultat final de ces travaux de rénovation. Le prompt doit décrire la pièce/espace rénovée de façon réaliste et photogénique (style photo de magazine immobilier).
@@ -3928,10 +3946,9 @@ Contexte:\n${visionCtx}\nDemande de l'utilisateur: ${visionText}\nRéponds UNIQU
         }
       }
       imgPrompt = imgPrompt.trim();
-      // Génération image via Pollinations.ai
       const seed = Math.floor(Date.now() / 1000);
       const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt + ', interior design, architectural rendering, photorealistic, 8k')}?width=1024&height=768&seed=${seed}&nologo=true`;
-      const newPrev = { id: Date.now(), prompt: visionText, img_prompt: imgPrompt, url: imageUrl };
+      const newPrev = { id: Date.now(), prompt: visionText, img_prompt: imgPrompt, url: imageUrl, based_on_photo: false };
       const nextPreviews = [newPrev, ...generatedPreviews];
       setGeneratedPreviews(nextPreviews);
       localStorage.setItem(`monflux-gen-previews-${id}`, JSON.stringify(nextPreviews));

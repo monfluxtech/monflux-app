@@ -757,6 +757,84 @@ Si une information est absente ou illisible, mets null (n'invente rien). "amount
   }
 });
 
+// ── Vision : prévisualisation IA image-to-image (Gemini) ──────────────────────
+// POST /api/projects/:id/vision-preview — édite une photo pré-chantier réelle plutôt que de
+// générer une scène de toutes pièces, pour que le rendu respecte la pièce et ses dimensions.
+// La photo part directement en base64 vers l'API Gemini (jamais exposée sur une URL publique).
+router.post('/:id/vision-preview', enforceAiQuota, async (req, res) => {
+  const { photo_url, instructions } = req.body;
+  try {
+    if (!(await assertProjectInCompany(req.params.id, req.company_id)))
+      return res.status(404).json({ error: 'Projet introuvable' });
+    if (!photo_url || !instructions) return res.status(400).json({ error: 'photo_url et instructions requis' });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        error: 'Prévisualisation IA non configurée sur le serveur (GEMINI_API_KEY manquant).',
+        code: 'gemini_not_configured',
+      });
+    }
+
+    let mimeType, base64Data;
+    const dataUrlMatch = photo_url.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataUrlMatch) {
+      [, mimeType, base64Data] = dataUrlMatch;
+    } else {
+      const photoResp = await fetch(photo_url);
+      if (!photoResp.ok) return res.status(400).json({ error: 'Impossible de récupérer la photo de référence' });
+      mimeType = photoResp.headers.get('content-type') || 'image/jpeg';
+      base64Data = Buffer.from(await photoResp.arrayBuffer()).toString('base64');
+    }
+
+    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview';
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { inline_data: { mime_type: mimeType, data: base64Data } },
+              { text: instructions },
+            ],
+          }],
+        }),
+      }
+    );
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error('Gemini vision-preview error:', geminiRes.status, errText);
+      return res.status(502).json({ error: `Erreur de l'API de génération d'image (${geminiRes.status})`, detail: errText.slice(0, 300) });
+    }
+    const geminiData = await geminiRes.json();
+    const imagePart = (geminiData.candidates?.[0]?.content?.parts || []).find((p) => p.inline_data || p.inlineData);
+    const inline = imagePart?.inline_data || imagePart?.inlineData;
+    if (!inline?.data) {
+      return res.status(502).json({ error: "L'IA n'a pas retourné d'image — reformule la demande.", detail: JSON.stringify(geminiData).slice(0, 300) });
+    }
+
+    const outMime = inline.mime_type || inline.mimeType || 'image/png';
+    const outExt = (outMime.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+    const outBuffer = Buffer.from(inline.data, 'base64');
+
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const blob = await put(
+        `vision-previews/${req.params.id}/${Date.now()}.${outExt}`,
+        outBuffer,
+        { access: 'public', contentType: outMime, token: process.env.BLOB_READ_WRITE_TOKEN }
+      );
+      return res.json({ url: blob.url });
+    }
+    // Repli sans stockage persistant si Blob n'est pas configuré (le rendu reste utilisable,
+    // juste pas réutilisable après un rechargement de page).
+    res.json({ url: `data:${outMime};base64,${inline.data}` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur lors de la génération de la prévisualisation' });
+  }
+});
+
 // ── Batch 3 — Estimation terrain : checklist → prix global (IA) ───────────────
 // POST /api/projects/:id/estimate-field
 router.post('/:id/estimate-field', enforceAiQuota, async (req, res) => {

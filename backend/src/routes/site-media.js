@@ -1,9 +1,42 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { put } from '@vercel/blob';
 import { query } from '../db.js';
 import { authenticateToken, resolveCompany } from '../middleware/auth.js';
 const router = express.Router();
 router.use(authenticateToken, resolveCompany);
+
+// POST /api/site-media/upload-data-url — resolves a data: URI (e.g. a photo already stored
+// inline as base64) into a durable public URL, needed anywhere an external service (like
+// the vision-preview image generator) must fetch the image over the network itself.
+router.post('/upload-data-url', async (req, res) => {
+  try {
+    const { data_url } = req.body;
+    if (!data_url || !data_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'data_url (data: URI) requis' });
+    }
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(503).json({
+        error: 'Stockage de fichiers non configuré sur le serveur (BLOB_READ_WRITE_TOKEN manquant).',
+        code: 'blob_not_configured',
+      });
+    }
+    const match = data_url.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return res.status(400).json({ error: 'Format data URI invalide' });
+    const [, mimeType, base64Data] = match;
+    const buffer = Buffer.from(base64Data, 'base64');
+    const ext = (mimeType.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
+    const blob = await put(
+      `vision/${req.company_id}/${Date.now()}.${ext}`,
+      buffer,
+      { access: 'public', contentType: mimeType, token: process.env.BLOB_READ_WRITE_TOKEN }
+    );
+    res.json({ url: blob.url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur upload' });
+  }
+});
 
 let anthropic = null;
 const initAnthropicIfReady = () => {
