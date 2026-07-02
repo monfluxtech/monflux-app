@@ -84,8 +84,8 @@ const DETAIL_TOC_SECTIONS = [
   { id: 's-equipe', icon: '🤝', label: 'Équipe et conformité' },
   { id: 's-materiaux', icon: '🔍', label: 'Recherche de matériaux' },
   { id: 's-soumission', icon: '📄', label: 'Devis & contrat' },
-  { id: 's-punch', icon: '⏱️', label: 'Punch et dépenses' },
-  { id: 's-expenses', icon: '🧾', label: 'Factures fournisseurs' },
+  { id: 's-punch', icon: '⏱️', label: 'Punch' },
+  { id: 's-expenses', icon: '🧾', label: 'Dépenses' },
   { id: 's-invoices', icon: '🧾', label: 'Factures client' },
   { id: 's-extras', icon: '⚡', label: 'Demandes de modification' },
   { id: 's-nonconformites', icon: '🚨', label: 'Non-conformités' },
@@ -1093,7 +1093,8 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const visibleOptCols = OPTIONAL_COLS.filter(c => !hiddenCols.has(c.key));
   const rightOptCols   = OPTIONAL_COLS.filter(c =>  hiddenCols.has(c.key));
   const toggleColPin = (key) => setHiddenCols(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  // Offsets sticky dynamiques (Phase toujours en premier)
+  // Offsets sticky dynamiques (Phase toujours en premier) — cumul de TOUTES les colonnes
+  // visibles, utilisé seulement pour la largeur totale du tableau (pas pour le sticky).
   let _cumLeft = CHECK_W + LABEL_W + 20;
   const colLeftMap = {};
   for (const cd of visibleOptCols) { colLeftMap[cd.key] = _cumLeft; _cumLeft += cd.w; }
@@ -1102,6 +1103,16 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
 
   const totalMinW = fixedColsW + ganttW + rightColsW;
   const hasSel = selectedIds.size > 0;
+
+  // Offsets sticky réels — cumul des SEULES colonnes épinglées, dans l'ordre visuel. Une
+  // colonne non-épinglée entre deux épinglées ne doit pas décaler le `left` sticky de celle
+  // qui la suit, sinon un trou apparaît entre les colonnes épinglées au scroll horizontal.
+  let _pinCumLeft = CHECK_W + LABEL_W + 20;
+  const pinnedLeftMap = {};
+  for (const cd of visibleOptCols) {
+    if (pinnedCols.has(cd.key)) { pinnedLeftMap[cd.key] = _pinCumLeft; _pinCumLeft += cd.w; }
+  }
+  const pinnedColsW = _pinCumLeft;
 
   // Sticky helpers — conditioned on stickyAll toggle (z-index high enough to cover Gantt overlays)
   // Pin = sticky. colKey defaults to 'phase' so checkbox/phase rows follow the phase pin.
@@ -1516,7 +1527,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
   const scrollToToday = () => {
     if (!scrollRef.current) return;
     const viewW = scrollRef.current.clientWidth;
-    const FIXED = pinnedCols.size > 0 ? fixedColsW : 0;
+    const FIXED = pinnedCols.size > 0 ? pinnedColsW : 0;
     // centre today within the visible Gantt area (after sticky columns)
     scrollRef.current.scrollLeft = Math.max(0, todayPx - (viewW - FIXED) * 0.4);
   };
@@ -1947,7 +1958,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
               const isLast = cd === visibleOptCols[visibleOptCols.length - 1];
               const hasF = cd.key === 'start' ? hasFilter('start_date') : cd.key === 'assigned' ? (hasFilter('assigned')||filters.assigneeStatus.size>0) : false;
               return (
-                <div key={cd.key} data-opt-col={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(colLeftMap[cd.key], cd.key) }}>
+                <div key={cd.key} data-opt-col={cd.key} style={{ width:cd.w, flexShrink:0, borderLeft:'1px solid #F0F1F3', background:'#fff', padding:'5px 6px', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.08em', color: hasF ? BRAND : '#9CA3AF', display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, boxShadow: isLast ? '3px 0 6px rgba(0,0,0,.06)' : 'none', position:'relative', ...stickyH(pinnedLeftMap[cd.key], cd.key) }}>
                   <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
                     {cd.label}
                     {hasF && <span style={{ fontSize:8, color:BRAND, marginLeft:2 }}>●</span>}
@@ -2178,7 +2189,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   const isLastOptCol = cd === visibleOptCols[visibleOptCols.length - 1];
                   const cellBase = { width:cd.w, flexShrink:0, padding:'0 2px', borderLeft:'1px solid #F0F1F3', alignSelf:'stretch', display:'flex', alignItems:'center', background:rowBg, boxShadow: isLastOptCol && pinned(cd.key) ? '3px 0 6px rgba(0,0,0,.04)' : 'none' };
                   if (cd.key === 'start') return (
-                    <div key="start" data-opt-col="start" style={{ ...cellBase, position:'relative', ...stickyC(colLeftMap['start'], 'start') }}>
+                    <div key="start" data-opt-col="start" style={{ ...cellBase, position:'relative', ...stickyC(pinnedLeftMap["start"], 'start') }}>
                       {editCell?.id===ph.id && editCell?.field==='datetime' ? (
                         <input type="datetime-local" autoFocus
                           defaultValue={ph.start_date ? `${ph.start_date.slice(0,10)}T${ph.start_time||'08:00'}` : ''}
@@ -2200,7 +2211,7 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_prev') return (
-                    <div key="dur_prev" data-opt-col="dur_prev" style={{ ...cellBase, ...stickyC(colLeftMap['dur_prev'], 'dur_prev') }}>
+                    <div key="dur_prev" data-opt-col="dur_prev" style={{ ...cellBase, ...stickyC(pinnedLeftMap["dur_prev"], 'dur_prev') }}>
                       {editCell?.id===ph.id && editCell?.field==='duration' ? (
                         <input type="number" autoFocus min="0" step="0.5" defaultValue={ph.duration_hours??''}
                           onBlur={ev => { const val=ev.target.value===''?null:parseFloat(ev.target.value); onUpdatePhase?.(ph.id,{duration_hours:val}); setEditCell(null); }}
@@ -2215,14 +2226,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                     </div>
                   );
                   if (cd.key === 'dur_real') return (
-                    <div key="dur_real" data-opt-col="dur_real" style={{ ...cellBase, ...stickyC(colLeftMap['dur_real'], 'dur_real'), justifyContent:'flex-end' }}>
+                    <div key="dur_real" data-opt-col="dur_real" style={{ ...cellBase, ...stickyC(pinnedLeftMap["dur_real"], 'dur_real'), justifyContent:'flex-end' }}>
                       <span style={{ fontSize:11, color: ph.logged_hours > 0 ? PUNCH_COLOR : '#D1D5DB', fontWeight:700, padding:'3px 6px', fontVariantNumeric:'tabular-nums' }}>
                         {ph.logged_hours > 0 ? fmtDur(Number(ph.logged_hours)) : '—'}
                       </span>
                     </div>
                   );
                   if (cd.key === 'assigned') return (
-                    <div key="assigned" data-opt-col="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(colLeftMap['assigned'], 'assigned') }}>
+                    <div key="assigned" data-opt-col="assigned" style={{ ...cellBase, padding:'0 10px', ...stickyC(pinnedLeftMap["assigned"], 'assigned') }}>
                       <AssigneeChip trade={matchedTrade}
                         assignedToName={ph.assigned_to_name||null}
                         onSelfAssign={currentUserName?()=>onSelfAssign?.(ph.id,currentUserName):undefined}
@@ -2231,14 +2242,14 @@ function GanttChart({ phases, projectStart, projectEnd, trades, onDeletePhase, o
                   );
                   if (cd.key === 'dep_pred') {
                     return (
-                      <div key="dep_pred" data-opt-col="dep_pred" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_pred'],'dep_pred') }}>
+                      <div key="dep_pred" data-opt-col="dep_pred" style={{ ...cellBase, padding:'0 6px', ...stickyC(pinnedLeftMap["dep_pred"],'dep_pred') }}>
                         {renderPredCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
                   }
                   if (cd.key === 'dep_succ') {
                     return (
-                      <div key="dep_succ" data-opt-col="dep_succ" style={{ ...cellBase, padding:'0 6px', ...stickyC(colLeftMap['dep_succ'],'dep_succ') }}>
+                      <div key="dep_succ" data-opt-col="dep_succ" style={{ ...cellBase, padding:'0 6px', ...stickyC(pinnedLeftMap["dep_succ"],'dep_succ') }}>
                         {renderSuccCell(ph, { display:'flex', alignItems:'center', width:'100%', overflow:'hidden' })}
                       </div>
                     );
@@ -6349,29 +6360,29 @@ Règles :
   const addManualPunch = async (e) => {
     e.preventDefault();
     const worker_name = manualPunchForm.worker_name.trim() || currentUser?.name || currentUser?.email || '';
+    if (!worker_name) return;
     const phase_name = manualPunchForm.phase_name.trim();
-    const clockInIso = combineDateTime(manualPunchForm.work_date, manualPunchForm.start_time);
+    const clockInIso = combineDateTime(manualPunchForm.work_date, manualPunchForm.start_time) || new Date().toISOString();
     const durationHours = Number(manualPunchForm.duration_hours);
     const clockOutIso = manualPunchForm.end_time
       ? combineDateTime(manualPunchForm.work_date, manualPunchForm.end_time)
       : (clockInIso && Number.isFinite(durationHours) && durationHours > 0 ? addHoursToIso(clockInIso, durationHours) : null);
-    if (!worker_name || !phase_name || !clockInIso || !clockOutIso) return;
     try {
       const { data } = await tsApi.start({
         project_id: id,
         worker_name,
-        phase_name,
+        phase_name: phase_name || undefined,
         notes: manualPunchForm.notes.trim(),
         clock_in: clockInIso,
-        clock_out: clockOutIso,
-        hours_total: !manualPunchForm.end_time && Number.isFinite(durationHours) && durationHours > 0
+        clock_out: clockOutIso || undefined,
+        hours_total: !clockOutIso && Number.isFinite(durationHours) && durationHours > 0
           ? durationHours
           : undefined,
       });
       setTimesheets((prev) => [data, ...prev]);
       setManualPunchForm({
-        worker_name,
-        phase_name,
+        worker_name: '',
+        phase_name: '',
         work_date: new Date().toISOString().slice(0, 10),
         start_time: '08:00',
         end_time: '',
@@ -6664,14 +6675,14 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
       ],
     },
     's-expenses': {
-      summary: `Factures fournisseurs et dépenses réelles du chantier`,
+      summary: `Dépenses et factures fournisseurs du chantier`,
       stats: [
         profit?.actual?.supplier_invoices_count ? `${profit.actual.supplier_invoices_count} facture(s)` : null,
         supplierExpenseTotal ? `${formatSectionMoney(supplierExpenseTotal)} dépensés` : null,
       ],
     },
     's-punch': {
-      summary: `Temps réel et dépenses terrain pour comparer le prévu au réalisé`,
+      summary: `Temps réel terrain pour comparer le prévu au réalisé`,
       stats: [
         timesheets.length ? `${timesheets.length} entrée(s)` : 'Aucun punch',
         loggedHours ? `${loggedHours}h` : null,
@@ -9024,19 +9035,6 @@ Retourne uniquement l'objet du courriel (1 ligne, commençant par "Objet:") puis
           approveTs={approveTs}
           removeTimesheetRow={removeTimesheetRow}
           BRAND={BRAND}
-          money={money}
-          EXPENSE_TYPES={EXPENSE_TYPES}
-          isExpenseReceiptRequired={isExpenseReceiptRequired}
-          expenseForm={expenseForm}
-          setExpenseForm={setExpenseForm}
-          attachExpenseReceipt={attachExpenseReceipt}
-          setLightboxItem={setLightboxItem}
-          addExpense={addExpense}
-          expenseDrafts={expenseDrafts}
-          updateExpenseDraftField={updateExpenseDraftField}
-          saveExpenseRow={saveExpenseRow}
-          savingExpenseId={savingExpenseId}
-          removeExpense={removeExpense}
         />
 
         {/* ── Soumission détaillée ── (white) */}

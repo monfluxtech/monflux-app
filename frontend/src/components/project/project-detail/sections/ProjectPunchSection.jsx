@@ -65,19 +65,6 @@ export default function ProjectPunchSection({
   approveTs,
   removeTimesheetRow,
   BRAND,
-  money,
-  EXPENSE_TYPES,
-  isExpenseReceiptRequired,
-  expenseForm,
-  setExpenseForm,
-  attachExpenseReceipt,
-  setLightboxItem,
-  addExpense,
-  expenseDrafts,
-  updateExpenseDraftField,
-  saveExpenseRow,
-  savingExpenseId,
-  removeExpense,
 }) {
   const [viewMode, setViewMode] = useState('rows');
   const [weekAnchor, setWeekAnchor] = useState(() => startOfWeek(new Date()));
@@ -88,8 +75,6 @@ export default function ProjectPunchSection({
     value: phase.name || '',
     label: phase.name || 'Phase sans nom',
   }));
-
-  const creatorDuration = manualPunchForm.duration_hours || calcDurationHours(manualPunchForm.work_date, manualPunchForm.start_time, manualPunchForm.end_time);
 
   const updateCreatorField = (key, value) => {
     setManualPunchForm((prev) => {
@@ -163,7 +148,7 @@ export default function ProjectPunchSection({
     <ProjectSection
       sectionId="s-punch"
       icon="⏱️"
-      title="Punch et dépenses"
+      title="Punch"
       summary={sectionSummary?.summary}
       stats={sectionSummary?.stats}
       expanded={expanded}
@@ -304,36 +289,15 @@ export default function ProjectPunchSection({
               <tbody>
                 <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #DCEFE2' }}>
                   <td/>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input ref={manualPunchWorkerRef} value={manualPunchForm.worker_name} onChange={(e) => updateCreatorField('worker_name', e.target.value)}
-                      placeholder="+ Ajouter un travailleur…"
-                      onBlur={addManualPunch}
-                      style={{ ...iS, fontSize: 12, color: manualPunchForm.worker_name ? '#111827' : '#9CA3AF' }}/>
+                  <td colSpan={8} style={{ padding: '4px 6px' }}>
+                    <input
+                      ref={manualPunchWorkerRef}
+                      value={manualPunchForm.worker_name}
+                      onChange={(e) => updateCreatorField('worker_name', e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && manualPunchForm.worker_name.trim()) addManualPunch(e); }}
+                      placeholder="+ Ajouter un pointage — Entrée pour confirmer"
+                      style={{ ...iS, fontSize: 12, fontWeight: 600, color: manualPunchForm.worker_name ? '#111827' : '#9CA3AF' }}/>
                   </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <select value={manualPunchForm.phase_name} onChange={(e) => { updateCreatorField('phase_name', e.target.value); }} onBlur={addManualPunch}
-                      style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}>
-                      <option value="">Choisir une phase…</option>
-                      {phaseOptions.map((phase) => <option key={phase.key} value={phase.value}>{phase.label}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input value={manualPunchForm.notes} onChange={(e) => updateCreatorField('notes', e.target.value)} onBlur={addManualPunch} placeholder="Note rapide" style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}/>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="date" value={manualPunchForm.work_date} onChange={(e) => updateCreatorField('work_date', e.target.value)} onBlur={addManualPunch} style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="time" value={manualPunchForm.start_time} onChange={(e) => updateCreatorField('start_time', e.target.value)} onBlur={addManualPunch} style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="time" value={manualPunchForm.end_time} onChange={(e) => updateCreatorField('end_time', e.target.value)} onBlur={addManualPunch} placeholder="Fin" style={{ ...iS, fontSize: 11, color: '#9CA3AF' }}/>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="number" min="0" step="0.25" value={creatorDuration} onChange={(e) => updateCreatorField('duration_hours', e.target.value)} onBlur={addManualPunch} placeholder="h" style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}/>
-                  </td>
-                  <td style={{ padding: '4px 6px', textAlign: 'center', fontSize: 11, color: '#C0C4CC' }}>Nouveau</td>
-                  <td/>
                 </tr>
 
                 {(timesheets || []).map((timesheet) => {
@@ -457,130 +421,6 @@ export default function ProjectPunchSection({
         </div>
       )}
 
-      {/* ── Dépenses — tableau éditable directement, même donnée que Factures fournisseurs ── */}
-      <div style={{ marginTop: 20 }}>
-        <p style={{ fontSize: 13, fontWeight: 800, color: '#15171C', margin: '0 0 10px' }}>Dépenses</p>
-        <div style={{ border: '1px solid #DCEFE2', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <colgroup>
-                <col style={{ width: 130 }}/>
-                <col style={{ minWidth: 200 }}/>
-                <col style={{ width: 120 }}/>
-                <col style={{ width: 150 }}/>
-                <col style={{ width: 120 }}/>
-                <col style={{ width: 110 }}/>
-              </colgroup>
-              <thead>
-                <tr>
-                  {['Type', 'Description', 'Date', 'Reçu', 'Montant', 'Actions'].map((label, index) => (
-                    <th key={label} style={{ padding: '8px 10px', fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '2px solid #E5E7EB', background: '#F9FAFB', textAlign: index === 4 ? 'right' : index === 5 ? 'center' : 'left', whiteSpace: 'nowrap' }}>
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr style={{ background: '#FAFAFA', borderBottom: '2px solid #DCEFE2' }}>
-                  <td style={{ padding: '4px 6px' }}>
-                    <select value={expenseForm.type} onChange={(e) => setExpenseForm((form) => ({ ...form, type: e.target.value }))} style={{ ...iS, fontSize: 12, color: '#9CA3AF' }}>
-                      {Object.entries(EXPENSE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input value={expenseForm.description} onChange={(e) => setExpenseForm((form) => ({ ...form, description: e.target.value }))} placeholder="+ Ajouter une dépense…" style={{ ...iS, fontSize: 12, color: '#9CA3AF' }} />
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm((form) => ({ ...form, expense_date: e.target.value }))} style={{ ...iS, fontSize: 11, color: '#9CA3AF' }} />
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    {expenseForm.type === 'mileage' ? (
-                      <span style={{ fontSize: 11, color: '#C0C4CC' }}>Non requis</span>
-                    ) : (
-                      <label style={{ fontSize: 11, color: '#9CA3AF', cursor: 'pointer' }}>
-                        {expenseForm.receipt_url ? 'Changer' : 'Photo reçu'}
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) attachExpenseReceipt({ file }); e.target.value = ''; }} />
-                      </label>
-                    )}
-                  </td>
-                  <td style={{ padding: '4px 6px' }}>
-                    <input type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((form) => ({ ...form, amount: e.target.value }))} placeholder="0.00" style={{ ...iS, fontSize: 11, color: '#9CA3AF', textAlign: 'right' }} />
-                  </td>
-                  <td style={{ padding: '4px 6px', textAlign: 'center' }}>
-                    <button type="button" className="btn-ghost p-2 text-green-700 hover:text-green-800" title="Ajouter la dépense" onClick={(e) => addExpense(e)}>
-                      <CheckCircle size={15} />
-                    </button>
-                  </td>
-                </tr>
-
-                {(project?.expenses || []).map((expense) => {
-                  const draft = expenseDrafts[expense.id] || {
-                    type: expense.type || 'supplier_invoice',
-                    description: expense.description || '',
-                    amount: expense.amount ?? '',
-                    expense_date: expense.expense_date ? String(expense.expense_date).slice(0, 10) : '',
-                    receipt_url: expense.receipt_url || '',
-                    receipt_name: expense.receipt_name || '',
-                  };
-                  const receiptMissing = isExpenseReceiptRequired(draft.type) && !draft.receipt_url;
-                  return (
-                    <tr key={expense.id} style={{ background: 'white', borderBottom: '1px solid #F3F4F6' }}>
-                      <td style={{ padding: '6px 8px' }}>
-                        <select className="input" value={draft.type} onChange={(e) => updateExpenseDraftField(expense.id, 'type', e.target.value)} onBlur={() => saveExpenseRow(expense.id)}>
-                          {Object.entries(EXPENSE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" value={draft.description} onChange={(e) => updateExpenseDraftField(expense.id, 'description', e.target.value)} onBlur={() => saveExpenseRow(expense.id)} placeholder="Description" />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input" type="date" value={draft.expense_date} onChange={(e) => updateExpenseDraftField(expense.id, 'expense_date', e.target.value)} onBlur={() => saveExpenseRow(expense.id)} />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        {draft.type === 'mileage' ? (
-                          <span className="text-xs text-gray-400">Non requis</span>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <label className={`text-[11px] font-medium border rounded-md px-2 py-1 transition-colors cursor-pointer ${receiptMissing ? 'text-amber-700 border-amber-200 bg-amber-50' : 'text-gray-500 hover:text-brand border-gray-200'}`}>
-                              {draft.receipt_url ? 'Changer' : 'Photo reçu'}
-                              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) attachExpenseReceipt({ expenseId: expense.id, file }); e.target.value = ''; }} />
-                            </label>
-                            {draft.receipt_url && (
-                              <button className="text-[11px] text-green-700 hover:text-green-800" onClick={() => setLightboxItem({ type: 'photo', url: draft.receipt_url, caption: draft.receipt_name || 'Reçu' })}>Voir</button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input className="input text-right" type="number" step="0.01" value={draft.amount} onChange={(e) => updateExpenseDraftField(expense.id, 'amount', e.target.value)} onBlur={() => saveExpenseRow(expense.id)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                        <div className="flex items-center justify-center gap-2">
-                          {savingExpenseId === expense.id && <span className="text-[10px] font-semibold text-orange-500">Auto…</span>}
-                          <button className="btn-ghost p-1 text-gray-300 hover:text-red-500" onClick={() => removeExpense(expense.id)}><Trash2 size={13} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {!(project?.expenses || []).length && (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '22px 12px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                      Aucune dépense enregistrée.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        {(project?.expenses || []).length > 0 && (
-          <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 8 }}>
-            Total dépenses : <strong style={{ color: '#15171C' }}>{money((project.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</strong>
-          </p>
-        )}
-      </div>
     </ProjectSection>
   );
 }

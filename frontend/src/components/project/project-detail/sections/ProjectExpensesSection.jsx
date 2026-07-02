@@ -54,7 +54,7 @@ export default function ProjectExpensesSection({
     <ProjectSection
       sectionId="s-expenses"
       icon="💸"
-      title="Factures fournisseurs"
+      title="Dépenses"
       summary={sectionSummary?.summary}
       stats={sectionSummary?.stats}
       expanded={expanded}

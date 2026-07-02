@@ -86,14 +86,14 @@ const TOUR_CONTEXTS = {
       },
       {
         target: '#s-punch',
-        title: 'Punch et dépenses',
+        title: 'Punch',
         desc: 'Le punch suit le réel terrain, avec saisie rapide, chronos en cours et vue semaine pour comparer prévu vs réalisé.',
         position: 'center',
       },
       {
         target: '#s-expenses',
-        title: 'Factures fournisseurs',
-        desc: 'Même logique: première ligne éditable, pièces jointes reçus et mise à jour directe sans ouvrir de formulaire séparé.',
+        title: 'Dépenses',
+        desc: 'Factures fournisseurs et dépenses terrain: première ligne éditable, pièces jointes reçus et mise à jour directe sans ouvrir de formulaire séparé.',
         position: 'center',
       },
       {
