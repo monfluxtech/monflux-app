@@ -46,6 +46,7 @@ router.post('/login', async (req, res) => {
        LEFT JOIN company_members cm ON cm.user_id = u.id AND cm.is_owner = TRUE
        LEFT JOIN companies c ON c.id = cm.company_id
        WHERE u.email = $1
+       ORDER BY cm.company_id ASC
        LIMIT 1`,
       [email.toLowerCase().trim()]
     );

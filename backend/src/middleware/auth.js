@@ -36,7 +36,7 @@ export async function resolveCompany(req, res, next) {
        JOIN effective_subscriptions es ON es.company_id = cm.company_id
        JOIN plans p ON p.id = es.plan_id
        WHERE cm.user_id = $1
-       ORDER BY cm.is_owner DESC
+       ORDER BY cm.is_owner DESC, cm.company_id ASC
        LIMIT 1`,
       [req.user.userId]
     );

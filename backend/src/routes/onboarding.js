@@ -278,56 +278,88 @@ router.post('/complete', authenticateToken, async (req, res) => {
       ? profile.responsibilities.map((r) => String(r).toLowerCase().trim()) : [];
     const fieldChecklists = buildFieldChecklists(trades);
 
-    // 1. Create company
-    const { rows: [company] } = await client.query(
-      `INSERT INTO companies
-         (name, rbq_number, sector, size, profile_type, modules_enabled, trades,
-          onboarding_completed, onboarding_profile)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8)
-       RETURNING id`,
-      [
-        profile.company_name,
-        profile.rbq_number || null,
-        sector,
-        size,
-        profile.profile_type || 'company',
-        JSON.stringify(modulesEnabled),
-        JSON.stringify(trades),
-        JSON.stringify(profile),
-      ]
+    // Un email = une compagnie. Si l'utilisateur possède déjà une compagnie (ex: onboarding
+    // relancé après un premier passage), on met à jour celle-ci plutôt que d'en créer une
+    // autre — sinon chaque relance de l'onboarding fabrique une compagnie fantôme de plus.
+    const { rows: [existingMembership] } = await client.query(
+      `SELECT company_id FROM company_members WHERE user_id = $1 AND is_owner = TRUE LIMIT 1`,
+      [req.user.userId]
     );
-    const company_id = company.id;
 
-    // 2. Add user as owner + store responsibilities (drives the dashboard)
-    await client.query(
-      `INSERT INTO company_members (company_id, user_id, role, is_owner)
-       VALUES ($1, $2, 'owner', TRUE)`,
-      [company_id, req.user.userId]
-    );
+    let company_id;
+    if (existingMembership) {
+      company_id = existingMembership.company_id;
+      await client.query(
+        `UPDATE companies
+         SET name = $1, rbq_number = $2, sector = $3, size = $4, profile_type = $5,
+             modules_enabled = $6, trades = $7, onboarding_completed = TRUE, onboarding_profile = $8
+         WHERE id = $9`,
+        [
+          profile.company_name,
+          profile.rbq_number || null,
+          sector,
+          size,
+          profile.profile_type || 'company',
+          JSON.stringify(modulesEnabled),
+          JSON.stringify(trades),
+          JSON.stringify(profile),
+          company_id,
+        ]
+      );
+    } else {
+      // 1. Create company
+      const { rows: [company] } = await client.query(
+        `INSERT INTO companies
+           (name, rbq_number, sector, size, profile_type, modules_enabled, trades,
+            onboarding_completed, onboarding_profile)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8)
+         RETURNING id`,
+        [
+          profile.company_name,
+          profile.rbq_number || null,
+          sector,
+          size,
+          profile.profile_type || 'company',
+          JSON.stringify(modulesEnabled),
+          JSON.stringify(trades),
+          JSON.stringify(profile),
+        ]
+      );
+      company_id = company.id;
+
+      // 2. Add user as owner
+      await client.query(
+        `INSERT INTO company_members (company_id, user_id, role, is_owner)
+         VALUES ($1, $2, 'owner', TRUE)`,
+        [company_id, req.user.userId]
+      );
+
+      // 3. Create free subscription
+      const { rows: [freePlan] } = await client.query(
+        `SELECT id FROM plans WHERE slug = 'free'`
+      );
+      await client.query(
+        `INSERT INTO subscriptions (company_id, plan_id, status, seats)
+         VALUES ($1, $2, 'active', 1)`,
+        [company_id, freePlan.id]
+      );
+
+      // 4. Create default company config + checklists terrain par métier
+      await client.query(
+        `INSERT INTO company_config (company_id, preferred_suppliers, field_checklists)
+         VALUES ($1, $2, $3)`,
+        [
+          company_id,
+          JSON.stringify(profile.preferred_suppliers || ['rona','home_depot']),
+          JSON.stringify(fieldChecklists),
+        ]
+      );
+    }
+
+    // Store responsibilities (drives the dashboard) — s'applique dans les deux cas.
     await client.query(
       `UPDATE users SET responsibilities = $1 WHERE id = $2`,
       [JSON.stringify(responsibilities), req.user.userId]
-    );
-
-    // 3. Create free subscription
-    const { rows: [freePlan] } = await client.query(
-      `SELECT id FROM plans WHERE slug = 'free'`
-    );
-    await client.query(
-      `INSERT INTO subscriptions (company_id, plan_id, status, seats)
-       VALUES ($1, $2, 'active', 1)`,
-      [company_id, freePlan.id]
-    );
-
-    // 4. Create default company config + checklists terrain par métier
-    await client.query(
-      `INSERT INTO company_config (company_id, preferred_suppliers, field_checklists)
-       VALUES ($1, $2, $3)`,
-      [
-        company_id,
-        JSON.stringify(profile.preferred_suppliers || ['rona','home_depot']),
-        JSON.stringify(fieldChecklists),
-      ]
     );
 
     // 5. Mark onboarding session complete

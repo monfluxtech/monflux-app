@@ -608,6 +608,85 @@ async function applyMigrations() {
        ELSE 'other'
      END
      WHERE type = 'other'`);
+
+  try {
+    await mergeDuplicateCompanies();
+  } catch (err) {
+    console.warn('⚠️  migration [merge duplicate companies]:', err.message);
+  }
+}
+
+// One email should map to exactly one working company. Onboarding used to insert a fresh
+// company on every run instead of reusing an existing one, so a user could end up owning
+// several companies with no way to pick between them — login/resolveCompany would land on
+// an arbitrary one each time. This folds every extra company a user owns into the one with
+// the most project data (idempotent: once a user owns a single company, it's a no-op).
+const COMPANY_SCOPED_TABLES = [
+  'activity_log', 'ai_actions', 'ai_conversations', 'change_orders', 'contacts', 'contracts',
+  'external_lead_imports', 'invitations', 'invoices', 'leads', 'material_orders', 'member_invites',
+  'messages', 'monflux_billing_events', 'onboarding_sessions', 'project_expenses', 'projects',
+  'quittances', 'quotes', 'rfqs', 'site_media', 'site_qr_codes', 'subcontractor_payments',
+  'subcontractors', 'timesheets',
+];
+const COMPANY_SINGLETON_TABLES = ['company_config', 'dev_plan_overrides', 'subscriptions'];
+const COMPANY_CONFLICT_PRONE_TABLES = ['ai_usage', 'integrations']; // composite UNIQUE(company_id, ...)
+
+async function mergeDuplicateCompanies() {
+  const { rows: dupOwners } = await pool.query(`
+    SELECT user_id, array_agg(company_id) AS company_ids
+    FROM company_members
+    WHERE is_owner = TRUE
+    GROUP BY user_id
+    HAVING count(*) > 1
+  `);
+  if (!dupOwners.length) return;
+
+  for (const { user_id, company_ids } of dupOwners) {
+    const { rows: ranked } = await pool.query(
+      `SELECT c.id,
+         (SELECT count(*) FROM projects p WHERE p.company_id = c.id) AS project_count
+       FROM companies c
+       WHERE c.id = ANY($1)
+       ORDER BY project_count DESC, c.created_at ASC`,
+      [company_ids]
+    );
+    const canonical = ranked[0].id;
+    const losers = ranked.slice(1).map((r) => r.id);
+    if (!losers.length) continue;
+
+    for (const loserId of losers) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const table of COMPANY_SCOPED_TABLES) {
+          await client.query(`UPDATE ${table} SET company_id = $1 WHERE company_id = $2`, [canonical, loserId]);
+        }
+        for (const table of COMPANY_SINGLETON_TABLES) {
+          const { rows: canonHas } = await client.query(`SELECT 1 FROM ${table} WHERE company_id = $1`, [canonical]);
+          if (canonHas.length) {
+            await client.query(`DELETE FROM ${table} WHERE company_id = $1`, [loserId]);
+          } else {
+            await client.query(`UPDATE ${table} SET company_id = $1 WHERE company_id = $2`, [canonical, loserId]);
+          }
+        }
+        for (const table of COMPANY_CONFLICT_PRONE_TABLES) {
+          await client.query(`DELETE FROM ${table} WHERE company_id = $1`, [loserId]);
+        }
+        await client.query(`DELETE FROM company_members WHERE company_id = $1 AND user_id = $2`, [loserId, user_id]);
+        const { rows: remaining } = await client.query(`SELECT count(*) FROM company_members WHERE company_id = $1`, [loserId]);
+        if (Number(remaining[0].count) === 0) {
+          await client.query(`DELETE FROM companies WHERE id = $1`, [loserId]);
+        }
+        await client.query('COMMIT');
+        console.log(`✅ migration: merged company ${loserId} into ${canonical} for user ${user_id}`);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        console.warn(`⚠️  migration [merge company ${loserId} -> ${canonical}]:`, err.message);
+      } finally {
+        client.release();
+      }
+    }
+  }
 }
 
 export async function initializeDatabase() {
